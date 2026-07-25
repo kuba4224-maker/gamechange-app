@@ -1,0 +1,2294 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gamechange — Asystent Sportowca</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root {
+  --bg: #f5f2ec; --ink: #0e0d0b; --ink2: #3a3830; --muted: #9a9488;
+  --rule: #d8d3c8; --accent: #E8432D; --surface: #ffffff; --green: #2a7a3a; --red: #C0392B;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--ink); min-height: 100vh; font-size: 15px; line-height: 1.6; }
+
+.gc-header { border-bottom: 1px solid var(--rule); padding: 20px 32px; display: flex; align-items: center; justify-content: space-between; }
+.gc-header-label { font-family: 'Bebas Neue', sans-serif; font-size: 13px; letter-spacing: 0.2em; color: var(--muted); text-transform: uppercase; }
+.gc-logout { font-size: 13px; color: var(--muted); text-decoration: none; cursor: pointer; }
+
+.gc-body { max-width: 680px; margin: 0 auto; padding: 40px 24px 100px; }
+.gc-title { font-family: 'Bebas Neue', sans-serif; font-size: 26px; letter-spacing: 0.01em; margin-bottom: 24px; }
+.gc-hidden { display: none !important; }
+
+.gc-input, .gc-select, .gc-textarea {
+  width: 100%; padding: 12px 16px; border: 1px solid var(--rule); background: var(--surface);
+  font-family: 'DM Sans', sans-serif; font-size: 14px; margin-bottom: 12px; color: var(--ink);
+}
+.gc-textarea { resize: vertical; min-height: 72px; }
+.gc-label { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; display: block; }
+.gc-btn {
+  width: 100%; padding: 14px; background: var(--ink); color: var(--bg); border: none;
+  font-family: 'Bebas Neue', sans-serif; font-size: 15px; letter-spacing: 0.06em; cursor: pointer;
+}
+.gc-btn:hover { background: var(--accent); color: var(--ink); }
+.gc-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.gc-btn-secondary {
+  padding: 10px 18px; background: var(--surface); color: var(--ink); border: 1px solid var(--rule);
+  font-family: 'Bebas Neue', sans-serif; font-size: 13px; letter-spacing: 0.05em; cursor: pointer;
+}
+.gc-btn-secondary.sel { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+
+.gc-error { color: var(--red); font-size: 13px; margin-top: 8px; }
+.gc-ok { color: var(--green); font-size: 13px; margin-top: 8px; }
+.gc-empty { text-align: center; padding: 32px 24px; color: var(--muted); font-size: 14px; }
+
+/* Nav */
+.gc-nav { display: flex; gap: 6px; margin-bottom: 28px; flex-wrap: wrap; }
+.gc-nav-btn {
+  flex: 1; min-width: 110px; padding: 12px; border: 1px solid var(--rule); background: var(--surface);
+  font-family: 'Bebas Neue', sans-serif; font-size: 13px; letter-spacing: 0.03em; cursor: pointer; color: var(--ink);
+  text-align: center;
+}
+.gc-nav-btn.active { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+.gc-nav-btn.soon { color: var(--muted); cursor: default; }
+.gc-nav-btn.soon:hover { background: var(--surface); color: var(--muted); }
+
+/* Entry type toggle */
+.gc-toggle { display: flex; gap: 8px; margin-bottom: 24px; }
+.gc-toggle-btn {
+  flex: 1; padding: 14px; border: 1px solid var(--rule); background: var(--surface);
+  font-family: 'Bebas Neue', sans-serif; font-size: 14px; letter-spacing: 0.04em; cursor: pointer; color: var(--ink);
+}
+.gc-toggle-btn.active { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+
+/* 0-10 scale picker */
+.gc-scale-wrap { margin-bottom: 20px; }
+.gc-scale-hint { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 4px; }
+.gc-scale-btns { display: flex; gap: 4px; }
+.gc-scale-btn {
+  flex: 1; height: 40px; border: 1px solid var(--rule); background: var(--surface); color: var(--ink2);
+  font-family: 'Bebas Neue', sans-serif; font-size: 14px; cursor: pointer;
+}
+.gc-scale-btn:hover { border-color: var(--ink); }
+.gc-scale-btn.sel { background: var(--ink); border-color: var(--ink); color: var(--accent); }
+
+.gc-section-block { border: 1px solid var(--rule); background: var(--surface); padding: 20px; margin-bottom: 20px; }
+.gc-checkbox-row { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; font-size: 14px; }
+.gc-checkbox-row input { width: 18px; height: 18px; }
+
+/* History */
+.gc-history-card { background: var(--surface); border: 1px solid var(--rule); padding: 14px 18px; margin-bottom: 10px; }
+.gc-history-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+.gc-history-type { font-family: 'Bebas Neue', sans-serif; font-size: 13px; letter-spacing: 0.06em; }
+.gc-history-date { font-size: 12px; color: var(--muted); }
+.gc-history-detail { font-size: 13px; color: var(--ink2); }
+.gc-pain-tag { display: inline-block; margin-top: 6px; padding: 3px 8px; background: #fbe6e2; color: var(--red); font-size: 11px; letter-spacing: 0.03em; }
+
+/* Goals (Cele) */
+.gc-goal-card { background: var(--surface); border: 1px solid var(--rule); padding: 14px 18px; margin-bottom: 10px; }
+.gc-goal-top { display: flex; align-items: baseline; flex-wrap: wrap; margin-bottom: 2px; }
+.gc-goal-segment { font-family: 'Bebas Neue', sans-serif; font-size: 14px; letter-spacing: 0.04em; }
+.gc-goal-pillar { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+.gc-goal-note { font-size: 13px; color: var(--ink2); margin-bottom: 8px; }
+.gc-goal-meta { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+.gc-badge-priority { display: inline-block; padding: 3px 8px; background: #fde8c8; color: #8a5a12; font-size: 11px; letter-spacing: 0.03em; margin-left: 8px; }
+.gc-badge-status { display: inline-block; padding: 3px 8px; font-size: 11px; letter-spacing: 0.03em; margin-left: 8px; }
+.gc-badge-status.completed { background: #dcf0dd; color: var(--green); }
+.gc-badge-status.abandoned { background: #ece8e0; color: var(--muted); }
+.gc-goal-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.gc-goal-actions .gc-btn-secondary { flex: none; width: auto; }
+
+/* Kalendarz — dni tygodnia */
+.gc-days-row { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 14px; }
+.gc-day-check { display: flex; align-items: center; gap: 4px; font-size: 13px; }
+.gc-day-check input { width: 16px; height: 16px; }
+
+/* Centrum Decyzji */
+.gc-rec-card { background: var(--surface); border: 1px solid var(--rule); padding: 20px; margin-bottom: 14px; }
+.gc-rec-card.gc-rec-referral { border-left: 3px solid var(--accent); }
+.gc-rec-focus { font-family: 'Bebas Neue', sans-serif; font-size: 17px; letter-spacing: 0.02em; margin-bottom: 10px; }
+.gc-rec-action { font-size: 15px; color: var(--ink); margin-bottom: 10px; }
+.gc-rec-rationale { font-size: 13px; color: var(--muted); margin-bottom: 12px; }
+.gc-badge-tone { display: inline-block; padding: 3px 8px; background: #ece8e0; color: var(--ink2); font-size: 11px; letter-spacing: 0.03em; margin-left: 8px; }
+.gc-rec-feedback-given { font-size: 13px; color: var(--muted); font-style: italic; }
+</style>
+</head>
+<body>
+
+<div class="gc-header">
+  <div class="gc-header-label">Gamechange — Asystent Sportowca</div>
+  <a class="gc-logout gc-hidden" id="logout-link" onclick="handleLogout()">Wyloguj</a>
+</div>
+
+<div class="gc-body">
+
+  <!-- ═══ LOGIN ═══ -->
+  <div id="view-login">
+    <div class="gc-title">Zaloguj się</div>
+    <input class="gc-input" id="login-email" type="email" placeholder="Twój email">
+    <button class="gc-btn" id="login-btn" onclick="handleSendMagicLink()">Wyślij link do logowania</button>
+    <div id="login-sent" class="gc-ok gc-hidden">Sprawdź skrzynkę i kliknij w link, żeby się zalogować.</div>
+    <div id="login-error" class="gc-error gc-hidden"></div>
+  </div>
+
+  <!-- ═══ APP ═══ -->
+  <div id="view-app" class="gc-hidden">
+
+    <div class="gc-nav">
+      <button class="gc-nav-btn active" id="nav-dziennik" onclick="switchPanel('dziennik')">Dziennik</button>
+      <button class="gc-nav-btn" id="nav-cele" onclick="switchPanel('cele')">Cele</button>
+      <button class="gc-nav-btn" id="nav-centrum" onclick="switchPanel('centrum')">Centrum Decyzji</button>
+      <button class="gc-nav-btn" id="nav-kalendarz" onclick="switchPanel('kalendarz')">Kalendarz</button>
+      <button class="gc-nav-btn" id="nav-profil" onclick="switchPanel('profil')">Profil</button>
+      <button class="gc-nav-btn" id="nav-diagnoza" onclick="switchPanel('diagnoza')">Diagnoza</button>
+      <button class="gc-nav-btn" id="nav-mecz" onclick="switchPanel('mecz')">Mecz</button>
+    </div>
+
+    <!-- ─── Dziennik ─── -->
+    <div id="panel-dziennik">
+      <div class="gc-title">Dziennik zawodnika</div>
+
+      <div class="gc-toggle">
+        <button class="gc-toggle-btn active" id="toggle-morning" onclick="switchEntryType('morning')">Wpis poranny</button>
+        <button class="gc-toggle-btn" id="toggle-post_training" onclick="switchEntryType('post_training')">Wpis potreningowy</button>
+      </div>
+
+      <div id="entry-error" class="gc-error gc-hidden"></div>
+      <div id="entry-ok" class="gc-ok gc-hidden"></div>
+
+      <!-- Morning fields -->
+      <div id="fields-morning">
+        <label class="gc-label">Ile godzin spałeś?</label>
+        <input class="gc-input" id="f-sleep-hours" type="number" min="0" max="24" step="0.5" placeholder="np. 7.5">
+
+        <label class="gc-label">Jakość snu (0 = fatalna, 10 = doskonała)</label>
+        <div class="gc-scale-wrap" id="scale-sleep_quality"></div>
+
+        <label class="gc-label">Poranne zmęczenie (0 = brak, 10 = wykończony)</label>
+        <div class="gc-scale-wrap" id="scale-morning_fatigue"></div>
+
+        <label class="gc-label">Nastrój / motywacja (0 = fatalny, 10 = świetny)</label>
+        <div class="gc-scale-wrap" id="scale-mood_motivation"></div>
+
+        <label class="gc-label">Notatka (opcjonalnie)</label>
+        <textarea class="gc-textarea" id="f-free-note" placeholder="Coś jeszcze warto zapisać?"></textarea>
+      </div>
+
+      <!-- Post-training fields -->
+      <div id="fields-post_training" class="gc-hidden">
+        <label class="gc-label">Rodzaj sesji</label>
+        <select class="gc-select" id="f-session-type">
+          <option value="club_training">Trening klubowy</option>
+          <option value="own_training">Trening własny</option>
+          <option value="micro_session">Mikro-sesja</option>
+          <option value="match">Mecz</option>
+          <option value="other">Inne</option>
+        </select>
+
+        <label class="gc-label">Czas trwania (minuty)</label>
+        <input class="gc-input" id="f-duration" type="number" min="0" max="360" step="5" placeholder="np. 90">
+
+        <label class="gc-label">Powiąż z zaplanowanym wydarzeniem (opcjonalnie)</label>
+        <select class="gc-select" id="f-calendar-link">
+          <option value="">— nie dotyczy —</option>
+        </select>
+
+        <label class="gc-label">RPE — odczuwany wysiłek (0 = brak, 10 = maksymalny)</label>
+        <div class="gc-scale-wrap" id="scale-rpe"></div>
+
+        <label class="gc-label">Zmęczenie po treningu (0 = brak, 10 = wykończony)</label>
+        <div class="gc-scale-wrap" id="scale-post_fatigue"></div>
+      </div>
+
+      <!-- Pain -->
+      <div class="gc-section-block">
+        <div class="gc-checkbox-row">
+          <input type="checkbox" id="f-has-pain" onchange="togglePainFields()">
+          <label for="f-has-pain">Boli Cię dziś coś?</label>
+        </div>
+        <div id="pain-fields" class="gc-hidden">
+          <label class="gc-label">Lokalizacja</label>
+          <select class="gc-select" id="f-pain-location" onchange="updateSideVisibility()"></select>
+
+          <div id="pain-side-wrap">
+            <label class="gc-label">Strona</label>
+            <select class="gc-select" id="f-pain-side">
+              <option value="">—</option>
+              <option value="left">Lewa</option>
+              <option value="right">Prawa</option>
+            </select>
+          </div>
+
+          <label class="gc-label">Intensywność (0 = ledwo wyczuwalny, 10 = nie do zniesienia)</label>
+          <div class="gc-scale-wrap" id="scale-pain_intensity"></div>
+
+          <div class="gc-checkbox-row">
+            <input type="checkbox" id="f-pain-excludes">
+            <label for="f-pain-excludes">To wyklucza mnie z treningu</label>
+          </div>
+        </div>
+      </div>
+
+      <button class="gc-btn" id="submit-btn" onclick="submitDailyLog()">Zapisz wpis</button>
+
+      <div style="margin-top:48px;">
+        <div class="gc-label" style="margin-bottom:14px;">Historia wpisów</div>
+        <div id="history-list"></div>
+      </div>
+    </div>
+
+    <!-- ─── Cele ─── -->
+    <div id="panel-cele" class="gc-hidden">
+      <div class="gc-title">Cele</div>
+
+      <div id="goal-error" class="gc-error gc-hidden"></div>
+      <div id="goal-ok" class="gc-ok gc-hidden"></div>
+
+      <div class="gc-section-block">
+        <label class="gc-label">Segment</label>
+        <select class="gc-select" id="f-goal-segment"></select>
+
+        <label class="gc-label">Doprecyzowanie celu (opcjonalnie)</label>
+        <textarea class="gc-textarea" id="f-goal-note" placeholder="np. poprawić skanowanie przed przyjęciem piłki"></textarea>
+
+        <label class="gc-label">Horyzont (tygodnie, opcjonalnie)</label>
+        <input class="gc-input" id="f-goal-horizon" type="number" min="1" max="52" step="1" placeholder="np. 8">
+
+        <div class="gc-checkbox-row">
+          <input type="checkbox" id="f-goal-priority">
+          <label for="f-goal-priority">Ustaw jako cel priorytetowy</label>
+        </div>
+
+        <button class="gc-btn" id="goal-submit-btn" onclick="createGoal()">Dodaj cel</button>
+      </div>
+
+      <div style="margin-top:40px;">
+        <div class="gc-label" style="margin-bottom:14px;">Aktywne cele</div>
+        <div id="goals-active-list"></div>
+      </div>
+
+      <details style="margin-top:32px;">
+        <summary class="gc-label" style="cursor:pointer; display:inline-block;">Historia celów (ukończone / porzucone)</summary>
+        <div id="goals-history-list" style="margin-top:14px;"></div>
+      </details>
+    </div>
+
+    <!-- ─── Centrum Decyzji ─── -->
+    <div id="panel-centrum" class="gc-hidden">
+      <div class="gc-title">Centrum Decyzji</div>
+
+      <div id="rec-error" class="gc-error gc-hidden"></div>
+      <div id="rec-ok" class="gc-ok gc-hidden"></div>
+
+      <div id="rec-current-wrap">
+        <div class="gc-label" style="margin-bottom:14px;">Priorytet tygodnia</div>
+        <div id="rec-current-list"></div>
+      </div>
+
+      <div id="rec-referral-wrap" style="margin-top:32px;">
+        <div class="gc-label" style="margin-bottom:14px;">Warto sprawdzić</div>
+        <div id="rec-referral-list"></div>
+      </div>
+
+      <details style="margin-top:32px;">
+        <summary class="gc-label" style="cursor:pointer; display:inline-block;">Historia rekomendacji</summary>
+        <div id="rec-history-list" style="margin-top:14px;"></div>
+      </details>
+    </div>
+
+    <!-- ─── Kalendarz ─── -->
+    <div id="panel-kalendarz" class="gc-hidden">
+      <div class="gc-title">Kalendarz treningowy</div>
+
+      <div id="event-error" class="gc-error gc-hidden"></div>
+      <div id="event-ok" class="gc-ok gc-hidden"></div>
+
+      <div class="gc-section-block">
+        <label class="gc-label">Rodzaj</label>
+        <select class="gc-select" id="f-event-type">
+          <option value="club_training">Trening klubowy</option>
+          <option value="own_training">Trening własny</option>
+          <option value="micro_session">Mikro-sesja</option>
+          <option value="task">Zadanie</option>
+        </select>
+
+        <label class="gc-label">Tytuł</label>
+        <input class="gc-input" id="f-event-title" type="text" placeholder="np. Trening siłowy">
+
+        <label class="gc-label">Notatka (opcjonalnie)</label>
+        <textarea class="gc-textarea" id="f-event-notes" placeholder="Dodatkowe informacje"></textarea>
+
+        <div class="gc-toggle">
+          <button class="gc-toggle-btn active" id="toggle-event-once" onclick="switchEventFrequency('once')">Jednorazowe</button>
+          <button class="gc-toggle-btn" id="toggle-event-recurring" onclick="switchEventFrequency('recurring')">Cykliczne</button>
+        </div>
+
+        <div id="event-fields-once">
+          <label class="gc-label">Data</label>
+          <input class="gc-input" id="f-event-date" type="date">
+        </div>
+
+        <div id="event-fields-recurring" class="gc-hidden">
+          <label class="gc-label">Dni tygodnia</label>
+          <div class="gc-days-row" id="event-days-wrap"></div>
+        </div>
+
+        <label class="gc-label">Powiąż z celem (opcjonalnie)</label>
+        <select class="gc-select" id="f-event-goal">
+          <option value="">— nie dotyczy —</option>
+        </select>
+
+        <button class="gc-btn" id="event-submit-btn" onclick="createCalendarEvent()">Dodaj do kalendarza</button>
+      </div>
+
+      <div style="margin-top:40px;">
+        <div class="gc-label" style="margin-bottom:14px;">Cykliczne</div>
+        <div id="events-recurring-list"></div>
+      </div>
+
+      <div style="margin-top:32px;">
+        <div class="gc-label" style="margin-bottom:14px;">Nadchodzące</div>
+        <div id="events-upcoming-list"></div>
+      </div>
+
+      <details style="margin-top:32px;">
+        <summary class="gc-label" style="cursor:pointer; display:inline-block;">Anulowane</summary>
+        <div id="events-cancelled-list" style="margin-top:14px;"></div>
+      </details>
+    </div>
+
+    <!-- ─── Profil ─── -->
+    <div id="panel-profil" class="gc-hidden">
+      <div class="gc-title">Profil</div>
+
+      <div id="profile-error" class="gc-error gc-hidden"></div>
+      <div id="profile-ok" class="gc-ok gc-hidden"></div>
+
+      <div class="gc-section-block">
+        <div class="gc-label" style="margin-bottom:14px;">Dane podstawowe</div>
+
+        <label class="gc-label">Email</label>
+        <div id="profile-email-display" style="font-size:14px; margin-bottom:12px; color:var(--ink2);">—</div>
+
+        <label class="gc-label">Imię i nazwisko</label>
+        <input class="gc-input" id="f-profile-name" type="text" placeholder="np. Jan Kowalski">
+
+        <label class="gc-label">Rok urodzenia</label>
+        <input class="gc-input" id="f-profile-birth-year" type="number" min="1950" max="2020" step="1" placeholder="np. 2008">
+      </div>
+
+      <div class="gc-section-block">
+        <div class="gc-label" style="margin-bottom:14px;">Pozycja i poziom</div>
+
+        <label class="gc-label">Pozycja podstawowa</label>
+        <select class="gc-select" id="f-profile-pos-primary"></select>
+
+        <label class="gc-label">Pozycja dodatkowa (opcjonalnie)</label>
+        <select class="gc-select" id="f-profile-pos-secondary"></select>
+
+        <label class="gc-label">Obecny poziom gry</label>
+        <select class="gc-select" id="f-profile-level-current"></select>
+
+        <label class="gc-label">Najwyższy poziom, na jakim kiedykolwiek grałeś</label>
+        <select class="gc-select" id="f-profile-level-highest"></select>
+      </div>
+
+      <div class="gc-section-block">
+        <div class="gc-label" style="margin-bottom:14px;">Cel kierunkowy</div>
+
+        <label class="gc-label">Co jest dla Ciebie teraz najważniejsze?</label>
+        <select class="gc-select" id="f-profile-goal-direction" onchange="updateGoalDirectionNoteVisibility()"></select>
+
+        <div id="profile-goal-note-wrap" class="gc-hidden">
+          <label class="gc-label">Doprecyzowanie</label>
+          <textarea class="gc-textarea" id="f-profile-goal-note" placeholder="Opisz swój cel własnymi słowami"></textarea>
+        </div>
+      </div>
+
+      <div class="gc-section-block">
+        <div class="gc-label" style="margin-bottom:14px;">Dostęp do sprzętu</div>
+        <div id="profile-equipment-wrap"></div>
+      </div>
+
+      <div class="gc-section-block">
+        <div class="gc-checkbox-row">
+          <input type="checkbox" id="f-profile-injury-mode" onchange="updateInjuryModeCategoryVisibility()">
+          <label for="f-profile-injury-mode">Jestem teraz w trybie kontuzji (wykluczony z normalnego treningu)</label>
+        </div>
+        <div id="profile-injury-category-wrap" class="gc-hidden">
+          <label class="gc-label">Której części ciała to dotyczy?</label>
+          <select class="gc-select" id="f-profile-injury-category"></select>
+        </div>
+      </div>
+
+      <button class="gc-btn" id="profile-submit-btn" onclick="saveProfile()">Zapisz profil</button>
+
+      <div style="margin-top:48px;">
+        <div class="gc-label" style="margin-bottom:14px;">Dodaj wpis do historii kontuzji</div>
+        <div class="gc-section-block">
+          <label class="gc-label">Rodzaj kontuzji</label>
+          <input class="gc-input" id="f-injury-type" type="text" placeholder="np. skręcenie kostki">
+
+          <label class="gc-label">Lokalizacja</label>
+          <select class="gc-select" id="f-injury-location" onchange="updateInjurySideVisibility()"></select>
+
+          <div id="injury-side-wrap">
+            <label class="gc-label">Strona</label>
+            <select class="gc-select" id="f-injury-side">
+              <option value="">—</option>
+              <option value="left">Lewa</option>
+              <option value="right">Prawa</option>
+            </select>
+          </div>
+
+          <label class="gc-label">Od kiedy (opcjonalnie)</label>
+          <input class="gc-input" id="f-injury-from" type="date">
+
+          <label class="gc-label">Do kiedy (opcjonalnie, jeśli już zagojona)</label>
+          <input class="gc-input" id="f-injury-to" type="date">
+
+          <div class="gc-checkbox-row">
+            <input type="checkbox" id="f-injury-healed" checked>
+            <label for="f-injury-healed">Już w pełni zagojona</label>
+          </div>
+
+          <button class="gc-btn" id="injury-submit-btn" onclick="addInjuryHistory()">Dodaj do historii</button>
+        </div>
+      </div>
+
+      <div style="margin-top:24px;">
+        <div class="gc-label" style="margin-bottom:14px;">Historia kontuzji</div>
+        <div id="injury-history-list"></div>
+      </div>
+    </div>
+
+    <!-- ─── Diagnoza ─── -->
+    <div id="panel-diagnoza" class="gc-hidden">
+      <div class="gc-title">Diagnoza</div>
+
+      <div id="diagnoza-loading" class="gc-empty">Sprawdzam status...</div>
+
+      <div id="diagnoza-done-wrap" class="gc-hidden">
+        <div class="gc-section-block">
+          <div class="gc-label" style="margin-bottom:14px;">Ostatnia diagnoza</div>
+          <div id="diagnoza-done-detail" style="font-size:15px; margin-bottom:16px;"></div>
+          <a class="gc-btn" id="diagnoza-redo-link" href="https://gamechange-diagnoza.vercel.app" target="_blank" rel="noopener" style="display:block; text-align:center; text-decoration:none; box-sizing:border-box;">Zrób nową diagnozę</a>
+        </div>
+      </div>
+
+      <div id="diagnoza-missing-wrap" class="gc-hidden">
+        <div class="gc-section-block">
+          <div style="font-size:15px; margin-bottom:12px;">Nie masz jeszcze wykonanej diagnozy powiązanej z tym kontem.</div>
+          <div style="font-size:13px; color:var(--ink2); margin-bottom:20px;">
+            Diagnoza to osobna, krótka ankieta oceniająca Twoją formę we wszystkich 13 obszarach — to podstawa pod resztę systemu (cele, rekomendacje). Jeśli robiłeś już wcześniej diagnozę bez logowania na inny email, na razie nie łączymy jej automatycznie z kontem — możesz spokojnie zrobić nową.
+          </div>
+          <a class="gc-btn" id="diagnoza-start-link" href="https://gamechange-diagnoza.vercel.app" target="_blank" rel="noopener" style="display:block; text-align:center; text-decoration:none; box-sizing:border-box;">Wykonaj diagnozę</a>
+        </div>
+      </div>
+
+      <div id="diagnoza-error" class="gc-error gc-hidden"></div>
+    </div>
+
+    <!-- ─── Kontekst meczowy + Tryb kontuzji ─── -->
+    <div id="panel-mecz" class="gc-hidden">
+      <div class="gc-title">Mecz</div>
+
+      <div id="mecz-error" class="gc-error gc-hidden"></div>
+      <div id="mecz-ok" class="gc-ok gc-hidden"></div>
+
+      <!-- Widoczne tylko gdy player_profiles.injury_mode_active = true -->
+      <div id="injury-routing-wrap" class="gc-hidden" style="margin-bottom:28px;">
+        <div class="gc-section-block" style="border-left:3px solid var(--accent);">
+          <div class="gc-label" style="margin-bottom:14px;">Tryb kontuzji — co jest teraz dostępne</div>
+          <div id="injury-routing-category" style="font-size:14px; margin-bottom:14px;"></div>
+          <div id="injury-routing-list"></div>
+          <div style="font-size:12px; color:var(--muted); margin-top:14px;">Zmień lub wyłącz tryb kontuzji w Profilu.</div>
+        </div>
+      </div>
+
+      <div class="gc-section-block">
+        <div class="gc-label" style="margin-bottom:14px;">Zapisz mecz</div>
+
+        <label class="gc-label">Rodzaj</label>
+        <select class="gc-select" id="f-mecz-game-type">
+          <option value="official_match">Mecz oficjalny</option>
+          <option value="friendly">Sparing</option>
+          <option value="training_game">Gierka treningowa</option>
+          <option value="tournament">Turniej</option>
+        </select>
+
+        <div style="display:flex; gap:12px;">
+          <div style="flex:1;">
+            <label class="gc-label">Twój zespół — gole</label>
+            <input class="gc-input" id="f-mecz-own-score" type="number" min="0" step="1" placeholder="np. 2">
+          </div>
+          <div style="flex:1;">
+            <label class="gc-label">Przeciwnik — gole</label>
+            <input class="gc-input" id="f-mecz-opponent-score" type="number" min="0" step="1" placeholder="np. 1">
+          </div>
+        </div>
+
+        <label class="gc-label">Twoja rola (opcjonalnie)</label>
+        <input class="gc-input" id="f-mecz-role" type="text" placeholder="np. w podstawowym składzie">
+
+        <label class="gc-label">Minuty na boisku</label>
+        <input class="gc-input" id="f-mecz-minutes" type="number" min="0" max="130" step="1" placeholder="np. 90">
+
+        <label class="gc-label">RPE meczowe (0 = brak wysiłku, 10 = maksymalny)</label>
+        <div class="gc-scale-wrap" id="scale-match_rpe"></div>
+
+        <button class="gc-btn" id="mecz-submit-btn" onclick="submitMatchContext()">Zapisz mecz</button>
+      </div>
+
+      <div style="margin-top:40px;">
+        <div class="gc-label" style="margin-bottom:14px;">Historia meczów</div>
+        <div id="mecz-history-list"></div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+// ══════════════════════════════════════
+//  KONFIGURACJA — ten sam projekt Supabase co index.html/specialist_panel.html
+// ══════════════════════════════════════
+const SUPABASE_URL = 'https://kqrbztsvepjtggjmmcdx.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_EoYRIZpDhUSdNSJDXWl4Ew_SG8aJABP';
+
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+let currentUser = null;
+
+// POPRAWKA (pełny audyt całości): loadEvents()/populateCalendarLinkSelect()
+// używały `new Date().toISOString().slice(0,10)` żeby dostać "dzisiejszą"
+// datę — toISOString() zawsze liczy w UTC, nie w czasie lokalnym. Dla
+// zawodnika w Polsce (UTC+1/UTC+2) to daje błędny dzień w oknie
+// ok. 22:00–24:00 czasu lokalnego (już następny dzień UTC) i ok. 00:00–
+// 01:00/02:00 (jeszcze poprzedni dzień UTC) — konkretny skutek: wydarzenie
+// zaplanowane na "dziś" mogło nie pojawić się w selektorze powiązania w
+// Dzienniku, albo "Wykonano/Nie wykonano" mogło ocenić złe wydarzenie jako
+// dzisiejsze. Naprawa: pomocnicza funkcja licząca datę z lokalnych
+// getFullYear/getMonth/getDate, używana wszędzie tam gdzie liczy się
+// "dzisiejsza data zawodnika", nie serwera/UTC.
+function toLocalDateStr(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+// Lokalizacje bólu — zamknięta lista z public.body_locations (Domena 00).
+// Etykiety PL to tylko tekst wyświetlania, id musi się zgadzać z bazą.
+const BODY_LOCATIONS = [
+  ['kostka', 'Kostka'],
+  ['kolano', 'Kolano'],
+  ['udo_przednie', 'Udo przednie'],
+  ['udo_tylne', 'Udo tylne'],
+  ['lydka', 'Łydka'],
+  ['pachwina', 'Pachwina'],
+  ['biodro', 'Biodro'],
+  ['stopa', 'Stopa'],
+  ['achilles', 'Ścięgno Achillesa'],
+  ['plecy_kregoslup', 'Plecy / kręgosłup'],
+  ['brzuch_tulow', 'Brzuch / tułów'],
+  ['bark', 'Bark'],
+  ['lokiec', 'Łokieć'],
+  ['nadgarstek_dlon', 'Nadgarstek / dłoń'],
+  ['glowa_twarz', 'Głowa / twarz'],
+  ['klatka_piersiowa_zebra', 'Klatka piersiowa / żebra'],
+  ['inne', 'Inne'],
+];
+// Lokalizacje bez selektora strony — te same trzy co w komentarzu przy
+// pain_entries.side w Domenie 03 (nie każda lokalizacja jest lateralizowana).
+const NON_LATERAL_LOCATIONS = new Set(['plecy_kregoslup', 'brzuch_tulow', 'inne']);
+
+const SESSION_TYPE_LABELS = {
+  club_training: 'Trening klubowy', own_training: 'Trening własny',
+  micro_session: 'Mikro-sesja', match: 'Mecz', other: 'Inne',
+};
+const BODY_LOCATION_LABELS = Object.fromEntries(BODY_LOCATIONS);
+
+// Profil (Domena 01) — dokładnie te same listy wartości co CHECK/FK
+// w asystent_sportowca_01_tozsamosc_profil.sql, zweryfikowane w pliku SQL,
+// nie odtworzone z pamięci.
+const POSITIONS = [
+  'Bramkarz', 'Środkowy obrońca', 'Boczny obrońca', 'Defensywny pomocnik',
+  'Środkowy pomocnik', 'Ofensywny pomocnik', 'Skrzydłowy', 'Napastnik', 'Nie dotyczy',
+];
+const CURRENT_LEVELS = [
+  'Amator / rekreacyjnie', 'Juniorski klub', 'Seniorski klub amatorski',
+  'Półprofesjonalny', 'Profesjonalny',
+];
+const GOAL_DIRECTION_LABELS = {
+  more_minutes: 'Więcej minut w meczach',
+  move_up: 'Awans na wyższy poziom',
+  improve_element: 'Poprawa konkretnego elementu gry',
+  avoid_relegation_from_team: 'Utrzymanie miejsca w składzie',
+  other: 'Inne',
+};
+const EQUIPMENT_LABELS = {
+  silownia: 'Siłownia',
+  biezna: 'Bieżnia',
+  gumy_oporowe: 'Gumy oporowe',
+  boisko: 'Dostęp do boiska',
+  brak_dostepu: 'Brak dostępu do sprzętu',
+};
+const INJURY_MODE_CATEGORY_LABELS = {
+  lower_body: 'Dolna część ciała',
+  upper_body: 'Górna część ciała',
+  general: 'Ogólne / całe ciało',
+};
+
+// Segmenty pogrupowane wg filaru — kolejność, id i przypisanie do filaru
+// 1:1 z insertem w Domenie 00 (asystent_sportowca_00_segmenty.sql).
+// Etykiety PL zweryfikowane w index.html (POSITION_PROFILES.ai /
+// DEPENDENCY_CASCADES), nie zgadywane z pamięci.
+const SEGMENTS_BY_PILLAR = [
+  ['Filar 1 — Dominacja fizyczna', [
+    ['moc', 'Moc'],
+    ['wytrzymalosc', 'Wytrzymałość'],
+    ['fizycznosc', 'Fizyczność'],
+  ]],
+  ['Filar 2 — Efektywność techniczna', [
+    ['techFund', 'Technika Fundamentalna'],
+    ['techSpec', 'Technika Specjalistyczna'],
+  ]],
+  ['Filar 3 — Trwałość organizmu', [
+    ['tolerancja', 'Tolerancja (Obciążeń)'],
+    ['regeneracja', 'Regeneracja'],
+    ['odpornosc', 'Odporność'],
+    ['odzywianie', 'Odżywienie'],
+  ]],
+  ['Filar 4 — Mentalność', [
+    ['koncentracja', 'Koncentracja'],
+    ['mental', 'Stan Mentalny'],
+  ]],
+  ['Filar 5 — Boiskowa mądrość', [
+    ['percepcja', 'Percepcja'],
+    ['decyzja', 'Szybkość Decyzji'],
+  ]],
+];
+const SEG_LABELS = Object.fromEntries(SEGMENTS_BY_PILLAR.flatMap(([, segs]) => segs));
+const SEG_PILLAR = Object.fromEntries(SEGMENTS_BY_PILLAR.flatMap(([pillar, segs]) => segs.map(([id]) => [id, pillar])));
+
+let currentEntryType = 'morning';
+const scaleValues = {}; // np. { sleep_quality: 7, rpe: 8 }
+let goalsCache = [];
+let injuryHistoryCache = [];
+
+// Kalendarz (Domena 07) — event_type to CO za aktywność, osobny wymiar
+// od session_type w Dzienniku (tam jest jeszcze 'match'/'other', tu nie —
+// dwie różne, celowo nietożsame listy, zgodnie z rozdzieleniem w SQL).
+const EVENT_TYPE_LABELS = {
+  club_training: 'Trening klubowy', own_training: 'Trening własny',
+  micro_session: 'Mikro-sesja', task: 'Zadanie',
+};
+const DAYS_OF_WEEK = [['MON', 'Pon'], ['TUE', 'Wt'], ['WED', 'Śr'], ['THU', 'Czw'], ['FRI', 'Pt'], ['SAT', 'Sob'], ['SUN', 'Nd']];
+const DAY_LABELS_PL = Object.fromEntries(DAYS_OF_WEEK.map(([code, label]) => [code, label.toLowerCase()]));
+let currentEventFrequency = 'once';
+let eventsCache = [];
+
+// Centrum Decyzji (Domena 06) — treść rekomendacji generuje wyłącznie
+// backend (AI, patrz architektura_techniczna.md), frontend tylko czyta
+// i zbiera feedback. Stąd brak tu żadnej logiki "co doradzić" — to
+// świadomie puste, dopóki silnik generujący nie jest wdrożony.
+const FEEDBACK_LABELS = {
+  done: 'Wykonałem', not_done: 'Nie wykonałem', did_not_make_sense: 'Nie miało to sensu',
+  // POPRAWKA (pełny audyt całości): brakujące etykiety dla feedbacku typu
+  // 'position_fit_signal' (Domena 13) — inny zestaw dozwolonych wartości
+  // niż training_focus/specialist_referral (patrz chk_feedback_response_
+  // matches_type w asystent_sportowca_13_profile_pozycyjne.sql).
+  open_to_discussing: 'Chętnie porozmawiam', not_interested: 'Nie jestem zainteresowany',
+};
+const REFERRAL_REASON_LABELS = {
+  pain_pattern_match: 'Wzorzec bólu', feedback_escalation: 'Powtarzające się odrzucenia', other: 'Inne',
+};
+
+// ══════════════════════════════════════
+//  AUTH
+// ══════════════════════════════════════
+async function initApp() {
+  populatePainLocationSelect();
+  populateGoalSegmentSelect();
+  populateEventDaysCheckboxes();
+  renderScalePicker('scale-sleep_quality', 'sleep_quality');
+  renderScalePicker('scale-morning_fatigue', 'morning_fatigue');
+  renderScalePicker('scale-mood_motivation', 'mood_motivation');
+  renderScalePicker('scale-rpe', 'rpe');
+  renderScalePicker('scale-post_fatigue', 'post_fatigue');
+  renderScalePicker('scale-pain_intensity', 'pain_intensity');
+  renderScalePicker('scale-match_rpe', 'match_rpe');
+
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (session && session.user) await handleSignedIn(session);
+
+  supabaseClient.auth.onAuthStateChange(async (event, session) => {
+    if (event === 'SIGNED_IN' && session && session.user) {
+      await handleSignedIn(session);
+    } else if (event === 'SIGNED_OUT') {
+      currentUser = null;
+      document.getElementById('view-app').classList.add('gc-hidden');
+      document.getElementById('view-login').classList.remove('gc-hidden');
+      document.getElementById('logout-link').classList.add('gc-hidden');
+    }
+  });
+}
+
+async function handleSignedIn(session) {
+  currentUser = { id: session.user.id, email: session.user.email, accessToken: session.access_token };
+
+  // public.users powstaje automatycznie triggerem on_auth_user_created
+  // (Domena 01) w tej samej transakcji co wiersz auth.users — w normalnych
+  // warunkach jest już gotowy. Krótki retry na wszelki wypadek (np. dziwny
+  // porządek zdarzeń przy pierwszym logowaniu), zamiast twardo zakładać.
+  let profileReady = false;
+  for (let i = 0; i < 5 && !profileReady; i++) {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/users?id=eq.${currentUser.id}&select=id`, {
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${currentUser.accessToken}` }
+    });
+    const rows = await res.json();
+    if (Array.isArray(rows) && rows.length > 0) { profileReady = true; break; }
+    await new Promise(r => setTimeout(r, 400));
+  }
+
+  document.getElementById('view-login').classList.add('gc-hidden');
+  document.getElementById('view-app').classList.remove('gc-hidden');
+  document.getElementById('logout-link').classList.remove('gc-hidden');
+
+  if (!profileReady) {
+    document.getElementById('entry-error').textContent =
+      'Profil konta jeszcze się nie utworzył — odśwież stronę za chwilę. Jeśli to się powtarza, sprawdź czy trigger on_auth_user_created (Domena 01) jest wdrożony w Supabase.';
+    document.getElementById('entry-error').classList.remove('gc-hidden');
+  }
+
+  await loadHistory();
+  await populateCalendarLinkSelect();
+}
+
+async function handleSendMagicLink() {
+  const email = document.getElementById('login-email').value.trim();
+  const btn = document.getElementById('login-btn');
+  const errEl = document.getElementById('login-error');
+  errEl.classList.add('gc-hidden');
+
+  if (!email || !email.includes('@')) {
+    errEl.textContent = 'Podaj prawidłowy adres email.';
+    errEl.classList.remove('gc-hidden');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Wysyłam...';
+  const { error } = await supabaseClient.auth.signInWithOtp({
+    email, options: { emailRedirectTo: window.location.href }
+  });
+  btn.disabled = false;
+  btn.textContent = 'Wyślij link do logowania';
+
+  if (error) {
+    errEl.textContent = 'Nie udało się wysłać linku: ' + error.message;
+    errEl.classList.remove('gc-hidden');
+  } else {
+    document.getElementById('login-sent').classList.remove('gc-hidden');
+  }
+}
+
+function handleLogout() {
+  supabaseClient.auth.signOut();
+}
+
+// ══════════════════════════════════════
+//  NAWIGACJA MIĘDZY PANELAMI
+// ══════════════════════════════════════
+const PANELS = ['dziennik', 'cele', 'centrum', 'kalendarz', 'profil', 'diagnoza', 'mecz'];
+function switchPanel(name) {
+  PANELS.forEach(p => {
+    document.getElementById('nav-' + p).classList.toggle('active', p === name);
+    document.getElementById('panel-' + p).classList.toggle('gc-hidden', p !== name);
+  });
+  if (name === 'cele') loadGoals();
+  if (name === 'kalendarz') loadEvents();
+  if (name === 'centrum') loadRecommendations();
+  if (name === 'profil') loadProfile();
+  if (name === 'diagnoza') loadDiagnoza();
+  if (name === 'mecz') loadMecz();
+}
+
+// ══════════════════════════════════════
+//  0-10 SCALE PICKER (współdzielony przez sleep_quality/morning_fatigue/
+//  rpe/post_fatigue/pain_intensity — ta sama skala 0-10 co match_rpe
+//  w Domenie 04, zgodnie z CHECK dodanym w Domenie 03 przy audycie
+//  punktu kontrolnego Domeny 15)
+// ══════════════════════════════════════
+function renderScalePicker(containerId, fieldName) {
+  const el = document.getElementById(containerId);
+  let html = '<div class="gc-scale-btns">';
+  for (let v = 0; v <= 10; v++) {
+    html += `<button type="button" class="gc-scale-btn" data-field="${fieldName}" data-val="${v}" onclick="pickScale('${fieldName}',${v},this)">${v}</button>`;
+  }
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+function pickScale(fieldName, val, btn) {
+  scaleValues[fieldName] = val;
+  btn.parentElement.querySelectorAll('.gc-scale-btn').forEach(b => b.classList.remove('sel'));
+  btn.classList.add('sel');
+}
+
+// ══════════════════════════════════════
+//  FORMULARZ — przełączanie typu wpisu
+// ══════════════════════════════════════
+function switchEntryType(type) {
+  currentEntryType = type;
+  document.getElementById('toggle-morning').classList.toggle('active', type === 'morning');
+  document.getElementById('toggle-post_training').classList.toggle('active', type === 'post_training');
+  document.getElementById('fields-morning').classList.toggle('gc-hidden', type !== 'morning');
+  document.getElementById('fields-post_training').classList.toggle('gc-hidden', type !== 'post_training');
+}
+
+function togglePainFields() {
+  const checked = document.getElementById('f-has-pain').checked;
+  document.getElementById('pain-fields').classList.toggle('gc-hidden', !checked);
+}
+
+function populatePainLocationSelect() {
+  const sel = document.getElementById('f-pain-location');
+  sel.innerHTML = BODY_LOCATIONS.map(([id, label]) => `<option value="${id}">${label}</option>`).join('');
+  updateSideVisibility();
+}
+
+function updateSideVisibility() {
+  const loc = document.getElementById('f-pain-location').value;
+  document.getElementById('pain-side-wrap').classList.toggle('gc-hidden', NON_LATERAL_LOCATIONS.has(loc));
+}
+
+// ══════════════════════════════════════
+//  ZAPIS WPISU
+// ══════════════════════════════════════
+async function submitDailyLog() {
+  const errEl = document.getElementById('entry-error');
+  const okEl = document.getElementById('entry-ok');
+  errEl.classList.add('gc-hidden');
+  okEl.classList.add('gc-hidden');
+
+  const payload = {};
+  let sessionType = null;
+
+  if (currentEntryType === 'morning') {
+    const sleepHours = document.getElementById('f-sleep-hours').value;
+    if (sleepHours !== '') payload.sleep_hours = Number(sleepHours);
+    if (scaleValues.sleep_quality !== undefined) payload.sleep_quality = scaleValues.sleep_quality;
+    if (scaleValues.morning_fatigue !== undefined) payload.morning_fatigue = scaleValues.morning_fatigue;
+    if (scaleValues.mood_motivation !== undefined) payload.mood_motivation = scaleValues.mood_motivation;
+    const note = document.getElementById('f-free-note').value.trim();
+    if (note) payload.free_note = note;
+  } else {
+    sessionType = document.getElementById('f-session-type').value;
+    const duration = document.getElementById('f-duration').value;
+    if (duration !== '') payload.duration_minutes = Number(duration);
+    if (scaleValues.rpe !== undefined) payload.rpe = scaleValues.rpe;
+    if (scaleValues.post_fatigue !== undefined) payload.post_fatigue = scaleValues.post_fatigue;
+  }
+
+  const hasPain = document.getElementById('f-has-pain').checked;
+  if (hasPain && scaleValues.pain_intensity === undefined) {
+    errEl.textContent = 'Zaznacz intensywność bólu.';
+    errEl.classList.remove('gc-hidden');
+    return;
+  }
+
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Zapisuję...';
+
+  try {
+    const body = {
+      user_id: currentUser.id,
+      entry_type: currentEntryType,
+      session_type: sessionType,
+      payload,
+    };
+    if (currentEntryType === 'post_training') {
+      const calendarEventId = document.getElementById('f-calendar-link').value;
+      // Domyka most z Domeny 07: "wykonano" dla wydarzeń jednorazowych jest
+      // liczone przez istnienie wpisu w daily_logs wskazującego na to
+      // wydarzenie — to jest właśnie to powiązanie, ustawiane opcjonalnie.
+      if (calendarEventId) body.calendar_event_id = Number(calendarEventId);
+    }
+
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/daily_logs`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${currentUser.accessToken}`,
+        Prefer: 'return=representation',
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(errText);
+    }
+    const inserted = await res.json();
+    const dailyLogId = inserted && inserted[0] && inserted[0].id;
+
+    if (hasPain && dailyLogId) {
+      const painLocation = document.getElementById('f-pain-location').value;
+      const painSide = NON_LATERAL_LOCATIONS.has(painLocation) ? null : (document.getElementById('f-pain-side').value || null);
+      const painBody = {
+        daily_log_id: dailyLogId,
+        user_id: currentUser.id,
+        body_location: painLocation,
+        side: painSide,
+        intensity: scaleValues.pain_intensity,
+        excludes_from_training: document.getElementById('f-pain-excludes').checked,
+      };
+      const painRes = await fetch(`${SUPABASE_URL}/rest/v1/pain_entries`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${currentUser.accessToken}`,
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify(painBody),
+      });
+      if (!painRes.ok) {
+        const errText = await painRes.text();
+        throw new Error('Wpis zapisany, ale wpis bólowy się nie udał: ' + errText);
+      }
+    }
+
+    okEl.textContent = 'Zapisano.';
+    okEl.classList.remove('gc-hidden');
+    resetForm();
+    await loadHistory();
+  } catch (e) {
+    errEl.textContent = 'Nie udało się zapisać: ' + e.message;
+    errEl.classList.remove('gc-hidden');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Zapisz wpis';
+  }
+}
+
+function resetForm() {
+  document.getElementById('f-sleep-hours').value = '';
+  document.getElementById('f-free-note').value = '';
+  document.getElementById('f-duration').value = '';
+  document.getElementById('f-calendar-link').value = '';
+  document.getElementById('f-has-pain').checked = false;
+  document.getElementById('f-pain-excludes').checked = false;
+  document.getElementById('pain-fields').classList.add('gc-hidden');
+  document.querySelectorAll('.gc-scale-btn.sel').forEach(b => b.classList.remove('sel'));
+  Object.keys(scaleValues).forEach(k => delete scaleValues[k]);
+}
+
+// ══════════════════════════════════════
+//  HISTORIA
+// ══════════════════════════════════════
+async function loadHistory() {
+  const list = document.getElementById('history-list');
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/daily_logs?user_id=eq.${currentUser.id}&order=created_at.desc&limit=20&select=*,pain_entries(*)`,
+      { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${currentUser.accessToken}` } }
+    );
+    const rows = await res.json();
+    if (!Array.isArray(rows) || rows.length === 0) {
+      list.innerHTML = '<div class="gc-empty">Brak wpisów — dodaj pierwszy powyżej.</div>';
+      return;
+    }
+    list.innerHTML = rows.map(renderHistoryCard).join('');
+  } catch (e) {
+    list.innerHTML = '<div class="gc-empty">Nie udało się wczytać historii.</div>';
+  }
+}
+
+function renderHistoryCard(row) {
+  const dateLabel = new Date(row.created_at).toLocaleString('pl-PL', {
+    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
+  });
+  const typeLabel = row.entry_type === 'morning' ? 'Poranny' : 'Potreningowy';
+  const p = row.payload || {};
+
+  let detail = '';
+  if (row.entry_type === 'morning') {
+    const parts = [];
+    if (p.sleep_hours !== undefined) parts.push(`sen: ${p.sleep_hours}h`);
+    if (p.sleep_quality !== undefined) parts.push(`jakość snu: ${p.sleep_quality}/10`);
+    if (p.morning_fatigue !== undefined) parts.push(`zmęczenie: ${p.morning_fatigue}/10`);
+    if (p.mood_motivation !== undefined) parts.push(`nastrój: ${p.mood_motivation}/10`);
+    detail = parts.join(' · ') || '—';
+  } else {
+    const parts = [];
+    if (row.session_type) parts.push(SESSION_TYPE_LABELS[row.session_type] || row.session_type);
+    if (p.duration_minutes !== undefined) parts.push(`${p.duration_minutes} min`);
+    if (p.rpe !== undefined) parts.push(`RPE: ${p.rpe}/10`);
+    if (p.post_fatigue !== undefined) parts.push(`zmęczenie: ${p.post_fatigue}/10`);
+    detail = parts.join(' · ') || '—';
+  }
+
+  const pains = row.pain_entries || [];
+  const painTags = pains.map(pe => {
+    const loc = BODY_LOCATION_LABELS[pe.body_location] || pe.body_location;
+    const side = pe.side === 'left' ? ' (L)' : pe.side === 'right' ? ' (P)' : '';
+    return `<span class="gc-pain-tag">${loc}${side} — ${pe.intensity}/10${pe.excludes_from_training ? ' · wyklucza z treningu' : ''}</span>`;
+  }).join(' ');
+
+  return `
+    <div class="gc-history-card">
+      <div class="gc-history-top">
+        <span class="gc-history-type">${typeLabel}</span>
+        <span class="gc-history-date">${dateLabel}</span>
+      </div>
+      <div class="gc-history-detail">${detail}</div>
+      ${painTags}
+    </div>
+  `;
+}
+
+// ══════════════════════════════════════
+//  CELE (Domena 05)
+// ══════════════════════════════════════
+function populateGoalSegmentSelect() {
+  const sel = document.getElementById('f-goal-segment');
+  sel.innerHTML = SEGMENTS_BY_PILLAR.map(([pillar, segs]) =>
+    `<optgroup label="${pillar}">${segs.map(([id, label]) => `<option value="${id}">${label}</option>`).join('')}</optgroup>`
+  ).join('');
+}
+
+async function loadGoals() {
+  const activeList = document.getElementById('goals-active-list');
+  const historyList = document.getElementById('goals-history-list');
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/goals?user_id=eq.${currentUser.id}&order=is_priority.desc,created_at.desc&select=*`,
+      { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${currentUser.accessToken}` } }
+    );
+    const rows = await res.json();
+    goalsCache = Array.isArray(rows) ? rows : [];
+  } catch (e) {
+    activeList.innerHTML = '<div class="gc-empty">Nie udało się wczytać celów.</div>';
+    historyList.innerHTML = '';
+    return;
+  }
+
+  const active = goalsCache.filter(g => g.status === 'active');
+  const history = goalsCache.filter(g => g.status !== 'active');
+
+  activeList.innerHTML = active.length
+    ? active.map(renderGoalCard).join('')
+    : '<div class="gc-empty">Brak aktywnych celów — dodaj pierwszy powyżej.</div>';
+  historyList.innerHTML = history.length
+    ? history.map(renderGoalCard).join('')
+    : '<div class="gc-empty">Brak zakończonych celów.</div>';
+}
+
+function renderGoalCard(g) {
+  const label = SEG_LABELS[g.segment_id] || g.segment_id;
+  const pillar = SEG_PILLAR[g.segment_id] || '';
+
+  const badges = [];
+  if (g.is_priority && g.status === 'active') badges.push('<span class="gc-badge-priority">Priorytet</span>');
+  if (g.status === 'completed') badges.push('<span class="gc-badge-status completed">Ukończony</span>');
+  if (g.status === 'abandoned') badges.push('<span class="gc-badge-status abandoned">Porzucony</span>');
+
+  const meta = [];
+  if (g.horizon_weeks) meta.push(`horyzont: ${g.horizon_weeks} tyg.`);
+  meta.push('dodano: ' + new Date(g.created_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }));
+  if (g.ended_at) meta.push('zakończono: ' + new Date(g.ended_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }));
+
+  let actions = '';
+  if (g.status === 'active') {
+    actions = `
+      <div class="gc-goal-actions">
+        <button class="gc-btn-secondary${g.is_priority ? ' sel' : ''}" onclick="togglePriority(${g.id}, ${!g.is_priority})">${g.is_priority ? 'Zdejmij priorytet' : 'Ustaw priorytet'}</button>
+        <button class="gc-btn-secondary" onclick="endGoal(${g.id}, 'completed')">Ukończony</button>
+        <button class="gc-btn-secondary" onclick="endGoal(${g.id}, 'abandoned')">Porzuć</button>
+      </div>`;
+  }
+
+  return `
+    <div class="gc-goal-card">
+      <div class="gc-goal-top"><span class="gc-goal-segment">${label}</span>${badges.join('')}</div>
+      <div class="gc-goal-pillar">${pillar}</div>
+      ${g.refinement_note ? `<div class="gc-goal-note">${g.refinement_note}</div>` : ''}
+      <div class="gc-goal-meta">${meta.join(' · ')}</div>
+      ${actions}
+    </div>
+  `;
+}
+
+async function patchGoal(id, fields) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/goals?id=eq.${id}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${currentUser.accessToken}`,
+      Prefer: 'return=minimal',
+    },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(errText);
+  }
+}
+
+async function createGoal() {
+  const errEl = document.getElementById('goal-error');
+  const okEl = document.getElementById('goal-ok');
+  errEl.classList.add('gc-hidden');
+  okEl.classList.add('gc-hidden');
+
+  const segmentId = document.getElementById('f-goal-segment').value;
+  const note = document.getElementById('f-goal-note').value.trim();
+  const horizonRaw = document.getElementById('f-goal-horizon').value;
+  const isPriority = document.getElementById('f-goal-priority').checked;
+
+  const btn = document.getElementById('goal-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Zapisuję...';
+
+  // POPRAWKA (pełny audyt całości): zdjęcie priorytetu z poprzedniego celu
+  // i utworzenie nowego to dwa OSOBNE zapytania HTTP, nie jedna transakcja
+  // — jeśli drugie (INSERT) zawiedzie PO tym jak pierwsze (PATCH) się
+  // powiodło (np. przez zwykły błąd sieci, albo konflikt idx_goals_one_
+  // active_per_segment obsłużony niżej), zawodnik zostawał BEZ żadnego celu
+  // priorytetowego — cichy skutek uboczny nieudanej próby dodania nowego
+  // celu. `prevPriority` zapamiętane tutaj, żeby catch niżej mógł spróbować
+  // przywrócić poprzedni stan.
+  let prevPriority = null;
+  try {
+    // Dokładnie jeden aktywny cel priorytetowy na zawodnika
+    // (idx_goals_one_priority_per_user, Domena 05) — jeśli zawodnik
+    // zaznacza nowy priorytet, najpierw zdejmujemy priorytet z ewentualnego
+    // poprzedniego, żeby INSERT nie wpadł w konflikt indeksu unikalnego.
+    if (isPriority) {
+      prevPriority = goalsCache.find(g => g.is_priority && g.status === 'active') || null;
+      if (prevPriority) await patchGoal(prevPriority.id, { is_priority: false, priority_changed_at: new Date().toISOString() });
+    }
+
+    const body = {
+      user_id: currentUser.id,
+      segment_id: segmentId,
+      origin: 'player_chosen',
+      is_priority: isPriority,
+    };
+    if (note) body.refinement_note = note;
+    if (horizonRaw !== '') {
+      body.horizon_weeks = Number(horizonRaw);
+      // POPRAWKA (pełny audyt całości): ten sam problem UTC-vs-lokalny co
+      // przy loadEvents()/populateCalendarLinkSelect() — patrz toLocalDateStr.
+      body.horizon_started_at = toLocalDateStr(new Date());
+    }
+    if (isPriority) body.priority_changed_at = new Date().toISOString();
+
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/goals`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${currentUser.accessToken}`,
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      // idx_goals_one_active_per_segment (Domena 05) — jeden aktywny cel
+      // per segment, PostgREST zwraca 409 przy konflikcie unique index.
+      if (res.status === 409 || errText.includes('idx_goals_one_active_per_segment')) {
+        throw new Error('Masz już aktywny cel w tym segmencie — najpierw go zakończ (ukończony/porzucony), zanim dodasz nowy.');
+      }
+      throw new Error(errText);
+    }
+
+    okEl.textContent = 'Cel dodany.';
+    okEl.classList.remove('gc-hidden');
+    document.getElementById('f-goal-note').value = '';
+    document.getElementById('f-goal-horizon').value = '';
+    document.getElementById('f-goal-priority').checked = false;
+    await loadGoals();
+  } catch (e) {
+    let message = 'Nie udało się dodać celu: ' + e.message;
+    // Rollback: jeśli zdjęliśmy priorytet z poprzedniego celu, ale nowy cel
+    // ostatecznie nie powstał, spróbuj przywrócić poprzedni stan zamiast
+    // zostawiać zawodnika bez żadnego priorytetu.
+    if (prevPriority) {
+      try {
+        await patchGoal(prevPriority.id, { is_priority: true, priority_changed_at: new Date().toISOString() });
+      } catch (rollbackErr) {
+        message += ' Dodatkowo nie udało się przywrócić poprzedniego priorytetu — sprawdź zakładkę Cele.';
+      }
+    }
+    errEl.textContent = message;
+    errEl.classList.remove('gc-hidden');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Dodaj cel';
+  }
+}
+
+async function togglePriority(goalId, makePriority) {
+  const errEl = document.getElementById('goal-error');
+  errEl.classList.add('gc-hidden');
+  // POPRAWKA (pełny audyt całości): ten sam typ luki co w createGoal() —
+  // zdjęcie priorytetu ze starego celu i nadanie go nowemu to dwa osobne
+  // zapytania. Jeśli drugie zawiedzie (np. network blip) PO tym jak
+  // pierwsze się powiodło, zawodnik zostaje bez żadnego priorytetowego
+  // celu, z samym ogólnym komunikatem błędu — bez rollbacku, ten stan był
+  // trwały aż do ręcznej naprawy. `prevPriority` zapamiętane dla catch.
+  let prevPriority = null;
+  try {
+    if (makePriority) {
+      prevPriority = goalsCache.find(g => g.is_priority && g.status === 'active' && g.id !== goalId) || null;
+      if (prevPriority) await patchGoal(prevPriority.id, { is_priority: false, priority_changed_at: new Date().toISOString() });
+    }
+    await patchGoal(goalId, { is_priority: makePriority, priority_changed_at: new Date().toISOString() });
+    await loadGoals();
+  } catch (e) {
+    let message = 'Nie udało się zmienić priorytetu: ' + e.message;
+    if (prevPriority) {
+      try {
+        await patchGoal(prevPriority.id, { is_priority: true, priority_changed_at: new Date().toISOString() });
+      } catch (rollbackErr) {
+        message += ' Dodatkowo nie udało się przywrócić poprzedniego priorytetu — sprawdź zakładkę Cele.';
+      }
+    }
+    errEl.textContent = message;
+    errEl.classList.remove('gc-hidden');
+  }
+}
+
+async function endGoal(goalId, status) {
+  const errEl = document.getElementById('goal-error');
+  errEl.classList.add('gc-hidden');
+  try {
+    const goal = goalsCache.find(g => g.id === goalId);
+    const fields = { status, ended_at: new Date().toISOString() };
+    // chk_priority_only_if_active (Domena 05): priorytetowy cel musi być
+    // aktywny, więc kończąc cel priorytetowy trzeba w tym samym UPDATE
+    // zdjąć is_priority — inaczej baza odrzuci zapis przez CHECK.
+    if (goal && goal.is_priority) fields.is_priority = false;
+    await patchGoal(goalId, fields);
+    await loadGoals();
+  } catch (e) {
+    errEl.textContent = 'Nie udało się zaktualizować celu: ' + e.message;
+    errEl.classList.remove('gc-hidden');
+  }
+}
+
+// ══════════════════════════════════════
+//  KALENDARZ (Domena 07)
+// ══════════════════════════════════════
+function populateEventDaysCheckboxes() {
+  const wrap = document.getElementById('event-days-wrap');
+  wrap.innerHTML = DAYS_OF_WEEK.map(([code, label]) => `
+    <label class="gc-day-check"><input type="checkbox" class="event-day-cb" value="${code}"> ${label}</label>
+  `).join('');
+}
+
+function switchEventFrequency(freq) {
+  currentEventFrequency = freq;
+  document.getElementById('toggle-event-once').classList.toggle('active', freq === 'once');
+  document.getElementById('toggle-event-recurring').classList.toggle('active', freq === 'recurring');
+  document.getElementById('event-fields-once').classList.toggle('gc-hidden', freq !== 'once');
+  document.getElementById('event-fields-recurring').classList.toggle('gc-hidden', freq !== 'recurring');
+}
+
+function populateEventGoalSelect() {
+  const sel = document.getElementById('f-event-goal');
+  const active = goalsCache.filter(g => g.status === 'active');
+  sel.innerHTML = '<option value="">— nie dotyczy —</option>' +
+    active.map(g => `<option value="${g.id}">${SEG_LABELS[g.segment_id] || g.segment_id}${g.refinement_note ? ' — ' + g.refinement_note : ''}</option>`).join('');
+}
+
+function formatRecurrence(rule) {
+  const m = /^weekly:(.+)$/.exec(rule);
+  if (!m) return rule;
+  return 'Co tydzień: ' + m[1].split(',').map(d => DAY_LABELS_PL[d] || d).join(', ');
+}
+
+// Wypełnia selektor "powiąż z zaplanowanym wydarzeniem" w Dzienniku —
+// tylko wydarzenia JEDNORAZOWE (scheduled_date) w wąskim oknie wokół dziś,
+// bo tylko dla nich Domena 07 definiuje jednoznaczne "wykonano" (jeden
+// wiersz w daily_logs wskazujący na jedno konkretne wydarzenie). Cykliczne
+// wydarzenia nie mają pojedynczego wystąpienia do wskazania.
+async function populateCalendarLinkSelect() {
+  const sel = document.getElementById('f-calendar-link');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— nie dotyczy —</option>';
+  try {
+    const from = new Date(); from.setDate(from.getDate() - 2);
+    const to = new Date(); to.setDate(to.getDate() + 1);
+    const fromStr = toLocalDateStr(from);
+    const toStr = toLocalDateStr(to);
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/calendar_events?user_id=eq.${currentUser.id}&status=eq.scheduled&scheduled_date=gte.${fromStr}&scheduled_date=lte.${toStr}&select=*`,
+      { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${currentUser.accessToken}` } }
+    );
+    const rows = await res.json();
+    if (Array.isArray(rows) && rows.length) {
+      sel.innerHTML += rows.map(e => {
+        const dateLabel = new Date(e.scheduled_date + 'T00:00:00').toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' });
+        return `<option value="${e.id}">${dateLabel} — ${e.title}</option>`;
+      }).join('');
+    }
+  } catch (e) {
+    // Brak połączenia z kalendarzem nie blokuje zapisu dziennika — pole
+    // po prostu zostaje z samym "nie dotyczy".
+  }
+}
+
+async function loadEvents() {
+  await loadGoals(); // odświeża goalsCache pod selektor powiązania z celem
+  populateEventGoalSelect();
+
+  const recurringList = document.getElementById('events-recurring-list');
+  const upcomingList = document.getElementById('events-upcoming-list');
+  const cancelledList = document.getElementById('events-cancelled-list');
+
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/calendar_events?user_id=eq.${currentUser.id}&select=*`,
+      { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${currentUser.accessToken}` } }
+    );
+    const rows = await res.json();
+    eventsCache = Array.isArray(rows) ? rows : [];
+  } catch (e) {
+    recurringList.innerHTML = '<div class="gc-empty">Nie udało się wczytać kalendarza.</div>';
+    upcomingList.innerHTML = '';
+    cancelledList.innerHTML = '';
+    return;
+  }
+
+  // "Wykonano" (Domena 07, wydarzenia jednorazowe): istnieje wpis w
+  // daily_logs wskazujący na to wydarzenie przez calendar_event_id.
+  let loggedEventIds = new Set();
+  try {
+    const logsRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/daily_logs?user_id=eq.${currentUser.id}&calendar_event_id=not.is.null&select=calendar_event_id`,
+      { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${currentUser.accessToken}` } }
+    );
+    const logs = await logsRes.json();
+    if (Array.isArray(logs)) loggedEventIds = new Set(logs.map(l => l.calendar_event_id));
+  } catch (e) {
+    // Brak informacji o wykonaniu nie blokuje wyświetlenia samego kalendarza.
+  }
+
+  const todayStr = toLocalDateStr(new Date());
+  const recurring = eventsCache.filter(e => e.status === 'scheduled' && e.recurrence_rule);
+  const upcoming = eventsCache
+    .filter(e => e.status === 'scheduled' && e.scheduled_date)
+    .sort((a, b) => (a.scheduled_date < b.scheduled_date ? -1 : a.scheduled_date > b.scheduled_date ? 1 : 0));
+  const cancelled = eventsCache.filter(e => e.status === 'cancelled');
+
+  recurringList.innerHTML = recurring.length
+    ? recurring.map(e => renderEventCard(e, loggedEventIds, todayStr)).join('')
+    : '<div class="gc-empty">Brak cyklicznych wpisów.</div>';
+  upcomingList.innerHTML = upcoming.length
+    ? upcoming.map(e => renderEventCard(e, loggedEventIds, todayStr)).join('')
+    : '<div class="gc-empty">Brak zaplanowanych wydarzeń.</div>';
+  cancelledList.innerHTML = cancelled.length
+    ? cancelled.map(e => renderEventCard(e, loggedEventIds, todayStr)).join('')
+    : '<div class="gc-empty">Brak anulowanych wpisów.</div>';
+}
+
+function renderEventCard(e, loggedEventIds, todayStr) {
+  const typeLabel = EVENT_TYPE_LABELS[e.event_type] || e.event_type;
+  const goal = e.goal_id ? goalsCache.find(g => g.id === e.goal_id) : null;
+
+  const badges = [];
+  if (e.status === 'cancelled') badges.push('<span class="gc-badge-status abandoned">Anulowane</span>');
+  if (e.status === 'scheduled' && e.scheduled_date && e.scheduled_date <= todayStr) {
+    badges.push(loggedEventIds.has(e.id)
+      ? '<span class="gc-badge-status completed">Wykonano</span>'
+      : '<span class="gc-badge-priority">Nie wykonano</span>');
+  }
+
+  const meta = [];
+  if (e.scheduled_date) {
+    meta.push(new Date(e.scheduled_date + 'T00:00:00').toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', weekday: 'short' }));
+  }
+  if (e.recurrence_rule) meta.push(formatRecurrence(e.recurrence_rule));
+  if (goal) meta.push('cel: ' + (SEG_LABELS[goal.segment_id] || goal.segment_id));
+
+  let actions = '';
+  if (e.status === 'scheduled') {
+    actions = `<div class="gc-goal-actions"><button class="gc-btn-secondary" onclick="cancelEvent(${e.id})">Anuluj</button></div>`;
+  }
+
+  return `
+    <div class="gc-goal-card">
+      <div class="gc-goal-top"><span class="gc-goal-segment">${e.title}</span>${badges.join('')}</div>
+      <div class="gc-goal-pillar">${typeLabel}</div>
+      ${e.notes ? `<div class="gc-goal-note">${e.notes}</div>` : ''}
+      <div class="gc-goal-meta">${meta.join(' · ')}</div>
+      ${actions}
+    </div>
+  `;
+}
+
+function resetEventForm() {
+  document.getElementById('f-event-title').value = '';
+  document.getElementById('f-event-notes').value = '';
+  document.getElementById('f-event-date').value = '';
+  document.getElementById('f-event-goal').value = '';
+  document.querySelectorAll('.event-day-cb').forEach(cb => cb.checked = false);
+}
+
+// Nazwa NIE może brzmieć "createEvent" — to zderza się z natywną,
+// przestarzałą metodą document.createEvent(), która przesłania globalną
+// funkcję wewnątrz atrybutu onclick (niejawny łańcuch zasięgu z(document)
+// { with(element) {...} } dla inline event handlerów). Znalezione dopiero
+// przy teście w przeglądarce — cichy błąd, zero śladu w konsoli poza
+// PAGEERROR.
+async function createCalendarEvent() {
+  const errEl = document.getElementById('event-error');
+  const okEl = document.getElementById('event-ok');
+  errEl.classList.add('gc-hidden');
+  okEl.classList.add('gc-hidden');
+
+  const eventType = document.getElementById('f-event-type').value;
+  const title = document.getElementById('f-event-title').value.trim();
+  const notes = document.getElementById('f-event-notes').value.trim();
+  const goalId = document.getElementById('f-event-goal').value;
+
+  if (!title) {
+    errEl.textContent = 'Podaj tytuł wydarzenia.';
+    errEl.classList.remove('gc-hidden');
+    return;
+  }
+
+  const body = {
+    user_id: currentUser.id,
+    event_type: eventType,
+    source: 'player',
+    title,
+    status: 'scheduled',
+  };
+  if (notes) body.notes = notes;
+  if (goalId) body.goal_id = Number(goalId);
+
+  // chk_recurrence_xor_date (Domena 07): dokładnie jedno z dwóch — nigdy
+  // oba naraz, nigdy żadne. Zależnie od przełącznika ustawiamy tylko jedno.
+  if (currentEventFrequency === 'once') {
+    const date = document.getElementById('f-event-date').value;
+    if (!date) {
+      errEl.textContent = 'Podaj datę.';
+      errEl.classList.remove('gc-hidden');
+      return;
+    }
+    body.scheduled_date = date;
+  } else {
+    const days = Array.from(document.querySelectorAll('.event-day-cb:checked')).map(cb => cb.value);
+    if (days.length === 0) {
+      errEl.textContent = 'Zaznacz przynajmniej jeden dzień tygodnia.';
+      errEl.classList.remove('gc-hidden');
+      return;
+    }
+    body.recurrence_rule = 'weekly:' + days.join(',');
+  }
+
+  const btn = document.getElementById('event-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Zapisuję...';
+
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/calendar_events`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${currentUser.accessToken}`,
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(errText);
+    }
+    okEl.textContent = 'Dodano do kalendarza.';
+    okEl.classList.remove('gc-hidden');
+    resetEventForm();
+    await loadEvents();
+    await populateCalendarLinkSelect();
+  } catch (e) {
+    errEl.textContent = 'Nie udało się dodać wydarzenia: ' + e.message;
+    errEl.classList.remove('gc-hidden');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Dodaj do kalendarza';
+  }
+}
+
+async function cancelEvent(eventId) {
+  const errEl = document.getElementById('event-error');
+  errEl.classList.add('gc-hidden');
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/calendar_events?id=eq.${eventId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${currentUser.accessToken}`,
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify({ status: 'cancelled' }),
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(errText);
+    }
+    await loadEvents();
+    await populateCalendarLinkSelect();
+  } catch (e) {
+    errEl.textContent = 'Nie udało się anulować wydarzenia: ' + e.message;
+    errEl.classList.remove('gc-hidden');
+  }
+}
+
+// ══════════════════════════════════════
+//  CENTRUM DECYZJI (Domena 06)
+// ══════════════════════════════════════
+// Treść rekomendacji (weekly_focus_text/recommendation_text/rationale_text)
+// generuje WYŁĄCZNIE backend (RLS: brak polityki INSERT dla zwykłej roli,
+// UPDATE ograniczony na poziomie kolumn tylko do feedback_*) — ten panel
+// czyta i zbiera feedback, nigdy nie tworzy ani nie edytuje treści rekomendacji.
+let recommendationsCache = [];
+
+async function loadRecommendations() {
+  const currentList = document.getElementById('rec-current-list');
+  const referralList = document.getElementById('rec-referral-list');
+  const historyList = document.getElementById('rec-history-list');
+
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/decision_recommendations?user_id=eq.${currentUser.id}&order=created_at.desc&select=*`,
+      { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${currentUser.accessToken}` } }
+    );
+    const rows = await res.json();
+    recommendationsCache = Array.isArray(rows) ? rows : [];
+  } catch (e) {
+    currentList.innerHTML = '<div class="gc-empty">Nie udało się wczytać rekomendacji.</div>';
+    referralList.innerHTML = '';
+    historyList.innerHTML = '';
+    return;
+  }
+
+  const trainingFocus = recommendationsCache.filter(r => r.recommendation_type === 'training_focus');
+  const currentFocus = trainingFocus.length ? trainingFocus[0] : null; // najnowsza — sortowanie z zapytania
+  // POPRAWKA (pełny audyt całości): `openReferrals`/sekcja "Warto sprawdzić"
+  // obejmowała wcześniej wyłącznie 'specialist_referral' — trzeci typ,
+  // 'position_fit_signal' (Domena 13), w ogóle nie był tu uwzględniony, więc
+  // nieodpowiedziane sygnały sugestii pozycji trafiały po cichu do
+  // zwiniętej "Historii" (patrz historyIds niżej) zamiast do widocznej
+  // sekcji — mimo że feedback_response IS NULL, dokładnie tak jak przy
+  // otwartym skierowaniu do specjalisty.
+  const openActionable = recommendationsCache.filter(r =>
+    (r.recommendation_type === 'specialist_referral' || r.recommendation_type === 'position_fit_signal')
+    && !r.feedback_response
+  );
+  const historyIds = new Set(recommendationsCache.map(r => r.id));
+  if (currentFocus) historyIds.delete(currentFocus.id);
+  openActionable.forEach(r => historyIds.delete(r.id));
+  const history = recommendationsCache.filter(r => historyIds.has(r.id));
+
+  currentList.innerHTML = currentFocus
+    ? renderRecCard(currentFocus)
+    : '<div class="gc-empty">Brak jeszcze wygenerowanej rekomendacji — pojawi się tu, gdy silnik Centrum Decyzji zacznie działać.</div>';
+  referralList.innerHTML = openActionable.length
+    ? openActionable.map(renderRecCard).join('')
+    : '<div class="gc-empty">Nic do sprawdzenia w tej chwili.</div>';
+  historyList.innerHTML = history.length
+    ? history.map(renderRecCard).join('')
+    : '<div class="gc-empty">Brak historii.</div>';
+}
+
+function renderRecCard(r) {
+  const isReferral = r.recommendation_type === 'specialist_referral';
+  // POPRAWKA (pełny audyt całości): trzeci typ rekomendacji, wprowadzony
+  // dopiero w Domenie 13 (asystent_sportowca_13_profile_pozycyjne.sql),
+  // nie miał tu w ogóle swojej gałęzi — trafiał w gałąź "else" myśloną pod
+  // training_focus, co pokazywałoby przyciski Wykonałem/Nie wykonałem.
+  // Kliknięcie któregoś z nich wysłałoby feedback_response='done'/
+  // 'not_done' — wartości ODRZUCANE przez chk_feedback_response_matches_
+  // type dla tego typu (dozwolone tylko open_to_discussing/not_interested/
+  // did_not_make_sense) — zapis kończyłby się błędem 400 z Supabase.
+  const isPositionSignal = r.recommendation_type === 'position_fit_signal';
+  const toneBadge = r.confidence_tone === 'questioning' ? '<span class="gc-badge-tone">ton pytający</span>' : '';
+
+  let body = '';
+  if (isReferral) {
+    const reasonLabel = REFERRAL_REASON_LABELS[r.referral_reason] || r.referral_reason || '';
+    body += `<div class="gc-goal-pillar">${reasonLabel}</div>`;
+    body += `<div class="gc-rec-action">${r.recommendation_text}</div>`;
+  } else if (isPositionSignal) {
+    body += `<div class="gc-goal-pillar">Sugerowana pozycja: ${r.suggested_position || ''}</div>`;
+    body += `<div class="gc-rec-action">${r.recommendation_text}</div>`;
+  } else {
+    if (r.weekly_focus_text) body += `<div class="gc-rec-focus">${r.weekly_focus_text}${toneBadge}</div>`;
+    body += `<div class="gc-rec-action">${r.recommendation_text}</div>`;
+  }
+  if (r.rationale_text) body += `<div class="gc-rec-rationale">${r.rationale_text}</div>`;
+  if (!isReferral && !isPositionSignal && !r.weekly_focus_text) body = toneBadge + body; // ton na akcji, gdy brak weekly_focus
+
+  const dateLabel = new Date(r.created_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' });
+
+  let feedbackBlock;
+  if (r.feedback_response) {
+    feedbackBlock = `<div class="gc-rec-feedback-given">Twoja odpowiedź: ${FEEDBACK_LABELS[r.feedback_response] || r.feedback_response}${r.feedback_comment ? ' — „' + r.feedback_comment + '”' : ''}</div>`;
+  } else if (isPositionSignal) {
+    feedbackBlock = `
+      <div class="gc-goal-actions">
+        <button class="gc-btn-secondary" onclick="submitFeedback(${r.id}, 'open_to_discussing')">Chętnie porozmawiam</button>
+        <button class="gc-btn-secondary" onclick="submitFeedback(${r.id}, 'not_interested')">Nie jestem zainteresowany</button>
+        <button class="gc-btn-secondary" onclick="toggleFeedbackComment(${r.id})">Nie miało to sensu</button>
+      </div>
+      <div id="rec-comment-wrap-${r.id}" class="gc-hidden" style="margin-top:10px;">
+        <textarea class="gc-textarea" id="rec-comment-${r.id}" placeholder="Dlaczego? (opcjonalnie)"></textarea>
+        <button class="gc-btn-secondary" onclick="submitFeedback(${r.id}, 'did_not_make_sense')">Wyślij</button>
+      </div>`;
+  } else {
+    feedbackBlock = `
+      <div class="gc-goal-actions">
+        <button class="gc-btn-secondary" onclick="submitFeedback(${r.id}, 'done')">Wykonałem</button>
+        <button class="gc-btn-secondary" onclick="submitFeedback(${r.id}, 'not_done')">Nie wykonałem</button>
+        <button class="gc-btn-secondary" onclick="toggleFeedbackComment(${r.id})">Nie miało to sensu</button>
+      </div>
+      <div id="rec-comment-wrap-${r.id}" class="gc-hidden" style="margin-top:10px;">
+        <textarea class="gc-textarea" id="rec-comment-${r.id}" placeholder="Dlaczego? (opcjonalnie)"></textarea>
+        <button class="gc-btn-secondary" onclick="submitFeedback(${r.id}, 'did_not_make_sense')">Wyślij</button>
+      </div>`;
+  }
+
+  return `
+    <div class="gc-rec-card${(isReferral || isPositionSignal) ? ' gc-rec-referral' : ''}">
+      ${body}
+      <div class="gc-goal-meta">${dateLabel}</div>
+      ${feedbackBlock}
+    </div>
+  `;
+}
+
+function toggleFeedbackComment(recId) {
+  document.getElementById('rec-comment-wrap-' + recId).classList.remove('gc-hidden');
+}
+
+async function submitFeedback(recId, response) {
+  const errEl = document.getElementById('rec-error');
+  const okEl = document.getElementById('rec-ok');
+  errEl.classList.add('gc-hidden');
+  okEl.classList.add('gc-hidden');
+
+  const commentEl = document.getElementById('rec-comment-' + recId);
+  const comment = commentEl ? commentEl.value.trim() : '';
+
+  const fields = {
+    feedback_response: response,
+    feedback_at: new Date().toISOString(),
+  };
+  if (comment) fields.feedback_comment = comment;
+
+  try {
+    // RLS (Domena 06): UPDATE dozwolony tylko na kolumnach feedback_* —
+    // dokładnie te trzy pola, nic więcej w tym zapytaniu.
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/decision_recommendations?id=eq.${recId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${currentUser.accessToken}`,
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify(fields),
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(errText);
+    }
+    okEl.textContent = 'Zapisano Twoją odpowiedź.';
+    okEl.classList.remove('gc-hidden');
+    await loadRecommendations();
+  } catch (e) {
+    errEl.textContent = 'Nie udało się zapisać odpowiedzi: ' + e.message;
+    errEl.classList.remove('gc-hidden');
+  }
+}
+
+// ══════════════════════════════════════
+//  PROFIL (Domena 01)
+// ══════════════════════════════════════
+function populateProfileSelects() {
+  const posOptions = '<option value="">— wybierz —</option>' +
+    POSITIONS.map(p => `<option value="${p}">${p}</option>`).join('');
+  document.getElementById('f-profile-pos-primary').innerHTML = posOptions;
+  document.getElementById('f-profile-pos-secondary').innerHTML =
+    '<option value="">— brak —</option>' + POSITIONS.map(p => `<option value="${p}">${p}</option>`).join('');
+
+  const levelOptions = '<option value="">— wybierz —</option>' +
+    CURRENT_LEVELS.map(l => `<option value="${l}">${l}</option>`).join('');
+  document.getElementById('f-profile-level-current').innerHTML = levelOptions;
+  document.getElementById('f-profile-level-highest').innerHTML = levelOptions;
+
+  document.getElementById('f-profile-goal-direction').innerHTML =
+    '<option value="">— wybierz —</option>' +
+    Object.entries(GOAL_DIRECTION_LABELS).map(([id, label]) => `<option value="${id}">${label}</option>`).join('');
+
+  document.getElementById('profile-equipment-wrap').innerHTML =
+    Object.entries(EQUIPMENT_LABELS).map(([id, label]) => `
+      <div class="gc-checkbox-row">
+        <input type="checkbox" id="f-equip-${id}">
+        <label for="f-equip-${id}">${label}</label>
+      </div>
+    `).join('');
+
+  document.getElementById('f-profile-injury-category').innerHTML =
+    '<option value="">— wybierz —</option>' +
+    Object.entries(INJURY_MODE_CATEGORY_LABELS).map(([id, label]) => `<option value="${id}">${label}</option>`).join('');
+
+  document.getElementById('f-injury-location').innerHTML =
+    BODY_LOCATIONS.map(([id, label]) => `<option value="${id}">${label}</option>`).join('');
+  updateInjurySideVisibility();
+}
+
+function updateGoalDirectionNoteVisibility() {
+  const val = document.getElementById('f-profile-goal-direction').value;
+  document.getElementById('profile-goal-note-wrap').classList.toggle('gc-hidden', val !== 'other');
+}
+
+function updateInjuryModeCategoryVisibility() {
+  const checked = document.getElementById('f-profile-injury-mode').checked;
+  document.getElementById('profile-injury-category-wrap').classList.toggle('gc-hidden', !checked);
+}
+
+function updateInjurySideVisibility() {
+  const loc = document.getElementById('f-injury-location').value;
+  document.getElementById('injury-side-wrap').classList.toggle('gc-hidden', NON_LATERAL_LOCATIONS.has(loc));
+}
+
+async function loadProfile() {
+  // POPRAWKA (pełny audyt całości): loadProfile() czyściło własne banery
+  // błędu/potwierdzenia przy KAŻDYM wywołaniu — ten sam wzorzec, który już
+  // raz naprawiono w loadMecz() w tej samej sesji. Konwencja w tym pliku
+  // (loadGoals/loadEvents/loadMecz/loadRecommendations) to: load* NIGDY
+  // nie czyści banerów, tylko submit/write funkcje zarządzają własnymi.
+  // Dziś nieszkodliwe (ani saveProfile(), ani addInjuryHistory() nie
+  // wywołują loadProfile() po sukcesie), ale niespójne z resztą pliku i
+  // pułapka na przyszłość — usunięte dla spójności.
+  populateProfileSelects();
+  document.getElementById('profile-email-display').textContent = currentUser.email;
+
+  try {
+    const [userRes, profileRes, injuryRes] = await Promise.all([
+      fetch(`${SUPABASE_URL}/rest/v1/users?id=eq.${currentUser.id}&select=full_name,birth_year`, {
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${currentUser.accessToken}` }
+      }),
+      fetch(`${SUPABASE_URL}/rest/v1/player_profiles?user_id=eq.${currentUser.id}&select=*`, {
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${currentUser.accessToken}` }
+      }),
+      fetch(`${SUPABASE_URL}/rest/v1/injury_history?user_id=eq.${currentUser.id}&order=created_at.desc&select=*`, {
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${currentUser.accessToken}` }
+      }),
+    ]);
+
+    const userRows = await userRes.json();
+    const u = (Array.isArray(userRows) && userRows[0]) || {};
+    document.getElementById('f-profile-name').value = u.full_name || '';
+    document.getElementById('f-profile-birth-year').value = u.birth_year || '';
+
+    const profileRows = await profileRes.json();
+    const p = (Array.isArray(profileRows) && profileRows[0]) || {};
+    document.getElementById('f-profile-pos-primary').value = p.position_primary || '';
+    document.getElementById('f-profile-pos-secondary').value = p.position_secondary || '';
+    document.getElementById('f-profile-level-current').value = p.current_level || '';
+    document.getElementById('f-profile-level-highest').value = p.highest_level_ever || '';
+    document.getElementById('f-profile-goal-direction').value = p.goal_direction || '';
+    document.getElementById('f-profile-goal-note').value = p.goal_direction_note || '';
+    updateGoalDirectionNoteVisibility();
+
+    const equipment = Array.isArray(p.equipment_access) ? p.equipment_access : [];
+    Object.keys(EQUIPMENT_LABELS).forEach(id => {
+      const cb = document.getElementById('f-equip-' + id);
+      if (cb) cb.checked = equipment.includes(id);
+    });
+
+    document.getElementById('f-profile-injury-mode').checked = !!p.injury_mode_active;
+    document.getElementById('f-profile-injury-category').value = p.injury_mode_category || '';
+    updateInjuryModeCategoryVisibility();
+
+    const injuryRows = await injuryRes.json();
+    injuryHistoryCache = Array.isArray(injuryRows) ? injuryRows : [];
+    renderInjuryHistoryList();
+  } catch (e) {
+    const errEl = document.getElementById('profile-error');
+    errEl.textContent = 'Nie udało się wczytać profilu: ' + e.message;
+    errEl.classList.remove('gc-hidden');
+  }
+}
+
+async function saveProfile() {
+  const errEl = document.getElementById('profile-error');
+  const okEl = document.getElementById('profile-ok');
+  errEl.classList.add('gc-hidden');
+  okEl.classList.add('gc-hidden');
+
+  const btn = document.getElementById('profile-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Zapisuję...';
+
+  try {
+    const fullName = document.getElementById('f-profile-name').value.trim();
+    const birthYearRaw = document.getElementById('f-profile-birth-year').value;
+
+    // Zgodnie z GRANT UPDATE (full_name, birth_year) TO authenticated
+    // w Domenie 01 — to jedyne dwie kolumny public.users, które wolno
+    // zmienić z frontendu (rola/email/legacy_email tylko przez backend).
+    const userFields = {
+      full_name: fullName || null,
+      birth_year: birthYearRaw !== '' ? Number(birthYearRaw) : null,
+    };
+
+    const userRes = await fetch(`${SUPABASE_URL}/rest/v1/users?id=eq.${currentUser.id}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${currentUser.accessToken}`,
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify(userFields),
+    });
+    if (!userRes.ok) throw new Error(await userRes.text());
+
+    const equipment = Object.keys(EQUIPMENT_LABELS).filter(id => {
+      const cb = document.getElementById('f-equip-' + id);
+      return cb && cb.checked;
+    });
+
+    const goalDirection = document.getElementById('f-profile-goal-direction').value || null;
+    const injuryModeActive = document.getElementById('f-profile-injury-mode').checked;
+    const injuryModeCategory = document.getElementById('f-profile-injury-category').value || null;
+
+    // POPRAWKA (pełny audyt całości): brak tej walidacji pozwalało
+    // zapisać injury_mode_active=true z pustą kategorią (SQL też tego nie
+    // blokuje — brak CHECK wymuszającego kategorię gdy tryb aktywny).
+    // Skutek w UI: renderInjuryRoutingStatus() sprawdza
+    // INJURY_MODE_ROUTING[profile.injury_mode_category] i przy pustej
+    // kategorii po prostu chowa cały blok statusu trybu kontuzji — bez
+    // JAKIEGOKOLWIEK komunikatu, zawodnik nie wie dlaczego status zniknął.
+    if (injuryModeActive && !injuryModeCategory) {
+      errEl.textContent = 'Wybierz kategorię ograniczenia dla trybu kontuzji.';
+      errEl.classList.remove('gc-hidden');
+      btn.disabled = false;
+      btn.textContent = 'Zapisz profil';
+      return;
+    }
+
+    const profileBody = {
+      user_id: currentUser.id,
+      position_primary: document.getElementById('f-profile-pos-primary').value || null,
+      position_secondary: document.getElementById('f-profile-pos-secondary').value || null,
+      current_level: document.getElementById('f-profile-level-current').value || null,
+      highest_level_ever: document.getElementById('f-profile-level-highest').value || null,
+      goal_direction: goalDirection,
+      goal_direction_note: goalDirection === 'other'
+        ? (document.getElementById('f-profile-goal-note').value.trim() || null) : null,
+      equipment_access: equipment,
+      injury_mode_active: injuryModeActive,
+      injury_mode_category: injuryModeActive ? injuryModeCategory : null,
+      updated_at: new Date().toISOString(),
+    };
+
+    // Upsert 1-wierszowej tabeli player_profiles — user_id to PRIMARY KEY,
+    // więc on_conflict=user_id trafia dokładnie w ten klucz.
+    const profileRes = await fetch(`${SUPABASE_URL}/rest/v1/player_profiles?on_conflict=user_id`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${currentUser.accessToken}`,
+        Prefer: 'resolution=merge-duplicates,return=representation',
+      },
+      body: JSON.stringify(profileBody),
+    });
+    if (!profileRes.ok) throw new Error(await profileRes.text());
+
+    okEl.textContent = 'Profil zapisany.';
+    okEl.classList.remove('gc-hidden');
+  } catch (e) {
+    errEl.textContent = 'Nie udało się zapisać profilu: ' + e.message;
+    errEl.classList.remove('gc-hidden');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Zapisz profil';
+  }
+}
+
+function renderInjuryHistoryList() {
+  const el = document.getElementById('injury-history-list');
+  el.innerHTML = injuryHistoryCache.length
+    ? injuryHistoryCache.map(renderInjuryHistoryCard).join('')
+    : '<div class="gc-empty">Brak wpisów w historii kontuzji.</div>';
+}
+
+function renderInjuryHistoryCard(row) {
+  const loc = BODY_LOCATION_LABELS[row.body_location] || row.body_location;
+  const side = row.side === 'left' ? ' (L)' : row.side === 'right' ? ' (P)' : '';
+  const dates = [];
+  if (row.period_from) dates.push('od ' + new Date(row.period_from).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', year: 'numeric' }));
+  if (row.period_to) dates.push('do ' + new Date(row.period_to).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', year: 'numeric' }));
+  const status = row.fully_healed ? 'Zagojona' : 'W trakcie leczenia';
+
+  return `
+    <div class="gc-history-card">
+      <div class="gc-history-top">
+        <span class="gc-history-type">${row.injury_type}</span>
+        <span class="gc-history-date">${status}</span>
+      </div>
+      <div class="gc-history-detail">${loc}${side}${dates.length ? ' · ' + dates.join(' – ') : ''}</div>
+    </div>
+  `;
+}
+
+async function addInjuryHistory() {
+  const errEl = document.getElementById('profile-error');
+  const okEl = document.getElementById('profile-ok');
+  errEl.classList.add('gc-hidden');
+  okEl.classList.add('gc-hidden');
+
+  const injuryType = document.getElementById('f-injury-type').value.trim();
+  const location = document.getElementById('f-injury-location').value;
+  if (!injuryType) {
+    errEl.textContent = 'Podaj rodzaj kontuzji.';
+    errEl.classList.remove('gc-hidden');
+    return;
+  }
+
+  const btn = document.getElementById('injury-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Dodaję...';
+
+  try {
+    const side = NON_LATERAL_LOCATIONS.has(location)
+      ? null : (document.getElementById('f-injury-side').value || null);
+    const periodFrom = document.getElementById('f-injury-from').value || null;
+    const periodTo = document.getElementById('f-injury-to').value || null;
+    const fullyHealed = document.getElementById('f-injury-healed').checked;
+
+    const body = {
+      user_id: currentUser.id,
+      injury_type: injuryType,
+      body_location: location,
+      side,
+      period_from: periodFrom,
+      period_to: periodTo,
+      fully_healed: fullyHealed,
+    };
+
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/injury_history`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${currentUser.accessToken}`,
+        Prefer: 'return=representation',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(await res.text());
+
+    const inserted = await res.json();
+    if (Array.isArray(inserted) && inserted[0]) {
+      injuryHistoryCache.unshift(inserted[0]);
+      renderInjuryHistoryList();
+    }
+
+    document.getElementById('f-injury-type').value = '';
+    document.getElementById('f-injury-from').value = '';
+    document.getElementById('f-injury-to').value = '';
+    document.getElementById('f-injury-healed').checked = true;
+
+    okEl.textContent = 'Dodano do historii kontuzji.';
+    okEl.classList.remove('gc-hidden');
+  } catch (e) {
+    errEl.textContent = 'Nie udało się dodać wpisu: ' + e.message;
+    errEl.classList.remove('gc-hidden');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Dodaj do historii';
+  }
+}
+
+// ══════════════════════════════════════
+//  DIAGNOZA (Domena 02) — status + link do osobnego narzędzia
+//  diagnostycznego (gamechange-diagnoza.vercel.app). Ta apka NIE
+//  odtwarza samej ankiety (27 pytań) — to osobne, już istniejące,
+//  wdrożone narzędzie. Tu tylko sprawdzamy czy zawodnik ma już
+//  jakąś diagnozę powiązaną z tym kontem (po user_id) i kierujemy
+//  do zrobienia nowej.
+//
+//  UWAGA (świadome ograniczenie, nie błąd): dzisiejsze narzędzie
+//  diagnostyczne na produkcji działa anonimowo (bez logowania) —
+//  most łączący stare, anonimowe diagnozy z nowym kontem po emailu
+//  ("Okres przejściowy", Funkcja 17 Onboarding) jeszcze nie jest
+//  zbudowany. Więc ten ekran widzi tylko diagnozy zrobione już z
+//  poziomu zalogowanego konta — nie "brak diagnozy w ogóle".
+//  Kopia w UI wprost to tłumaczy, żeby nie wprowadzać w błąd.
+//
+//  Wybieramy tylko kolumny user_id/diagnosis_type/created_at —
+//  jedyne, których istnienie potwierdza plik SQL Domeny 02
+//  (ALTER TABLE diagnostics ADD COLUMN...). Pełny kształt starej
+//  tabeli diagnostics poza tym nieznany, więc nic więcej nie
+//  wybieramy zapytaniem.
+// ══════════════════════════════════════
+const DIAGNOSIS_TYPE_LABELS = { initial: 'Pierwsza diagnoza', rediagnosis: 'Rediagnoza' };
+
+async function loadDiagnoza() {
+  document.getElementById('diagnoza-loading').classList.remove('gc-hidden');
+  document.getElementById('diagnoza-done-wrap').classList.add('gc-hidden');
+  document.getElementById('diagnoza-missing-wrap').classList.add('gc-hidden');
+  document.getElementById('diagnoza-error').classList.add('gc-hidden');
+
+  try {
+    // POPRAWKA (pełny audyt całości): `diagnostics` to log ZDARZEŃ z
+    // dzisiejszej ankiety (wiele wierszy na jedną diagnozę — results_
+    // generated/email_submitted/waitlist_signup/consultation_request/
+    // monthly_request/pdf_email_submitted/feedback — patrz index.html,
+    // buildDiagnosticsRecord()/saveToSupabase), NIE jeden wiersz na jedną
+    // ukończoną diagnozę. Bez filtra po `event` "najnowszy wiersz" mógł
+    // być DOWOLNYM z tych zdarzeń (np. samo 'results_generated' zaraz po
+    // wypełnieniu ankiety, zanim zawodnik w ogóle podał email) — myląc
+    // "zaczął ankietę" z "ma gotową diagnozę". Naprawa: ten sam filtr,
+    // którego index.html już używa dokładnie w tym samym celu
+    // ("pokaż moją diagnozę") w loadPlayerHistory() — `event=eq.
+    // email_submitted` — jedno źródło prawdy, nie nowa, zgadywana reguła.
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/diagnostics?user_id=eq.${currentUser.id}&event=eq.email_submitted&order=created_at.desc&limit=1&select=diagnosis_type,created_at`,
+      { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${currentUser.accessToken}` } }
+    );
+    if (!res.ok) throw new Error(await res.text());
+    const rows = await res.json();
+    const latest = Array.isArray(rows) && rows[0] ? rows[0] : null;
+
+    document.getElementById('diagnoza-loading').classList.add('gc-hidden');
+
+    if (latest) {
+      const typeLabel = DIAGNOSIS_TYPE_LABELS[latest.diagnosis_type] || latest.diagnosis_type || 'Diagnoza';
+      const dateLabel = new Date(latest.created_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' });
+      document.getElementById('diagnoza-done-detail').textContent = `${typeLabel} — ${dateLabel}`;
+      document.getElementById('diagnoza-done-wrap').classList.remove('gc-hidden');
+    } else {
+      document.getElementById('diagnoza-missing-wrap').classList.remove('gc-hidden');
+    }
+  } catch (e) {
+    document.getElementById('diagnoza-loading').classList.add('gc-hidden');
+    const errEl = document.getElementById('diagnoza-error');
+    errEl.textContent = 'Nie udało się sprawdzić statusu diagnozy: ' + e.message;
+    errEl.classList.remove('gc-hidden');
+  }
+}
+
+// ══════════════════════════════════════
+//  MECZ — KONTEKST MECZOWY (Domena 04) + STATUS TRYBU KONTUZJI
+// ══════════════════════════════════════
+const GAME_TYPE_LABELS = {
+  official_match: 'Mecz oficjalny', friendly: 'Sparing',
+  training_game: 'Gierka treningowa', tournament: 'Turniej',
+};
+const SEGMENT_AVAILABILITY_LABELS = {
+  available: 'dostępne', partial: 'częściowo dostępne', unavailable: 'niedostępne',
+};
+
+// Treść potwierdzona przez Kubę wcześniej w tym projekcie (patrz
+// ASYSTENT_SPORTOWCA_ARCHITEKTURA_TECHNICZNA.md, sekcja Domena 04) —
+// odzyskana z kodu gdzie faktycznie żyła (część routingu trybu kontuzji
+// we wcześniejszej wersji index.html), nie zgadywana na nowo. Świadomie
+// żyje w kodzie appki, nie w bazie — ten sam wzorzec co SEGMENTS_BY_PILLAR.
+const INJURY_MODE_ROUTING = {
+  lower_body: {
+    label: 'Dół ciała (noga, kolano, kostka)',
+    segments: {
+      moc: 'unavailable', wytrzymalosc: 'unavailable', fizycznosc: 'unavailable',
+      techFund: 'partial', techSpec: 'partial',
+      regeneracja: 'available', odpornosc: 'available', odzywianie: 'available', tolerancja: 'available',
+      koncentracja: 'available', mental: 'available',
+      percepcja: 'available', decyzja: 'available',
+    },
+  },
+  upper_body: {
+    label: 'Góra ciała (ręka, bark)',
+    segments: {
+      moc: 'available', wytrzymalosc: 'available', fizycznosc: 'available',
+      techFund: 'available', techSpec: 'available',
+      regeneracja: 'available', odpornosc: 'available', odzywianie: 'available', tolerancja: 'available',
+      koncentracja: 'available', mental: 'available',
+      percepcja: 'available', decyzja: 'available',
+    },
+  },
+  general: {
+    label: 'Ogólne (przeciążenie, choroba)',
+    segments: {
+      moc: 'unavailable', wytrzymalosc: 'unavailable', fizycznosc: 'unavailable',
+      techFund: 'unavailable', techSpec: 'unavailable',
+      regeneracja: 'available', odpornosc: 'available', odzywianie: 'available', tolerancja: 'partial',
+      koncentracja: 'available', mental: 'available',
+      percepcja: 'available', decyzja: 'available',
+    },
+  },
+};
+
+function renderInjuryRoutingStatus(profile) {
+  const wrap = document.getElementById('injury-routing-wrap');
+  if (!profile || !profile.injury_mode_active || !INJURY_MODE_ROUTING[profile.injury_mode_category]) {
+    wrap.classList.add('gc-hidden');
+    return;
+  }
+  const routing = INJURY_MODE_ROUTING[profile.injury_mode_category];
+  document.getElementById('injury-routing-category').textContent = routing.label;
+
+  const bySegment = Object.entries(routing.segments);
+  const grouped = { unavailable: [], partial: [], available: [] };
+  bySegment.forEach(([segId, status]) => grouped[status].push(SEG_LABELS[segId] || segId));
+
+  const html = ['unavailable', 'partial', 'available'].map(status => {
+    if (!grouped[status].length) return '';
+    return `<div style="margin-bottom:8px;"><span style="font-size:11px;letter-spacing:0.05em;text-transform:uppercase;color:var(--muted);">${SEGMENT_AVAILABILITY_LABELS[status]}:</span> ${grouped[status].join(', ')}</div>`;
+  }).join('');
+  document.getElementById('injury-routing-list').innerHTML = html;
+  wrap.classList.remove('gc-hidden');
+}
+
+async function loadMecz() {
+  try {
+    const profileRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/player_profiles?user_id=eq.${currentUser.id}&select=injury_mode_active,injury_mode_category`,
+      { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${currentUser.accessToken}` } }
+    );
+    const profileRows = await profileRes.json();
+    const profile = Array.isArray(profileRows) && profileRows[0] ? profileRows[0] : null;
+    renderInjuryRoutingStatus(profile);
+  } catch (e) {
+    // Status trybu kontuzji to dodatkowa informacja — jego brak nie powinien
+    // blokować reszty ekranu (formularza meczu i historii).
+    document.getElementById('injury-routing-wrap').classList.add('gc-hidden');
+  }
+
+  const list = document.getElementById('mecz-history-list');
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/match_contexts?user_id=eq.${currentUser.id}&order=created_at.desc&limit=20&select=*`,
+      { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${currentUser.accessToken}` } }
+    );
+    const rows = await res.json();
+    if (!Array.isArray(rows) || rows.length === 0) {
+      list.innerHTML = '<div class="gc-empty">Brak zapisanych meczów — dodaj pierwszy powyżej.</div>';
+      return;
+    }
+    list.innerHTML = rows.map(renderMatchContextCard).join('');
+  } catch (e) {
+    list.innerHTML = '<div class="gc-empty">Nie udało się wczytać historii meczów.</div>';
+  }
+}
+
+function renderMatchContextCard(row) {
+  const dateLabel = new Date(row.created_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', year: 'numeric' });
+  const typeLabel = GAME_TYPE_LABELS[row.game_type] || row.game_type;
+
+  const scoreParts = [];
+  if (row.own_score !== null && row.own_score !== undefined && row.opponent_score !== null && row.opponent_score !== undefined) {
+    scoreParts.push(`wynik: ${row.own_score}:${row.opponent_score}`);
+  }
+  if (row.minutes_played !== null && row.minutes_played !== undefined) scoreParts.push(`${row.minutes_played} min`);
+  if (row.match_rpe !== null && row.match_rpe !== undefined) scoreParts.push(`RPE: ${row.match_rpe}/10`);
+  if (row.role) scoreParts.push(row.role);
+  const detail = scoreParts.join(' · ') || '—';
+
+  return `
+    <div class="gc-history-card">
+      <div class="gc-history-top">
+        <span class="gc-history-type">${typeLabel}</span>
+        <span class="gc-history-date">${dateLabel}</span>
+      </div>
+      <div class="gc-history-detail">${detail}</div>
+    </div>
+  `;
+}
+
+async function submitMatchContext() {
+  const errEl = document.getElementById('mecz-error');
+  const okEl = document.getElementById('mecz-ok');
+  errEl.classList.add('gc-hidden');
+  okEl.classList.add('gc-hidden');
+
+  const btn = document.getElementById('mecz-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Zapisuję...';
+
+  try {
+    const ownScoreRaw = document.getElementById('f-mecz-own-score').value;
+    const opponentScoreRaw = document.getElementById('f-mecz-opponent-score').value;
+    const minutesRaw = document.getElementById('f-mecz-minutes').value;
+    const role = document.getElementById('f-mecz-role').value.trim();
+
+    const body = {
+      user_id: currentUser.id,
+      game_type: document.getElementById('f-mecz-game-type').value,
+      own_score: ownScoreRaw !== '' ? Number(ownScoreRaw) : null,
+      opponent_score: opponentScoreRaw !== '' ? Number(opponentScoreRaw) : null,
+      role: role || null,
+      minutes_played: minutesRaw !== '' ? Number(minutesRaw) : null,
+      match_rpe: scaleValues.match_rpe !== undefined ? scaleValues.match_rpe : null,
+    };
+
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/match_contexts`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${currentUser.accessToken}`,
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(await res.text());
+
+    okEl.textContent = 'Mecz zapisany.';
+    okEl.classList.remove('gc-hidden');
+    resetMatchForm();
+    await loadMecz();
+  } catch (e) {
+    errEl.textContent = 'Nie udało się zapisać meczu: ' + e.message;
+    errEl.classList.remove('gc-hidden');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Zapisz mecz';
+  }
+}
+
+function resetMatchForm() {
+  document.getElementById('f-mecz-own-score').value = '';
+  document.getElementById('f-mecz-opponent-score').value = '';
+  document.getElementById('f-mecz-role').value = '';
+  document.getElementById('f-mecz-minutes').value = '';
+  delete scaleValues.match_rpe;
+  const scaleWrap = document.getElementById('scale-match_rpe');
+  if (scaleWrap) scaleWrap.querySelectorAll('.gc-scale-btn.sel').forEach(b => b.classList.remove('sel'));
+}
+
+initApp();
+</script>
+
+</body>
+</html>
