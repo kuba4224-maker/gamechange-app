@@ -680,6 +680,28 @@ const SEGMENTS_BY_PILLAR = [
 const SEG_LABELS = Object.fromEntries(SEGMENTS_BY_PILLAR.flatMap(([, segs]) => segs));
 const SEG_PILLAR = Object.fromEntries(SEGMENTS_BY_PILLAR.flatMap(([pillar, segs]) => segs.map(([id]) => [id, pillar])));
 
+// Domyslny horyzont (tygodnie) per segment, gdy zawodnik nie poda wlasnego
+// przy tworzeniu celu -- wartosci z badan/logicznej analizy, zaakceptowane
+// przez Kube 26.07.2026 (patrz claude/PRZEGLAD_PROGOW_GOTOWOSCI_I_HORIZON_WEEKS.md).
+// techSpec i odpornosc oznaczone tam jako niska pewnosc (brak dedykowanego
+// badania) -- jesli intuicja trenerska Kuby mowi inaczej, to tylko jedna
+// liczba do zmiany tutaj, zero migracji bazy.
+const SEGMENT_HORIZON_WEEKS = {
+  moc: 7,
+  wytrzymalosc: 8,
+  fizycznosc: 10,
+  techFund: 12,
+  techSpec: 10,
+  regeneracja: 4,
+  odpornosc: 10,
+  odzywianie: 9,
+  tolerancja: 14,
+  koncentracja: 8,
+  mental: 10,
+  percepcja: 10,
+  decyzja: 8,
+};
+
 let currentEntryType = 'morning';
 const scaleValues = {}; // np. { sleep_quality: 7, rpe: 8 }
 let goalsCache = [];
@@ -1190,8 +1212,13 @@ async function createGoal() {
       is_priority: isPriority,
     };
     if (note) body.refinement_note = note;
-    if (horizonRaw !== '') {
-      body.horizon_weeks = Number(horizonRaw);
+    // Jesli zawodnik nie wpisal wlasnego horyzontu, uzyj wartosci domyslnej
+    // dla segmentu (SEGMENT_HORIZON_WEEKS) -- zaakceptowane przez Kube
+    // 26.07.2026, patrz claude/PRZEGLAD_PROGOW_GOTOWOSCI_I_HORIZON_WEEKS.md.
+    // Zawodnik zawsze moze to nadpisac wpisujac wlasna liczbe tygodni.
+    const horizonWeeksValue = horizonRaw !== '' ? Number(horizonRaw) : SEGMENT_HORIZON_WEEKS[segmentId];
+    if (horizonWeeksValue) {
+      body.horizon_weeks = horizonWeeksValue;
       // POPRAWKA (pełny audyt całości): ten sam problem UTC-vs-lokalny co
       // przy loadEvents()/populateCalendarLinkSelect() — patrz toLocalDateStr.
       body.horizon_started_at = toLocalDateStr(new Date());
@@ -2292,19 +2319,21 @@ function resetMatchForm() {
   const scaleWrap = document.getElementById('scale-match_rpe');
   if (scaleWrap) scaleWrap.querySelectorAll('.gc-scale-btn.sel').forEach(b => b.classList.remove('sel'));
 }
+
 initApp();
 
-  // Rejestracja service workera - wylacznie instalowalnosc (ikona na ekranie
-  // glownym telefonu, tryb "standalone" bez paska adresu), NIE pelny tryb
-  // offline. Patrz claude/asystent_sw.js po pelne uzasadnienie strategii
-  // network-first. Warunek `'serviceWorker' in navigator` to standardowy,
-  // bezpieczny fallback dla przegladarek bez wsparcia - po prostu nic sie
-  // wtedy nie dzieje, appka dziala dalej normalnie jak dzis.
-  if ('serviceWorker' in navigator) {
+// Rejestracja service workera — wyłącznie instalowalność (ikona na ekranie
+// głównym telefonu, tryb "standalone" bez paska adresu), NIE pełny tryb
+// offline. Patrz claude/asystent_sw.js po pełne uzasadnienie strategii
+// network-first. Warunek `'serviceWorker' in navigator` to standardowy,
+// bezpieczny fallback dla przeglądarek bez wsparcia — po prostu nic się
+// wtedy nie dzieje, appka działa dalej normalnie jak dziś.
+if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-  navigator.serviceWorker.register('/sw.js').catch((e) => console.log('SW registration failed:', e));
+    navigator.serviceWorker.register('/sw.js').catch((e) => console.log('SW registration failed:', e));
   });
-  }
+}
 </script>
+
 </body>
 </html>
