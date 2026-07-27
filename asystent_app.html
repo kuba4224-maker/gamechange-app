@@ -4,12 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Gamechange — Asystent Sportowca</title>
-  <link rel="manifest" href="/manifest.webmanifest">
-  <meta name="theme-color" content="#0e0d0b">
-  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Gamechange">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#0e0d0b">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Gamechange">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
@@ -119,6 +119,12 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--i
 .gc-rec-rationale { font-size: 13px; color: var(--muted); margin-bottom: 12px; }
 .gc-badge-tone { display: inline-block; padding: 3px 8px; background: #ece8e0; color: var(--ink2); font-size: 11px; letter-spacing: 0.03em; margin-left: 8px; }
 .gc-rec-feedback-given { font-size: 13px; color: var(--muted); font-style: italic; }
+.gc-rec-specialist-link {
+  display: inline-block; margin-top: 10px; margin-bottom: 4px; padding: 10px 18px;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--ink);
+  font-family: 'Bebas Neue', sans-serif; font-size: 13px; letter-spacing: 0.05em; text-decoration: none;
+}
+.gc-rec-specialist-link:hover { background: var(--ink); color: var(--bg); }
 </style>
 </head>
 <body>
@@ -564,6 +570,7 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--i
 // ══════════════════════════════════════
 const SUPABASE_URL = 'https://kqrbztsvepjtggjmmcdx.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_EoYRIZpDhUSdNSJDXWl4Ew_SG8aJABP';
+const MARKETPLACE_BASE_URL = 'https://gamechange-marketplace.vercel.app';
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let currentUser = null;
@@ -680,28 +687,6 @@ const SEGMENTS_BY_PILLAR = [
 const SEG_LABELS = Object.fromEntries(SEGMENTS_BY_PILLAR.flatMap(([, segs]) => segs));
 const SEG_PILLAR = Object.fromEntries(SEGMENTS_BY_PILLAR.flatMap(([pillar, segs]) => segs.map(([id]) => [id, pillar])));
 
-// Domyslny horyzont (tygodnie) per segment, gdy zawodnik nie poda wlasnego
-// przy tworzeniu celu -- wartosci z badan/logicznej analizy, zaakceptowane
-// przez Kube 26.07.2026 (patrz claude/PRZEGLAD_PROGOW_GOTOWOSCI_I_HORIZON_WEEKS.md).
-// techSpec i odpornosc oznaczone tam jako niska pewnosc (brak dedykowanego
-// badania) -- jesli intuicja trenerska Kuby mowi inaczej, to tylko jedna
-// liczba do zmiany tutaj, zero migracji bazy.
-const SEGMENT_HORIZON_WEEKS = {
-  moc: 7,
-  wytrzymalosc: 8,
-  fizycznosc: 10,
-  techFund: 12,
-  techSpec: 10,
-  regeneracja: 4,
-  odpornosc: 10,
-  odzywianie: 9,
-  tolerancja: 14,
-  koncentracja: 8,
-  mental: 10,
-  percepcja: 10,
-  decyzja: 8,
-};
-
 let currentEntryType = 'morning';
 const scaleValues = {}; // np. { sleep_quality: 7, rpe: 8 }
 let goalsCache = [];
@@ -733,6 +718,18 @@ const FEEDBACK_LABELS = {
 };
 const REFERRAL_REASON_LABELS = {
   pain_pattern_match: 'Wzorzec bólu', feedback_escalation: 'Powtarzające się odrzucenia', other: 'Inne',
+};
+// Deep-link do Marketplace (Domena 11: decision_recommendations.
+// suggested_specialist_category) — te same 6 kategorii co CHECK w
+// marketplace_01_specialists.sql / etykiety w specialist_list.html,
+// zweryfikowane wprost w tamtych plikach, nie zgadywane.
+const SPECIALIST_CATEGORY_LABELS = {
+  strength_conditioning: 'Trener przygotowania motorycznego',
+  physiotherapy: 'Fizjoterapeuta',
+  orthopedics: 'Ortopeda',
+  nutrition: 'Dietetyk sportowy',
+  technical_tactical: 'Trener Techniczno-Taktyczny',
+  sports_psychology: 'Psycholog sportowy',
 };
 
 // ══════════════════════════════════════
@@ -1212,13 +1209,8 @@ async function createGoal() {
       is_priority: isPriority,
     };
     if (note) body.refinement_note = note;
-    // Jesli zawodnik nie wpisal wlasnego horyzontu, uzyj wartosci domyslnej
-    // dla segmentu (SEGMENT_HORIZON_WEEKS) -- zaakceptowane przez Kube
-    // 26.07.2026, patrz claude/PRZEGLAD_PROGOW_GOTOWOSCI_I_HORIZON_WEEKS.md.
-    // Zawodnik zawsze moze to nadpisac wpisujac wlasna liczbe tygodni.
-    const horizonWeeksValue = horizonRaw !== '' ? Number(horizonRaw) : SEGMENT_HORIZON_WEEKS[segmentId];
-    if (horizonWeeksValue) {
-      body.horizon_weeks = horizonWeeksValue;
+    if (horizonRaw !== '') {
+      body.horizon_weeks = Number(horizonRaw);
       // POPRAWKA (pełny audyt całości): ten sam problem UTC-vs-lokalny co
       // przy loadEvents()/populateCalendarLinkSelect() — patrz toLocalDateStr.
       body.horizon_started_at = toLocalDateStr(new Date());
@@ -1676,6 +1668,24 @@ function renderRecCard(r) {
   }
   if (r.rationale_text) body += `<div class="gc-rec-rationale">${r.rationale_text}</div>`;
   if (!isReferral && !isPositionSignal && !r.weekly_focus_text) body = toneBadge + body; // ton na akcji, gdy brak weekly_focus
+
+  // NOWE (deep-link do Marketplace, Domena 11): decision_recommendations.
+  // suggested_specialist_category jest wypełniane przez backend od
+  // 26.07.2026 (dziś tylko dla referral_reason='pain_pattern_match', patrz
+  // asystent_sportowca_11_marketplace_linkage.sql) — dotąd nigdzie w UI nie
+  // było z tego linku dalej, więc zawodnik czytał sugestię i nie miał jak
+  // faktycznie pójść do specjalisty. specialist_list.html już obsługuje
+  // parametr ?category= (applyCategoryFromUrl(), sprawdzone wprost w tamtym
+  // pliku) — więc to jest zwykły link z parametrem, żadnej nowej
+  // infrastruktury po stronie Marketplace. Warunek na suggested_specialist_
+  // category (nie na isReferral) celowo szerszy niż tylko ten jeden typ —
+  // jeśli backend kiedyś zacznie wypełniać to pole też dla innych typów
+  // rekomendacji, link pojawi się automatycznie bez zmian w tym pliku.
+  if (r.suggested_specialist_category) {
+    const categoryLabel = SPECIALIST_CATEGORY_LABELS[r.suggested_specialist_category] || r.suggested_specialist_category;
+    const marketplaceUrl = `${MARKETPLACE_BASE_URL}/specialist_list.html?category=${encodeURIComponent(r.suggested_specialist_category)}`;
+    body += `<a class="gc-rec-specialist-link" href="${marketplaceUrl}" target="_blank" rel="noopener">Znajdź specjalistę: ${categoryLabel} →</a>`;
+  }
 
   const dateLabel = new Date(r.created_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' });
 
