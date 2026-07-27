@@ -258,6 +258,8 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--i
       <div id="goal-error" class="gc-error gc-hidden"></div>
       <div id="goal-ok" class="gc-ok gc-hidden"></div>
 
+      <div id="goal-direction-context-wrap" class="gc-hidden" style="margin-bottom:16px;"></div>
+
       <div class="gc-section-block">
         <label class="gc-label">Segment</label>
         <select class="gc-select" id="f-goal-segment"></select>
@@ -316,6 +318,8 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--i
 
       <div id="event-error" class="gc-error gc-hidden"></div>
       <div id="event-ok" class="gc-ok gc-hidden"></div>
+
+      <div id="calendar-suggestion-wrap" class="gc-hidden" style="margin-bottom:20px;"></div>
 
       <div class="gc-section-block">
         <label class="gc-label">Rodzaj</label>
@@ -409,6 +413,7 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--i
 
       <div class="gc-section-block">
         <div class="gc-label" style="margin-bottom:14px;">Cel kierunkowy</div>
+        <div style="font-size:13px; color:var(--ink2); margin-bottom:14px;">To ogólny kierunek, nie konkretny, śledzony cel — przy zakładaniu Twojego pierwszego celu w zakładce Cele przypomnimy Ci o nim, żebyś mógł wybrać konkretny segment, którego dotyczy.</div>
 
         <label class="gc-label">Co jest dla Ciebie teraz najważniejsze?</label>
         <select class="gc-select" id="f-profile-goal-direction" onchange="updateGoalDirectionNoteVisibility()"></select>
@@ -494,7 +499,7 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--i
         <div class="gc-section-block">
           <div style="font-size:15px; margin-bottom:12px;">Nie masz jeszcze wykonanej diagnozy powiązanej z tym kontem.</div>
           <div style="font-size:13px; color:var(--ink2); margin-bottom:20px;">
-            Diagnoza to osobna, krótka ankieta oceniająca Twoją formę we wszystkich 13 obszarach — to podstawa pod resztę systemu (cele, rekomendacje). Jeśli robiłeś już wcześniej diagnozę bez logowania na inny email, na razie nie łączymy jej automatycznie z kontem — możesz spokojnie zrobić nową.
+            Diagnoza to osobna, krótka ankieta oceniająca Twoją formę we wszystkich 13 obszarach — to podstawa pod resztę systemu (cele, rekomendacje). Jeśli robiłeś już wcześniej diagnozę bez logowania, na ten sam adres email, którym się teraz logujesz — jest już połączona z Twoim kontem. Pierwszy cel i pierwsza rekomendacja w Centrum Decyzji pojawią się automatycznie (może to potrwać do 24 godzin). Jeśli robiłeś diagnozę na inny email albo jeszcze jej nie robiłeś, zrób ją teraz.
           </div>
           <a class="gc-btn" id="diagnoza-start-link" href="https://gamechange-diagnoza.vercel.app" target="_blank" rel="noopener" style="display:block; text-align:center; text-decoration:none; box-sizing:border-box;">Wykonaj diagnozę</a>
         </div>
@@ -703,6 +708,151 @@ const DAYS_OF_WEEK = [['MON', 'Pon'], ['TUE', 'Wt'], ['WED', 'Śr'], ['THU', 'Cz
 const DAY_LABELS_PL = Object.fromEntries(DAYS_OF_WEEK.map(([code, label]) => [code, label.toLowerCase()]));
 let currentEventFrequency = 'once';
 let eventsCache = [];
+
+// Sugestia Kalendarza (27.07.2026, część 3 tej sesji) — adresuje lukę
+// wskazaną w audycie UX (claude/PLAN_SPOJNEJ_SCIEZKI.md, sekcja 3B.2,
+// "najbardziej namacalna, pojedyncza luka w sieci połączeń"): aktywny
+// priorytetowy cel już istnieje w bazie, ale Kalendarz był czystym
+// ręcznym formularzem, bez żadnej podpowiedzi. Treść opisowa per segment
+// przeniesiona z wcześniejszego szkicu (claude/RECOVERY_KANDYDAT_index_
+// html_z_sesji_marketplace.html, funkcja getTopCalendarSuggestion) —
+// ale logika WYBORU dnia i sprawdzania kolizji napisana tu od nowa pod
+// realne dane tej apki (goalsCache/eventsCache), nie wklejona 1:1: tamten
+// szkic był pisany dla innej architektury (osobna apka diagnozy, z
+// DEPENDENCY_NETWORK niedostępnym tutaj). Świadomie pominięta stamtąd
+// flaga "pilne" — wymagałaby zduplikowania 81-parowej sieci zależności
+// tylko dla jednego kosmetycznego wyróżnienia w tekście karty.
+const SUGGESTED_ACTIVITY_BY_SEGMENT = {
+  percepcja: 'małe gry i sytuacje meczowe (3v3, przewaga/niedobór) — 15 minut',
+  decyzja: 'ćwiczenia z presją czasu i decyzją pod obciążeniem — 15 minut',
+  koncentracja: 'krótka sesja uważności albo ćwiczenie na powrót po błędzie — 10 minut',
+  mental: 'wizualizacja trudnych sytuacji meczowych i planowanie reakcji — 10 minut',
+  moc: 'krótki blok skoków/sprintów eksplozywnych — 15 minut',
+  wytrzymalosc: 'interwały tlenowe średniej intensywności — 20 minut',
+  fizycznosc: 'ćwiczenia zwinności i zmiany kierunku — 15 minut',
+  techFund: 'żonglerka i prowadzenie piłki w ograniczonej przestrzeni — 15 minut',
+  techSpec: 'dryblingi 1v1 na sucho lub z pasywnym obrońcą — 15 minut',
+  regeneracja: 'rozciąganie i wcześniejsze położenie się spać — 15 minut',
+  odpornosc: 'lekki trening uzupełniający + dbałość o sen — 10 minut',
+  odzywianie: 'przygotowanie posiłku przedtreningowego na następny dzień — 15 minut',
+  tolerancja: 'praca nad mobilnością i stabilizacją stawów — 15 minut',
+};
+
+// Poniedziałek-niedziela bieżącego tygodnia, z toLocalDateStr (nie
+// toISOString) — ta sama poprawka strefy czasowej co reszta apki
+// (patrz komentarz przy toLocalDateStr), żeby "dzisiaj"/"ten tydzień"
+// liczyły się w czasie lokalnym zawodnika, nie UTC.
+function getCurrentWeekDayList() {
+  const now = new Date();
+  const dayOfWeek = (now.getDay() + 6) % 7; // 0=Pon..6=Nd
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - dayOfWeek);
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    days.push({ dateStr: toLocalDateStr(d), dayCode: DAYS_OF_WEEK[i][0], label: DAYS_OF_WEEK[i][1] });
+  }
+  return days;
+}
+
+function computeCalendarSuggestion() {
+  const activeGoal = goalsCache.find(g => g.is_priority && g.status === 'active');
+  if (!activeGoal) return null;
+
+  const activity = SUGGESTED_ACTIVITY_BY_SEGMENT[activeGoal.segment_id];
+  if (!activity) return null;
+
+  const todayStr = toLocalDateStr(new Date());
+  const weekDays = getCurrentWeekDayList().filter(d => d.dateStr >= todayStr);
+  if (weekDays.length === 0) return null;
+
+  // Dzień jest zajęty, jeśli istnieje jednorazowe wydarzenie zaplanowane
+  // na tę datę, albo cykliczne wydarzenie obejmujące ten dzień tygodnia
+  // (recurrence_rule w formacie 'weekly:MON,WED,FRI' — patrz Domena 07).
+  const busyDates = new Set(
+    eventsCache.filter(e => e.status === 'scheduled' && e.scheduled_date).map(e => e.scheduled_date)
+  );
+  const busyDayCodes = new Set();
+  eventsCache
+    .filter(e => e.status === 'scheduled' && e.recurrence_rule)
+    .forEach(e => e.recurrence_rule.replace('weekly:', '').split(',').forEach(code => busyDayCodes.add(code)));
+
+  const freeDay = weekDays.find(d => !busyDates.has(d.dateStr) && !busyDayCodes.has(d.dayCode));
+  if (!freeDay) return null;
+
+  // Nie ponawiaj sugestii, jeśli w tym tygodniu jest już zaplanowana
+  // mikro-sesja powiązana z tym samym celem (dodana ręcznie przez
+  // zawodnika albo wcześniej przez tę samą sugestię) — unika nagabywania.
+  const alreadyPlanned = eventsCache.some(e =>
+    e.status === 'scheduled' && e.goal_id === activeGoal.id && e.event_type === 'micro_session' &&
+    ((e.scheduled_date && busyDates.has(e.scheduled_date)) || e.recurrence_rule)
+  );
+  if (alreadyPlanned) return null;
+
+  return {
+    goal: activeGoal,
+    segmentName: SEG_LABELS[activeGoal.segment_id] || activeGoal.segment_id,
+    activity,
+    day: freeDay,
+  };
+}
+
+function renderCalendarSuggestion() {
+  const wrap = document.getElementById('calendar-suggestion-wrap');
+  if (!wrap) return;
+  const suggestion = computeCalendarSuggestion();
+  if (!suggestion) {
+    wrap.classList.add('gc-hidden');
+    wrap.innerHTML = '';
+    return;
+  }
+  wrap.classList.remove('gc-hidden');
+  wrap.innerHTML = `
+    <div class="gc-section-block" style="border-left:3px solid var(--accent);">
+      <div class="gc-label" style="margin-bottom:10px;">Sugerowane na ten tydzień</div>
+      <div style="font-size:15px; margin-bottom:6px;"><strong>${suggestion.segmentName}</strong> — ${suggestion.activity}</div>
+      <div style="font-size:13px; color:var(--ink2); margin-bottom:14px;">Masz wolny ${suggestion.day.label} — dodać tam mikro-sesję powiązaną z Twoim aktywnym celem?</div>
+      <button class="gc-btn-secondary" onclick="acceptCalendarSuggestion()">Dodaj</button>
+    </div>
+  `;
+}
+
+async function acceptCalendarSuggestion() {
+  const suggestion = computeCalendarSuggestion();
+  if (!suggestion) return;
+
+  const body = {
+    user_id: currentUser.id,
+    event_type: 'micro_session',
+    source: 'system',
+    title: `Sugerowane: ${suggestion.segmentName}`,
+    notes: suggestion.activity,
+    status: 'scheduled',
+    scheduled_date: suggestion.day.dateStr,
+    goal_id: suggestion.goal.id,
+  };
+
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/calendar_events`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${currentUser.accessToken}`,
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    await loadEvents();
+    await populateCalendarLinkSelect();
+  } catch (e) {
+    const errEl = document.getElementById('event-error');
+    errEl.textContent = 'Nie udało się dodać sugerowanej aktywności: ' + e.message;
+    errEl.classList.remove('gc-hidden');
+  }
+}
 
 // Centrum Decyzji (Domena 06) — treść rekomendacji generuje wyłącznie
 // backend (AI, patrz architektura_techniczna.md), frontend tylko czyta
@@ -1114,6 +1264,60 @@ async function loadGoals() {
   historyList.innerHTML = history.length
     ? history.map(renderGoalCard).join('')
     : '<div class="gc-empty">Brak zakończonych celów.</div>';
+
+  await loadGoalDirectionContext();
+}
+
+// Rozwiązuje zdublowanie "Cel kierunkowy" (Profil) / "Cele" wskazane w
+// audycie UX (claude/PLAN_SPOJNEJ_SCIEZKI.md, sekcja 3B.1): zamiast być
+// osobnym, niepowiązanym polem, "Cel kierunkowy" z Profilu staje się
+// JEDNORAZOWYM kontekstem pokazywanym przy zakładaniu PIERWSZEGO celu —
+// stąd warunek "brak aktywnego celu" niżej, nie stały, powtarzający się
+// komunikat. Świadomie NIE pre-filtrujemy/nie zgadujemy segmentu z
+// wartości goal_direction (np. "więcej minut w meczach" nie mapuje się
+// jednoznacznie na żaden z 13 segmentów) — zamiast zgadywać, pokazujemy
+// zawodnikowi jego własne słowa jako przypomnienie, niech on sam wybierze
+// pasujący segment. Bezpieczniejsze niż sztywna tabela mapowania, której
+// nikt jeszcze nie zaprojektował.
+async function loadGoalDirectionContext() {
+  const wrap = document.getElementById('goal-direction-context-wrap');
+  if (!wrap) return;
+
+  const hasActiveGoal = goalsCache.some(g => g.status === 'active');
+  if (hasActiveGoal) {
+    wrap.classList.add('gc-hidden');
+    wrap.innerHTML = '';
+    return;
+  }
+
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/player_profiles?user_id=eq.${currentUser.id}&select=goal_direction,goal_direction_note`,
+      { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${currentUser.accessToken}` } }
+    );
+    const rows = await res.json();
+    const p = (Array.isArray(rows) && rows[0]) || {};
+    if (!p.goal_direction) {
+      wrap.classList.add('gc-hidden');
+      wrap.innerHTML = '';
+      return;
+    }
+
+    const label = GOAL_DIRECTION_LABELS[p.goal_direction] || p.goal_direction;
+    const noteText = p.goal_direction_note ? ` — „${p.goal_direction_note}”` : '';
+    wrap.classList.remove('gc-hidden');
+    wrap.innerHTML = `
+      <div class="gc-section-block" style="border-left:3px solid var(--accent);">
+        <div class="gc-label" style="margin-bottom:8px;">Twój ogólny cel z Profilu</div>
+        <div style="font-size:14px;">${label}${noteText}</div>
+        <div style="font-size:12px; color:var(--muted); margin-top:8px;">Wybierz poniżej konkretny segment, którego to dotyczy — to on będzie śledzony jako Twój cel.</div>
+      </div>
+    `;
+  } catch (e) {
+    // Cichy fallback — brak kontekstu z Profilu nie blokuje zakładania celu.
+    wrap.classList.add('gc-hidden');
+    wrap.innerHTML = '';
+  }
 }
 
 function renderGoalCard(g) {
@@ -1427,6 +1631,8 @@ async function loadEvents() {
   cancelledList.innerHTML = cancelled.length
     ? cancelled.map(e => renderEventCard(e, loggedEventIds, todayStr)).join('')
     : '<div class="gc-empty">Brak anulowanych wpisów.</div>';
+
+  renderCalendarSuggestion();
 }
 
 function renderEventCard(e, loggedEventIds, todayStr) {
@@ -1654,6 +1860,14 @@ function renderRecCard(r) {
   const isPositionSignal = r.recommendation_type === 'position_fit_signal';
   const toneBadge = r.confidence_tone === 'questioning' ? '<span class="gc-badge-tone">ton pytający</span>' : '';
 
+  // 27.07.2026 (część 3 tej sesji, weryfikacja zadania "czy każda
+  // rekomendacja kończy się jawnym co teraz"): recommendation_text jest już
+  // wymagane przez backend (generateRecommendation rzuca błąd bez niego) i
+  // system prompt wymusza, żeby był to "konkretna, wykonalna rekomendacja
+  // działania" — treść zawsze jest akcją. Jedyna realna luka: brak jawnej
+  // etykiety w UI, więc dla training_focus (Funkcja 3 "Co dziś zrobić?")
+  // dodana etykieta "Co teraz:" przed treścią, żeby zamknięcie akcją było
+  // jawne wizualnie, nie tylko domyślne przez kolejność elementów.
   let body = '';
   if (isReferral) {
     const reasonLabel = REFERRAL_REASON_LABELS[r.referral_reason] || r.referral_reason || '';
@@ -1664,7 +1878,7 @@ function renderRecCard(r) {
     body += `<div class="gc-rec-action">${r.recommendation_text}</div>`;
   } else {
     if (r.weekly_focus_text) body += `<div class="gc-rec-focus">${r.weekly_focus_text}${toneBadge}</div>`;
-    body += `<div class="gc-rec-action">${r.recommendation_text}</div>`;
+    body += `<div class="gc-rec-action"><strong>Co teraz:</strong> ${r.recommendation_text}</div>`;
   }
   if (r.rationale_text) body += `<div class="gc-rec-rationale">${r.rationale_text}</div>`;
   if (!isReferral && !isPositionSignal && !r.weekly_focus_text) body = toneBadge + body; // ton na akcji, gdy brak weekly_focus
@@ -1738,30 +1952,34 @@ async function submitFeedback(recId, response) {
   const commentEl = document.getElementById('rec-comment-' + recId);
   const comment = commentEl ? commentEl.value.trim() : '';
 
-  const fields = {
-    feedback_response: response,
-    feedback_at: new Date().toISOString(),
-  };
-  if (comment) fields.feedback_comment = comment;
-
   try {
-    // RLS (Domena 06): UPDATE dozwolony tylko na kolumnach feedback_* —
-    // dokładnie te trzy pola, nic więcej w tym zapytaniu.
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/decision_recommendations?id=eq.${recId}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: SUPABASE_KEY,
-        Authorization: `Bearer ${currentUser.accessToken}`,
-        Prefer: 'return=minimal',
-      },
-      body: JSON.stringify(fields),
+    // 27.07.2026 (część 3 tej sesji): wcześniej ta funkcja robiła bezpośredni
+    // PATCH na decision_recommendations przez PostgREST (RLS ograniczało go
+    // do kolumn feedback_*). Teraz woła backend /api/submit-recommendation-
+    // feedback — zapisuje te same pola, ale DODATKOWO liczy serię odrzuceń
+    // ("nie miało to sensu") i przy 3+ z rzędu automatycznie generuje
+    // rekomendację specialist_referral (eskalacja). Ten wyzwalacz wcześniej
+    // nie istniał nigdzie — computeRejectionStreak() i checkFeedback
+    // EscalationNotYetFired() w generate-recommendation.js były zbudowane,
+    // ale nic ich nie wywoływało. Patrz komentarz na górze
+    // api/submit-recommendation-feedback.js po pełne wyjaśnienie.
+    const res = await fetch('/api/submit-recommendation-feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: currentUser.id,
+        recommendationId: recId,
+        response,
+        comment: comment || undefined,
+      }),
     });
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(errText);
+      throw new Error(data.error || `HTTP ${res.status}`);
     }
-    okEl.textContent = 'Zapisano Twoją odpowiedź.';
+    okEl.textContent = (data.escalation && data.escalation.fired)
+      ? 'Zapisano Twoją odpowiedź. Widzimy, że kilka razy z rzędu ta sugestia nie trafiała — przygotowaliśmy nową rekomendację, sprawdź listę poniżej.'
+      : 'Zapisano Twoją odpowiedź.';
     okEl.classList.remove('gc-hidden');
     await loadRecommendations();
   } catch (e) {
@@ -2082,13 +2300,25 @@ async function addInjuryHistory() {
 //  jakąś diagnozę powiązaną z tym kontem (po user_id) i kierujemy
 //  do zrobienia nowej.
 //
-//  UWAGA (świadome ograniczenie, nie błąd): dzisiejsze narzędzie
-//  diagnostyczne na produkcji działa anonimowo (bez logowania) —
-//  most łączący stare, anonimowe diagnozy z nowym kontem po emailu
-//  ("Okres przejściowy", Funkcja 17 Onboarding) jeszcze nie jest
-//  zbudowany. Więc ten ekran widzi tylko diagnozy zrobione już z
-//  poziomu zalogowanego konta — nie "brak diagnozy w ogóle".
-//  Kopia w UI wprost to tłumaczy, żeby nie wprowadzać w błąd.
+//  POPRAWKA (27.07.2026, część 3 tej sesji — wcześniejsza wersja tego
+//  komentarza i towarzyszący tekst w UI błędnie zakładały, że most
+//  anonimowa diagnoza→konto nie istnieje): most PO EMAILU już istnieje
+//  i jest wdrożony — `handle_new_user()` (Domena 15, asystent_sportowca_
+//  15_most_kont_legacy.sql) ustawia `diagnostics.user_id` automatycznie
+//  przy KAŻDYM nowym koncie, dopasowując po `diagnostics.email` (które
+//  index.html zapisuje razem z wynikami przy anonimowym wypełnieniu
+//  ankiety — patrz buildDiagnosticsRecord()/saveToSupabase w index.html).
+//  Dopasowanie działa NATYCHMIAST, w tej samej transakcji co utworzenie
+//  konta — zapytanie niżej (po user_id) widzi je od razu po zalogowaniu.
+//  Osobny cron `cron-onboard-diagnosis` (raz dziennie, 04:00, patrz
+//  asystent_vercel.json) dogenerowuje pierwszy cel + pierwszą
+//  rekomendację AI dla świeżo dopasowanych zawodników — to jedyny
+//  element z opóźnieniem (do 24h), nie samo dopasowanie diagnozy.
+//  Znane, nierozwiązane jeszcze ograniczenie (opisane też w Domenie 15):
+//  dopasowanie po emailu jest DOKŁADNE (=), nie case-insensitive — jeśli
+//  zawodnik poda e-mail inną wielkością liter przy diagnozie niż przy
+//  logowaniu, dopasowanie się nie powiedzie. Nie naprawiane teraz bez
+//  dowodu, że faktycznie występuje w praktyce.
 //
 //  Wybieramy tylko kolumny user_id/diagnosis_type/created_at —
 //  jedyne, których istnienie potwierdza plik SQL Domeny 02
