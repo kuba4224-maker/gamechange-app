@@ -115,4 +115,26 @@ async function sendPush(tokens, { title, body, data } = {}) {
   return { successCount: result.successCount, failureCount: result.failureCount, invalidTokens };
 }
 
-module.exports = { sendPush };
+// ------------------------------------------------------------
+// verifyFirebaseConfig — DIAGNOSTYKA 29.07.2026 (Cowork, samodzielnie, przy
+// weryfikacji Krok 0.4b checklisty). Woła DOKŁADNIE tę samą ścieżkę
+// inicjalizacji co pierwsze realne sendPush() w danym cold starcie
+// (parsowanie FIREBASE_SERVICE_ACCOUNT_JSON + admin.initializeApp), ale
+// nic nie wysyła i nigdy nie zwraca/loguje treści samego sekretu — tylko
+// rzuca wyjątek przy błędzie (ten sam komunikat co realny błąd wysyłki)
+// albo zwraca true. Powód istnienia: sendPush() (a więc i getFirebaseApp())
+// jest dziś wołane WYŁĄCZNIE gdy istnieje co najmniej jeden pasujący token
+// w push_tokens — w pilotażu bez jeszcze jednego dev-buildu z
+// zarejestrowanym tokenem (Krok 4.10/5.2) taki token nie istnieje, więc
+// zwykły przebieg crona NIGDY nie testuje realnie tego sekretu, mimo że
+// kończy się deklarowanym "sukcesem" (0 wysłanych wszędzie) — dokładnie to
+// zaobserwowano 29.07.2026 przy weryfikacji Krok 0.4b. Wołane z
+// cron-send-notifications.js na początku KAŻDEGO przebiegu — patrz
+// `firebaseConfigOk`/`firebaseConfigError` w jego wyniku i logu.
+// ------------------------------------------------------------
+function verifyFirebaseConfig() {
+  getFirebaseApp();
+  return true;
+}
+
+module.exports = { sendPush, verifyFirebaseConfig };

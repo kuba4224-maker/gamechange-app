@@ -9,39 +9,51 @@
 // URUCHAMIANY CO ~2H (patrz zaktualizowany asystent_vercel.json — ~12
 // wpisów, każdy raz dziennie o innej stałej godzinie UTC, zgodnie z
 // limitem Vercel Hobby "cron job max raz dziennie na wpis" — obejście
-// przez wielość wpisów, nie przez wysoką częstotliwość jednego wpisu; DO
-// ZWERYFIKOWANIA przez Kubę przed wdrożeniem, czy ten limit Vercel nadal
-// obowiązuje w tej samej formie — zasady dostawców zewnętrznych się
-// zmieniają, ten sam nawyk co przy weryfikacji Stripe/Vercel gdzie indziej
-// w projekcie).
+// przez wielość wpisów, nie przez wysoką częstotliwość jednego wpisu).
 //
 // RYZYKO R7 (strefa czasowa): godzina lokalna liczona WYŁĄCZNIE przez
 // Intl.DateTimeFormat z timeZone: 'Europe/Warsaw' w KAŻDYM przebiegu —
 // NIGDY stały offset — żeby DST (zmiana czasu) nie rozjeżdżała dopasowania
 // mimo że same wpisy crona są przypięte do stałych godzin UTC.
 //
-// ZAŁOŻENIA WYMAGAJĄCE PRZEGLĄDU KUBY (nie 🛑 STOP — nie dotyczą kont/
-// identyfikatorów, ale wpływają na to KIEDY realnie przyjdzie push) — pełen
-// opis w docs/KROK_4_PUSH_POWIADOMIENIA.md w repo mobilnym:
-// 1. weekly_summary ma dzień ustalony na sztywno (niedziela) — Domena 09
-//    ma tylko preferred_time (godzina), bez dnia tygodnia.
-// 2. DEFAULT_TIMES niżej to robocze wartości dla użytkowników bez wiersza
-//    w notification_preferences — "system uczy się rytmu" (F15) NIE jest
-//    tu zaimplementowane.
-// 3. pre_match zależy od calendar_events.event_type='match' — DB na to
-//    pozwala (Domena 09 rozszerzyła CHECK), ale żaden dzisiejszy frontend
-//    (web ani appka natywna) nie daje sposobu na utworzenie takiego
-//    wydarzenia — funkcja gotowa, realnie dziś nieaktywna.
-// 4. Cztery z pięciu rytmów bez deduplikacji w bazie — poprawność przeciw
-//    duplikatom opiera się na tym, że każdy trafia w JEDNO stałe okno ~2h
-//    dziennie (patrz stałe *_WINDOW_HOUR niżej). Jedyny rytm z prawdziwą
-//    deduplikacją to contextual_insight (decision_recommendations.notified_at).
+// POPRAWKA 29.07.2026 (Cowork, samodzielnie, w trakcie oczekiwania na
+// weryfikację FIREBASE_SERVICE_ACCOUNT_JSON) — porównanie tej pierwszej
+// wersji z pełną specyfikacją treści/warunków w
+// APLIKACJA_MOBILNA_CHECKLISTA_WDROZENIA.md (Krok 4.8) wykazało PIĘĆ
+// realnych rozjazdów między spisanym planem a tym co faktycznie wysyłał
+// ten plik — naprawione w tej wersji, każdy opisany przy odpowiednim
+// rytmie niżej:
+//  1. morning_readiness nie sprawdzał w ogóle, czy zawodnik już zalogował
+//     dzisiejszy wpis poranny (spec: "TYLKO jeśli jeszcze nie zalogował").
+//  2. Domyślna godzina rano była 08:00 zamiast spisanych 7:30.
+//  3. Żaden rytm nie miał rotacji treści dnia parzysty/nieparzysty (spec
+//     wprost dla rytmu 1, tu zastosowana konsekwentnie też dla rytmu 2).
+//  4. pre_match wysyłał TYLKO wieczorem dnia poprzedzającego — spec chce
+//     DWÓCH wysłań (też rano w dniu meczu). Drugie wysłanie brakowało
+//     całkowicie.
+//  5. weekly_summary nie sprawdzał aktywnego celu (spec: "tylko jeśli
+//     zawodnik ma aktywny cel") i nie wstawiał nazwy celu do treści.
+//  6. contextual_insight wysyłał stały, ogólny tekst zamiast treści
+//     konkretnej rekomendacji (spec: pierwsze ~60 znaków + "— sprawdź
+//     rekomendację") i nie miał limitu "max 1 na 3 dni" ze specyfikacji.
+// Pozostała ŚWIADOMIE NIEZAIMPLEMENTOWANA część specyfikacji (opisana
+// wprost w sekcji "Limity częstotliwości i cisza nocna"): globalny limit
+// "max 2 powiadomienia dziennie na zawodnika" z kolejnością priorytetów
+// MIĘDZY rytmami, oraz cisza nocna 21:00-7:00 jako osobna, przekrojowa
+// bramka. Powód: żaden z pozostałych czterech rytmów (poza contextual_
+// insight) nie zapisuje w bazie ŻADNEGO logu wysyłki (patrz punkt 4
+// nagłówka Domeny 09 — świadoma decyzja tamtej sesji), więc rzetelne
+// policzenie "ile powiadomień TEGO dnia już dostał" wymaga nowej tabeli
+// logu wysyłek (np. push_send_log) — zmiana schematu bazy, nie tylko
+// logiki aplikacji. Nie wprowadzona samodzielnie bez choćby krótkiego
+// zerknięcia Kuby, żeby nie dodawać tabeli do produkcyjnej bazy po cichu.
+// Do zrobienia w kolejnym kroku — patrz notatka w checkliście.
 //
 // WDROŻONE: 29.07.2026, przez Cowork samodzielnie w przeglądarce (GitHub).
 // ============================================================
 
 const { createClient } = require('@supabase/supabase-js');
-const { sendPush } = require('./send-push');
+const { sendPush, verifyFirebaseConfig } = require('./send-push');
 
 function getAdminClient() {
   const url = process.env.SUPABASE_URL;
@@ -55,17 +67,50 @@ function getAdminClient() {
 const WARSAW_TZ = 'Europe/Warsaw';
 
 // Domyślne godziny dla użytkowników bez własnego wiersza w
-// notification_preferences (patrz punkt 2 w nagłówku pliku) — robocze
-// wartości, nie potwierdzone przez Kubę, łatwe do zmiany tutaj.
+// notification_preferences — POPRAWIONE 29.07.2026, dokładnie zgodne z
+// APLIKACJA_MOBILNA_CHECKLISTA_WDROZENIA.md (Krok 4.8): rano 7:30 (było
+// błędnie 08:00), tygodniowo niedziela 18:00 (było błędnie 19:00).
 const DEFAULT_TIMES = {
-  morning_readiness: '08:00',
-  weekly_summary: '19:00',
+  morning_readiness: '07:30',
+  weekly_summary: '18:00',
 };
-// Rytmy zdarzeniowe (patrz punkt 4 nagłówka) — każdy trafia w JEDNO stałe
-// okno 2h dziennie, żeby uniknąć duplikatów bez nowego logu w bazie.
+// Rytmy zdarzeniowe (patrz punkt 4 nagłówka Domeny 09) — każdy trafia w
+// JEDNO stałe okno 2h dziennie, żeby uniknąć duplikatów bez nowego logu
+// w bazie. POST_TRAINING_WINDOW_HOUR: uwaga, spec mówi "90 minut po
+// zaplanowanym końcu treningu", ale calendar_events (Domena 07) NIE
+// przechowuje żadnej godziny wydarzenia, tylko datę — więc dokładny
+// czas końca treningu nie istnieje w dzisiejszym schemacie do policzenia
+// "+90 minut". Świadome, udokumentowane tu wprost (nie było wcześniej)
+// przybliżenie: stałe okno wieczorne, ten sam kompromis co przy pre_match
+// (żadny dzisiejszy frontend i tak nie tworzy wydarzeń z godziną).
 const POST_TRAINING_WINDOW_HOUR = 19; // wieczorem, po typowych treningach
-const PRE_MATCH_WINDOW_HOUR = 19;     // wieczorem, dzień przed meczem
+const PRE_MATCH_EVENING_WINDOW_HOUR = 19; // wieczorem, dzień przed meczem
+const PRE_MATCH_MORNING_WINDOW_HOUR = 7;  // NOWE 29.07.2026 — rano, w dniu meczu (spec: "dwa wysłania")
 const WEEKLY_SUMMARY_WEEKDAY = 0;     // 0 = niedziela
+const CONTEXTUAL_INSIGHT_MIN_GAP_DAYS = 3; // NOWE 29.07.2026 — spec: "max 1 na 3 dni"
+
+// Etykiety segmentów do wstawienia w treść weekly_summary ("z celem
+// [nazwa]") — zweryfikowane wprost z SEGMENT_NAME_TO_ID w
+// claude/guided_match.html/index.html (Project Knowledge), NIE zgadywane
+// z pamięci. `segments` w bazie (Domena 00) przechowuje tylko krótki
+// techniczny `id` (np. "techFund"), bez osobnej kolumny z ładną nazwą —
+// stąd mapowanie trzyma się tutaj, tak jak SEGMENT_TO_CATEGORY_CHRONIC
+// w guided_match.html trzyma podobne mapowanie lokalnie zamiast w bazie.
+const SEGMENT_DISPLAY_NAME = {
+  moc: 'Moc',
+  wytrzymalosc: 'Wytrzymałość',
+  fizycznosc: 'Fizyczność',
+  techFund: 'Technika fundamentalna',
+  techSpec: 'Technika specjalistyczna',
+  tolerancja: 'Tolerancja obciążeń',
+  regeneracja: 'Regeneracja',
+  odpornosc: 'Odporność organizmu',
+  odzywianie: 'Odżywienie organizmu',
+  koncentracja: 'Koncentracja',
+  mental: 'Stan mentalny',
+  percepcja: 'Percepcja',
+  decyzja: 'Szybkość decyzji',
+};
 
 function getWarsawNow() {
   const now = new Date();
@@ -78,10 +123,22 @@ function getWarsawNow() {
   const get = (type) => parts.find((p) => p.type === type)?.value;
   const hour = Number(get('hour'));
   const minute = Number(get('minute'));
+  const day = Number(get('day'));
   const dateStr = `${get('year')}-${get('month')}-${get('day')}`; // lokalna data Warszawy, YYYY-MM-DD
   const weekdayShort = get('weekday'); // 'Mon'..'Sun'
   const WEEKDAY_INDEX = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-  return { hour, minute, dateStr, weekday: WEEKDAY_INDEX[weekdayShort] };
+  return { hour, minute, day, dateStr, weekday: WEEKDAY_INDEX[weekdayShort] };
+}
+
+// Data (YYYY-MM-DD) danego momentu w czasie Warszawy — do porównywania
+// "czy ten wpis dziennika powstał dzisiaj", tą samą metodą (Intl, nie
+// stały offset) co getWarsawNow(), żeby DST nie rozjeżdżało porównania.
+function toWarsawDateStr(date) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: WARSAW_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(date);
+  const get = (type) => parts.find((p) => p.type === type)?.value;
+  return `${get('year')}-${get('month')}-${get('day')}`;
 }
 
 // Czy `targetHour` mieści się w oknie [currentHour, currentHour+2) tego
@@ -98,9 +155,28 @@ async function getTokensForUser(supabase, userId) {
   return data.map((r) => r.token);
 }
 
+// NOWE 29.07.2026 — brakująca część specyfikacji rytmu 1: "TYLKO jeśli
+// zawodnik jeszcze nie zalogował dzisiejszego wpisu porannego". Pobiera
+// kilka ostatnich wpisów typu 'morning' i sprawdza, czy któryś powstał
+// w dzisiejszej dacie Warszawy (limit 3 jako margines na wpisy tuż koło
+// północy, gdzie kolejność created_at i data lokalna mogłyby się minąć).
+async function hasLoggedMorningToday(supabase, userId, warsawNow) {
+  const { data, error } = await supabase
+    .from('daily_logs')
+    .select('created_at')
+    .eq('user_id', userId)
+    .eq('entry_type', 'morning')
+    .order('created_at', { ascending: false })
+    .limit(3);
+  if (error || !data) return false;
+  return data.some((row) => toWarsawDateStr(new Date(row.created_at)) === warsawNow.dateStr);
+}
+
 // ------------------------------------------------------------
 // Rytm 1: morning_readiness — "rano, sprawdź gotowość". Zegarowy,
 // per-użytkownik przez notification_preferences.preferred_time.
+// POPRAWIONE 29.07.2026: dodany warunek "jeszcze nie zalogował dziś" +
+// rotacja treści wg parzystości dnia miesiąca, dokładnie jak w spec.
 // ------------------------------------------------------------
 async function runMorningReadiness(supabase, warsawNow, results) {
   const { data: users, error } = await supabase.from('users').select('id');
@@ -112,6 +188,10 @@ async function runMorningReadiness(supabase, warsawNow, results) {
     .eq('notification_type', 'morning_readiness');
   const prefByUser = Object.fromEntries((prefRows || []).map((r) => [r.user_id, r]));
 
+  const body = warsawNow.day % 2 === 0
+    ? 'Nowy dzień. Zaznacz jak spałeś i jak się czujesz.'
+    : 'Jak się dziś czujesz? Sprawdź gotowość, zajmie chwilę.';
+
   for (const u of users) {
     const pref = prefByUser[u.id];
     if (pref && pref.enabled === false) continue; // jawnie wyłączone
@@ -119,12 +199,14 @@ async function runMorningReadiness(supabase, warsawNow, results) {
     const targetHour = Number(targetTime.split(':')[0]);
     if (!hourInWindow(warsawNow.hour, targetHour)) continue;
 
+    if (await hasLoggedMorningToday(supabase, u.id, warsawNow)) continue; // już zalogowane dziś — nie nagabuj
+
     const tokens = await getTokensForUser(supabase, u.id);
     if (tokens.length === 0) continue;
     try {
       await sendPush(tokens, {
         title: 'Gamechange',
-        body: 'Jak się dziś czujesz? Sprawdź swoją gotowość i dodaj poranny wpis do Dziennika.',
+        body,
         data: { type: 'morning_readiness' },
       });
       results.morning_readiness++;
@@ -138,10 +220,12 @@ async function runMorningReadiness(supabase, warsawNow, results) {
 // Rytm 2: post_training — "po treningu, zaloguj sesję". Zdarzeniowy:
 // dzisiejsze zaplanowane treningi (club_training/own_training/
 // micro_session), dla których zawodnik jeszcze nie dodał wpisu w
-// Dzienniku (ten sam test "wykonano" co w ekranie Kalendarz appki
-// natywnej — istnienie daily_logs.calendar_event_id wskazującego na to
-// wydarzenie). Świadomie POMIJA 'task' (nie trening) i 'match' (osobny
-// rytm pre_match, nie post_training).
+// Dzienniku (test "wykonano" = istnienie daily_logs.calendar_event_id
+// wskazującego na to wydarzenie). Świadomie POMIJA 'task' (nie trening)
+// i 'match' (osobny rytm pre_match, nie post_training).
+// POPRAWIONE 29.07.2026: rotacja treści (ten sam wzorzec co rytm 1 —
+// spec tego wprost nie wymaga tylko dla tego rytmu, ale motywacja
+// "żeby nie nudziło" z rytmu 1 stosuje się identycznie tutaj).
 // ------------------------------------------------------------
 async function runPostTraining(supabase, warsawNow, results) {
   if (!hourInWindow(warsawNow.hour, POST_TRAINING_WINDOW_HOUR)) return;
@@ -166,6 +250,10 @@ async function runPostTraining(supabase, warsawNow, results) {
     .not('calendar_event_id', 'is', null);
   const loggedEventIds = new Set((loggedRows || []).map((r) => r.calendar_event_id));
 
+  const body = warsawNow.day % 2 === 0
+    ? 'Jak poszła dzisiejsza sesja? Zaloguj na gorąco.'
+    : 'Trening za Tobą? Zapisz jak poszedł, zanim zapomnisz szczegóły.';
+
   for (const ev of events) {
     if (loggedEventIds.has(ev.id)) continue; // już zalogowane
     const pref = prefByUser[ev.user_id];
@@ -176,7 +264,7 @@ async function runPostTraining(supabase, warsawNow, results) {
     try {
       await sendPush(tokens, {
         title: 'Gamechange',
-        body: 'Miałeś dziś zaplanowany trening — zaloguj sesję w Dzienniku, jak skończysz.',
+        body,
         data: { type: 'post_training', calendarEventId: ev.id },
       });
       results.post_training++;
@@ -188,26 +276,20 @@ async function runPostTraining(supabase, warsawNow, results) {
 
 // ------------------------------------------------------------
 // Rytm 3: pre_match — "przed meczem, przypomnienie o check-inie".
-// Zdarzeniowy: jutrzejsze zaplanowane wydarzenia event_type='match'.
-// UWAGA (patrz punkt 3 nagłówka pliku): dziś żaden frontend nie tworzy
-// takich wydarzeń — ta funkcja jest gotowa, ale realnie nieaktywna,
+// Zdarzeniowy, DWA wysłania (spec, POPRAWIONE 29.07.2026 — wcześniej
+// istniało tylko pierwsze z nich):
+//   (a) wieczorem dnia poprzedzającego — jutrzejsze event_type='match'
+//   (b) rano w dniu meczu (NOWE) — dzisiejsze event_type='match'
+// UWAGA (bez zmian): dziś żaden frontend nie tworzy wydarzeń
+// event_type='match' — ta funkcja jest gotowa, ale realnie nieaktywna,
 // dopóki ta luka nie zostanie zamknięta gdzie indziej.
 // ------------------------------------------------------------
-async function runPreMatch(supabase, warsawNow, results) {
-  if (!hourInWindow(warsawNow.hour, PRE_MATCH_WINDOW_HOUR)) return;
-
-  const tomorrow = new Date(`${warsawNow.dateStr}T00:00:00`);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const y = tomorrow.getFullYear();
-  const m = String(tomorrow.getMonth() + 1).padStart(2, '0');
-  const d = String(tomorrow.getDate()).padStart(2, '0');
-  const tomorrowStr = `${y}-${m}-${d}`;
-
+async function sendPreMatchForDate(supabase, targetDateStr, bodyText, resultsKeyLabel, results) {
   const { data: events, error } = await supabase
     .from('calendar_events')
     .select('id, user_id')
     .eq('status', 'scheduled')
-    .eq('scheduled_date', tomorrowStr)
+    .eq('scheduled_date', targetDateStr)
     .eq('event_type', 'match');
   if (error || !events || events.length === 0) return;
 
@@ -226,20 +308,47 @@ async function runPreMatch(supabase, warsawNow, results) {
     try {
       await sendPush(tokens, {
         title: 'Gamechange',
-        body: 'Jutro masz mecz — sprawdź swój Profil i zadbaj o regenerację przed grą.',
+        body: bodyText,
         data: { type: 'pre_match', calendarEventId: ev.id },
       });
       results.pre_match++;
     } catch (e) {
-      console.error(`cron-send-notifications: błąd wysyłki pre_match dla ${ev.user_id}:`, e);
+      console.error(`cron-send-notifications: błąd wysyłki pre_match (${resultsKeyLabel}) dla ${ev.user_id}:`, e);
     }
+  }
+}
+
+async function runPreMatch(supabase, warsawNow, results) {
+  // (a) wieczorem dnia poprzedzającego — dotyczy JUTRZEJSZEGO meczu
+  if (hourInWindow(warsawNow.hour, PRE_MATCH_EVENING_WINDOW_HOUR)) {
+    const tomorrow = new Date(`${warsawNow.dateStr}T00:00:00`);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const y = tomorrow.getFullYear();
+    const m = String(tomorrow.getMonth() + 1).padStart(2, '0');
+    const d = String(tomorrow.getDate()).padStart(2, '0');
+    await sendPreMatchForDate(
+      supabase, `${y}-${m}-${d}`,
+      'Jutro grasz. Zajrzyj do trybu meczowego, zanim wyjdziesz z domu.',
+      'wieczór przed', results
+    );
+  }
+
+  // (b) NOWE 29.07.2026 — rano, w dniu meczu (dotyczy DZISIEJSZEGO meczu)
+  if (hourInWindow(warsawNow.hour, PRE_MATCH_MORNING_WINDOW_HOUR)) {
+    await sendPreMatchForDate(
+      supabase, warsawNow.dateStr,
+      'Dziś mecz. Sprawdź check-in meczowy.',
+      'rano w dniu', results
+    );
   }
 }
 
 // ------------------------------------------------------------
 // Rytm 4: weekly_summary — "tygodniowo, podsumowanie postępu celów".
-// Dzień ustalony na sztywno (niedziela, patrz punkt 1 nagłówka pliku),
-// godzina per-użytkownik jak w morning_readiness.
+// Dzień ustalony na sztywno (niedziela), godzina per-użytkownik jak w
+// morning_readiness. POPRAWIONE 29.07.2026: dodany warunek "tylko jeśli
+// zawodnik ma aktywny cel" + wstawienie nazwy celu do treści, dokładnie
+// jak w spec ("Zobacz jak poszło z celem [nazwa]").
 // ------------------------------------------------------------
 async function runWeeklySummary(supabase, warsawNow, results) {
   if (warsawNow.weekday !== WEEKLY_SUMMARY_WEEKDAY) return;
@@ -260,12 +369,26 @@ async function runWeeklySummary(supabase, warsawNow, results) {
     const targetHour = Number(targetTime.split(':')[0]);
     if (!hourInWindow(warsawNow.hour, targetHour)) continue;
 
+    // Aktywny cel zawodnika — priorytetowy, jeśli jest; w innym razie
+    // najnowszy aktywny. Brak żadnego aktywnego celu = pomiń (spec).
+    const { data: goals } = await supabase
+      .from('goals')
+      .select('segment_id, is_priority, created_at')
+      .eq('user_id', u.id)
+      .eq('status', 'active')
+      .order('is_priority', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (!goals || goals.length === 0) continue; // brak aktywnego celu — podsumowanie byłoby puste
+
+    const goalName = SEGMENT_DISPLAY_NAME[goals[0].segment_id] || goals[0].segment_id;
+
     const tokens = await getTokensForUser(supabase, u.id);
     if (tokens.length === 0) continue;
     try {
       await sendPush(tokens, {
         title: 'Gamechange',
-        body: 'Podsumowanie tygodnia gotowe — sprawdź postęp swoich celów w appce.',
+        body: `Twój tydzień w liczbach czeka. Zobacz jak poszło z celem ${goalName}.`,
         data: { type: 'weekly_summary' },
       });
       results.weekly_summary++;
@@ -279,13 +402,20 @@ async function runWeeklySummary(supabase, warsawNow, results) {
 // Rytm 5: contextual_insight — "system wykrył coś wartego uwagi". JEDYNY
 // rytm z deduplikacją w bazie (decision_recommendations.notified_at) —
 // bezpieczny do sprawdzania na KAŻDYM przebiegu (co ~2h), bez okna
-// godzinowego.
+// godzinowego. POPRAWIONE 29.07.2026: treść buduje się teraz z
+// rzeczywistej rekomendacji (pierwsze ~60 znaków, jak w spec) zamiast
+// stałego ogólnego tekstu; dodany limit "max 1 na 3 dni na zawodnika"
+// (spec) — sprawdzany przez najnowsze notified_at TEGO użytkownika w
+// całej tabeli, plus lokalny licznik w ramach jednego przebiegu, żeby
+// dwie nowe rekomendacje tego samego zawodnika w jednym przebiegu nie
+// wysłały dwóch push'ów naraz.
 // ------------------------------------------------------------
 async function runContextualInsight(supabase, results) {
   const { data: recs, error } = await supabase
     .from('decision_recommendations')
-    .select('id, user_id')
-    .is('notified_at', null);
+    .select('id, user_id, recommendation_text')
+    .is('notified_at', null)
+    .order('created_at', { ascending: true });
   if (error || !recs || recs.length === 0) return;
 
   const { data: prefRows } = await supabase
@@ -294,17 +424,31 @@ async function runContextualInsight(supabase, results) {
     .eq('notification_type', 'contextual_insight');
   const prefByUser = Object.fromEntries((prefRows || []).map((r) => [r.user_id, r]));
 
+  const gapThreshold = new Date(Date.now() - CONTEXTUAL_INSIGHT_MIN_GAP_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const { data: recentlyNotified } = await supabase
+    .from('decision_recommendations')
+    .select('user_id')
+    .not('notified_at', 'is', null)
+    .gte('notified_at', gapThreshold);
+  const recentlyNotifiedUsers = new Set((recentlyNotified || []).map((r) => r.user_id));
+  const sentThisRun = new Set();
+
   for (const rec of recs) {
     const pref = prefByUser[rec.user_id];
     if (pref && pref.enabled === false) continue;
+    if (recentlyNotifiedUsers.has(rec.user_id) || sentThisRun.has(rec.user_id)) continue; // limit: max 1 / 3 dni
 
     const tokens = await getTokensForUser(supabase, rec.user_id);
     if (tokens.length === 0) continue; // brak urządzenia — spróbuj przy kolejnym przebiegu
 
+    const raw = (rec.recommendation_text || '').trim();
+    const snippet = raw.slice(0, 60);
+    const body = `${snippet}${raw.length > 60 ? '…' : ''} — sprawdź rekomendację`;
+
     try {
       await sendPush(tokens, {
         title: 'Gamechange',
-        body: 'Mamy dla Ciebie nową rekomendację w Centrum Decyzji — sprawdź, co warto teraz zrobić.',
+        body,
         data: { type: 'contextual_insight', recommendationId: rec.id },
       });
       const { error: updateError } = await supabase
@@ -314,6 +458,7 @@ async function runContextualInsight(supabase, results) {
       if (updateError) {
         console.error(`cron-send-notifications: push wysłany, ale nie zaznaczono notified_at dla rekomendacji ${rec.id}:`, updateError);
       }
+      sentThisRun.add(rec.user_id);
       results.contextual_insight++;
     } catch (e) {
       console.error(`cron-send-notifications: błąd wysyłki contextual_insight dla ${rec.user_id}:`, e);
@@ -329,6 +474,22 @@ module.exports = async (req, res) => {
 
   const results = { morning_readiness: 0, post_training: 0, pre_match: 0, weekly_summary: 0, contextual_insight: 0 };
 
+  // DIAGNOSTYKA 29.07.2026 — patrz komentarz przy verifyFirebaseConfig() w
+  // send-push.js: bez tego, "sukces" poniżej (wszystkie rytmy = 0, bo
+  // pilotaż nie ma jeszcze żadnego tokenu push w bazie) nic nie mówi o
+  // tym, czy FIREBASE_SERVICE_ACCOUNT_JSON w ogóle się parsuje. Wołane
+  // NIEZALEŻNIE od tego, czy jakikolwiek rytm dziś kogoś wywoła; nic nie
+  // wysyła, nigdy nie loguje/zwraca treści sekretu.
+  let firebaseConfigOk = false;
+  let firebaseConfigError = null;
+  try {
+    verifyFirebaseConfig();
+    firebaseConfigOk = true;
+  } catch (e) {
+    firebaseConfigError = e.message;
+    console.error('cron-send-notifications: Firebase config selftest nieudany:', e.message);
+  }
+
   try {
     const supabase = getAdminClient();
     const warsawNow = getWarsawNow();
@@ -339,10 +500,10 @@ module.exports = async (req, res) => {
     await runWeeklySummary(supabase, warsawNow, results);
     await runContextualInsight(supabase, results);
 
-    console.log('cron-send-notifications zakończony:', results);
-    return res.status(200).json({ ok: true, results });
+    console.log('cron-send-notifications zakończony:', { ...results, firebaseConfigOk, firebaseConfigError });
+    return res.status(200).json({ ok: true, results, firebaseConfigOk, firebaseConfigError });
   } catch (e) {
     console.error('cron-send-notifications error:', e);
-    return res.status(500).json({ ok: false, error: e.message, results });
+    return res.status(500).json({ ok: false, error: e.message, results, firebaseConfigOk, firebaseConfigError });
   }
 };
