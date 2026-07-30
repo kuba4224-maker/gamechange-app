@@ -131,11 +131,28 @@ async function callAnthropic(systemPrompt, userPrompt) {
   if (!textBlock) throw new Error('Odpowiedź Anthropic bez bloku tekstowego.');
   let parsed;
   try {
-    parsed = JSON.parse(textBlock.text);
+    parsed = JSON.parse(stripMarkdownJsonFence(textBlock.text));
   } catch (e) {
     throw new Error(`Nie udało się sparsować JSON z odpowiedzi AI: ${e.message}. Surowa odpowiedź (pierwsze 500 znaków): ${textBlock.text.slice(0, 500)}`);
   }
   return parsed;
+}
+
+// POPRAWKA (30.07.2026, ta sama sesja) — znaleziona przy żywym teście tego
+// endpointu na produkcji (POST przez fetch z gamechange-app.vercel.app,
+// same-origin, tuż po deployu): mimo instrukcji w system prompcie "zwróć
+// WYŁĄCZNIE poprawny JSON (bez markdown, bez bloków kodu)", model czasem i
+// tak owija odpowiedź w blok kodu markdown (```json ... ```), co wcześniej
+// psuło JSON.parse (rzucało błąd zamiast zwrócić wynik). Ten sam wzorzec
+// (JSON.parse(textBlock.text) bez sanityzacji) jest dziś też w
+// generate-recommendation.js — TEN plik dostał naprawę, bo to właśnie w nim
+// ten błąd wystąpił na żywo w tej sesji; naprawa tamtego pliku świadomie
+// POZA zakresem tej sesji (inny endpoint, inna sesja go dotykała), ale
+// warto to zgłosić nawigatorowi jako potencjalnie ten sam, utajony błąd tam.
+function stripMarkdownJsonFence(text) {
+  const trimmed = text.trim();
+  const match = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return match ? match[1] : trimmed;
 }
 
 // ------------------------------------------------------------
