@@ -1,17 +1,18 @@
 <!DOCTYPE html>
-  <html lang="pl">
-  <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gamechange - Panel Trenera</title>
-  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <style>
-  :root {
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gamechange — Panel Trenera</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root {
   --bg: #f5f2ec; --ink: #0e0d0b; --ink2: #3a3830; --muted: #9a9488;
   --rule: #d8d3c8; --accent: #E8432D; --surface: #ffffff; --green: #2a7a3a; --red: #C0392B;
-  }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
+  --amber-bg: #fbeed7; --amber-ink: #8a5a1f; --amber-border: #e8cd9c;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--ink); min-height: 100vh; font-size: 15px; line-height: 1.6; }
 
 .gc-header { border-bottom: 1px solid var(--rule); padding: 20px 32px; display: flex; align-items: center; justify-content: space-between; }
@@ -24,44 +25,48 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--i
 
 .gc-input, .gc-select, .gc-textarea {
   width: 100%; padding: 12px 16px; border: 1px solid var(--rule); background: var(--surface);
-font-family: 'DM Sans', sans-serif; font-size: 14px; margin-bottom: 12px; color: var(--ink);
+  font-family: 'DM Sans', sans-serif; font-size: 14px; margin-bottom: 12px; color: var(--ink);
 }
 .gc-textarea { resize: vertical; min-height: 72px; }
-  .gc-label { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; display: block; }
-  .gc-btn {
-width: 100%; padding: 14px; background: var(--ink); color: var(--bg); border: none;
-font-family: 'Bebas Neue', sans-serif; font-size: 15px; letter-spacing: 0.06em; cursor: pointer;
+.gc-label { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; display: block; }
+.gc-btn {
+  width: 100%; padding: 14px; background: var(--ink); color: var(--bg); border: none;
+  font-family: 'Bebas Neue', sans-serif; font-size: 15px; letter-spacing: 0.06em; cursor: pointer;
 }
-    .gc-btn:hover { background: var(--accent); color: var(--ink); }
+.gc-btn:hover { background: var(--accent); color: var(--ink); }
 .gc-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.gc-btn-secondary { background: var(--surface); color: var(--ink); border: 1px solid var(--rule); }
+.gc-btn-secondary:hover { background: var(--bg); color: var(--ink); }
+.gc-btn-row { display: flex; gap: 8px; }
+.gc-btn-row .gc-btn { width: auto; flex: 1; padding: 10px; font-size: 13px; }
 
-  .gc-error { color: var(--red); font-size: 13px; margin-top: 8px; }
+.gc-error { color: var(--red); font-size: 13px; margin-top: 8px; }
 .gc-ok { color: var(--green); font-size: 13px; margin-top: 8px; }
-    .gc-empty { text-align: center; padding: 32px 24px; color: var(--muted); font-size: 14px; }
+.gc-empty { text-align: center; padding: 32px 24px; color: var(--muted); font-size: 14px; }
 
-  /* Nav */
-  .gc-nav { display: flex; gap: 6px; margin-bottom: 28px; flex-wrap: wrap; }
+/* Nav */
+.gc-nav { display: flex; gap: 6px; margin-bottom: 28px; flex-wrap: wrap; }
 .gc-nav-btn {
   flex: 1; min-width: 110px; padding: 12px; border: 1px solid var(--rule); background: var(--surface);
-font-family: 'Bebas Neue', sans-serif; font-size: 13px; letter-spacing: 0.03em; cursor: pointer; color: var(--ink);
+  font-family: 'Bebas Neue', sans-serif; font-size: 13px; letter-spacing: 0.03em; cursor: pointer; color: var(--ink);
   text-align: center;
 }
 .gc-nav-btn.active { background: var(--ink); border-color: var(--ink); color: var(--bg); }
 
 .gc-section-block { border: 1px solid var(--rule); background: var(--surface); padding: 20px; margin-bottom: 20px; }
 
-/* Historia / karty ogolne (dziennik, urazy, mecze, notatki) */
+/* Historia / karty ogólne (dziennik, urazy, mecze, notatki) */
 .gc-history-card { background: var(--surface); border: 1px solid var(--rule); padding: 14px 18px; margin-bottom: 10px; }
 .gc-history-top { display: flex; justify-content: space-between; align-items: baseline; }
 .gc-history-type { font-family: 'Bebas Neue', sans-serif; font-size: 13px; letter-spacing: 0.06em; }
-  .gc-history-date { font-size: 12px; color: var(--muted); }
-  .gc-history-detail { font-size: 13px; color: var(--ink2); }
-    .gc-pain-tag { display: inline-block; margin-top: 6px; margin-right: 6px; padding: 3px 8px; background: #fbe6e2; color: var(--red); font-size: 11px; letter-spacing: 0.03em; }
+.gc-history-date { font-size: 12px; color: var(--muted); }
+.gc-history-detail { font-size: 13px; color: var(--ink2); }
+.gc-pain-tag { display: inline-block; margin-top: 6px; margin-right: 6px; padding: 3px 8px; background: #fbe6e2; color: var(--red); font-size: 11px; letter-spacing: 0.03em; }
 
 /* Cele */
-  .gc-goal-card { background: var(--surface); border: 1px solid var(--rule); padding: 14px 18px; margin-bottom: 10px; }
+.gc-goal-card { background: var(--surface); border: 1px solid var(--rule); padding: 14px 18px; margin-bottom: 10px; }
 .gc-goal-top { display: flex; align-items: baseline; flex-wrap: wrap; margin-bottom: 2px; }
-  .gc-goal-segment { font-family: 'Bebas Neue', sans-serif; font-size: 14px; letter-spacing: 0.04em; }
+.gc-goal-segment { font-family: 'Bebas Neue', sans-serif; font-size: 14px; letter-spacing: 0.04em; }
 .gc-goal-pillar { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
 .gc-goal-meta { font-size: 12px; color: var(--muted); }
 
@@ -69,939 +74,1333 @@ font-family: 'Bebas Neue', sans-serif; font-size: 13px; letter-spacing: 0.03em; 
 .gc-roster-card { background: var(--surface); border: 1px solid var(--rule); padding: 14px 18px; margin-bottom: 10px; cursor: pointer; }
 .gc-roster-card:hover { border-color: var(--ink); }
 .gc-roster-name { font-family: 'Bebas Neue', sans-serif; font-size: 15px; letter-spacing: 0.03em; }
-  .gc-roster-meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.gc-roster-meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+/* Skład Meczowy — sygnały ryzyka (Domena 21). Kolor NEUTRALNY (bursztynowy),
+   świadomie NIE semaforowy (SKLAD_MECZOWY_SYGNALY_RYZYKA.md, sekcja 4) —
+   różnicowane wyłącznie tekstem plakietki, nigdy kolorem/intensywnością. */
+.gc-signals-banner {
+  background: var(--amber-bg); border: 1px solid var(--amber-border); color: var(--amber-ink);
+  padding: 14px 16px; font-size: 13px; margin-bottom: 20px; line-height: 1.5;
+}
+.gc-risk-badges { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+.gc-risk-badge {
+  display: inline-block; background: var(--amber-bg); color: var(--amber-ink); border: 1px solid var(--amber-border);
+  font-size: 11px; letter-spacing: 0.02em; padding: 3px 9px;
+}
+.gc-risk-badge-muted { background: var(--surface); color: var(--muted); border: 1px solid var(--rule); }
 
 .gc-back-link { display: inline-block; margin-bottom: 20px; font-size: 13px; color: var(--muted); cursor: pointer; }
 .gc-back-link:hover { color: var(--ink); }
 
-/* Agregat druzynowy - proste paski, bez biblioteki wykresow */
+/* Agregat drużynowy — proste paski, bez biblioteki wykresów */
 .gc-bar-row { margin-bottom: 10px; }
-    .gc-bar-label { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }
-      .gc-bar-track { height: 10px; background: #ece8e0; }
-      .gc-bar-fill { height: 100%; background: var(--accent); }
+.gc-bar-label { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }
+.gc-bar-track { height: 10px; background: #ece8e0; }
+.gc-bar-fill { height: 100%; background: var(--accent); }
+
+/* Asystent trenera (Filar A) — tryb, podpowiedzi, kanał konwersacyjny, gotowiec żywieniowy */
+.gc-tip-card { background: var(--surface); border: 1px solid var(--rule); padding: 16px 18px; margin-bottom: 10px; }
+.gc-tip-label { font-family: 'Bebas Neue', sans-serif; font-size: 12px; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 6px; }
+.gc-tip-text { font-size: 14px; color: var(--ink); margin-bottom: 10px; }
+.gc-nutrition-note { font-size: 13px; color: var(--ink2); border-top: 1px solid var(--rule); padding-top: 10px; margin-top: 4px; }
+.gc-feedback-row { display: flex; gap: 8px; margin-top: 12px; }
+.gc-feedback-btn {
+  flex: 1; padding: 8px; font-size: 12px; border: 1px solid var(--rule); background: var(--surface); cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+}
+.gc-feedback-btn:hover { border-color: var(--ink); }
+.gc-feedback-btn.chosen { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.gc-feedback-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.gc-chat-exchange { margin-bottom: 14px; }
+.gc-chat-question { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+.gc-chat-answer { font-size: 14px; color: var(--ink); background: var(--surface); border: 1px solid var(--rule); padding: 12px 14px; }
+.gc-chat-answer.gc-redirect { background: var(--amber-bg); border-color: var(--amber-border); color: var(--amber-ink); }
+.gc-marketplace-link { display: inline-block; margin-top: 8px; font-size: 12px; color: var(--ink); text-decoration: underline; cursor: pointer; }
+
+.gc-nutrition-card { background: var(--surface); border: 1px solid var(--rule); padding: 20px; }
+.gc-nutrition-card h4 { font-family: 'Bebas Neue', sans-serif; font-size: 14px; letter-spacing: 0.04em; margin: 14px 0 6px; }
+.gc-nutrition-card h4:first-child { margin-top: 0; }
+.gc-nutrition-card p { font-size: 13px; color: var(--ink2); margin-bottom: 4px; }
 </style>
-      </head>
+</head>
 <body>
 
-  <div class="gc-header">
-<div class="gc-header-label">Gamechange - Panel Trenera</div>
-<a class="gc-logout gc-hidden" id="logout-link" onclick="handleLogout()">Wyloguj</a>
-  </div>
+<div class="gc-header">
+  <div class="gc-header-label">Gamechange — Panel Trenera</div>
+  <a class="gc-logout gc-hidden" id="logout-link" onclick="handleLogout()">Wyloguj</a>
+</div>
 
-  <div class="gc-body">
+<div class="gc-body">
 
-  <!-- === LOGOWANIE (dokladnie ten sam mechanizm co asystent_app.html - magic link Supabase) === -->
+  <!-- ═══ LOGOWANIE (dokładnie ten sam mechanizm co asystent_app.html — magic link Supabase) ═══ -->
   <div id="view-login">
-  <div class="gc-title">Zaloguj sie</div>
-  <input class="gc-input" id="login-email" type="email" placeholder="Twoj email">
-<button class="gc-btn" id="login-btn" onclick="handleSendMagicLink()">Wyslij link do logowania</button>
-  <div id="login-sent" class="gc-ok gc-hidden">Sprawdz skrzynke i kliknij w link, zeby sie zalogowac.</div>
-  <div id="login-error" class="gc-error gc-hidden"></div>
+    <div class="gc-title">Zaloguj się</div>
+    <input class="gc-input" id="login-email" type="email" placeholder="Twój email">
+    <button class="gc-btn" id="login-btn" onclick="handleSendMagicLink()">Wyślij link do logowania</button>
+    <div id="login-sent" class="gc-ok gc-hidden">Sprawdź skrzynkę i kliknij w link, żeby się zalogować.</div>
+    <div id="login-error" class="gc-error gc-hidden"></div>
   </div>
 
-  <!-- === DOLACZENIE DO DRUZYNY (teams.coach_user_id jeszcze nieustawione) === -->
+  <!-- ═══ DOŁĄCZENIE DO DRUŻYNY (teams.coach_user_id jeszcze nieustawione) ═══ -->
   <div id="view-claim" class="gc-hidden">
-  <div class="gc-title">Polacz konto z druzyna</div>
-  <p style="font-size:14px; color:var(--ink2); margin-bottom:20px;">
-  Wpisz kod druzyny, ktory otrzymales przy rejestracji jako trener (np. w mailu z kodem druzyny).
-  Musisz byc zalogowany dokladnie tym adresem e-mail, ktory podales wtedy jako e-mail trenera -
-  inaczej system nie bedzie mogl dopasowac Twojego konta do druzyny.
-</p>
-<label class="gc-label">Kod druzyny</label>
-<input class="gc-input" id="claim-code-input" type="text" placeholder="np. LECHPOZ1234">
-  <button class="gc-btn" id="claim-submit-btn" onclick="claimTeam()">Polacz z druzyna</button>
-<div id="claim-error" class="gc-error gc-hidden"></div>
-  <div id="claim-ok" class="gc-ok gc-hidden"></div>
+    <div class="gc-title">Połącz konto z drużyną</div>
+    <p style="font-size:14px; color:var(--ink2); margin-bottom:20px;">
+      Wpisz kod drużyny, który otrzymałeś przy rejestracji jako trener (np. w mailu z kodem drużyny).
+      Musisz być zalogowany dokładnie tym adresem e-mail, który podałeś wtedy jako e-mail trenera —
+      inaczej system nie będzie mógł dopasować Twojego konta do drużyny.
+    </p>
+    <label class="gc-label">Kod drużyny</label>
+    <input class="gc-input" id="claim-code-input" type="text" placeholder="np. LECHPOZ1234">
+    <button class="gc-btn" id="claim-submit-btn" onclick="claimTeam()">Połącz z drużyną</button>
+    <div id="claim-error" class="gc-error gc-hidden"></div>
+    <div id="claim-ok" class="gc-ok gc-hidden"></div>
   </div>
 
-  <!-- === PANEL GLOWNY (druzyna juz przypisana) === -->
+  <!-- ═══ PANEL GŁÓWNY (drużyna już przypisana) ═══ -->
   <div id="view-app" class="gc-hidden">
-  <div class="gc-title" id="app-team-name">Druzyna</div>
+    <div class="gc-title" id="app-team-name">Drużyna</div>
 
-  <div class="gc-nav">
-  <button class="gc-nav-btn active" id="nav-roster" onclick="switchCoachPanel('roster')">Sklad</button>
-  <button class="gc-nav-btn" id="nav-settings" onclick="switchCoachPanel('settings')">Ustawienia</button>
-<button class="gc-nav-btn" id="nav-aggregate" onclick="switchCoachPanel('aggregate')">Agregat druzynowy</button>
+    <div class="gc-nav">
+      <button class="gc-nav-btn active" id="nav-roster" onclick="switchCoachPanel('roster')">Skład</button>
+      <button class="gc-nav-btn" id="nav-assistant" onclick="switchCoachPanel('assistant')">Asystent</button>
+      <button class="gc-nav-btn" id="nav-settings" onclick="switchCoachPanel('settings')">Ustawienia</button>
+      <button class="gc-nav-btn" id="nav-aggregate" onclick="switchCoachPanel('aggregate')">Agregat drużynowy</button>
+    </div>
+
+    <!-- ─── Skład (roster) ─── -->
+    <div id="panel-roster">
+      <!-- Skład Meczowy — sygnały ryzyka (Domena 21, SKLAD_MECZOWY_SYGNALY_RYZYKA.md sekcja 4).
+           Stały tekst, część interfejsu, nie tylko dokumentacji — cytat dokładny. -->
+      <div class="gc-signals-banner">
+        Sygnały do rozważenia. System nie zna taktyki ani formy sportowej — tylko wybrane dane zdrowotne
+        i obciążeniowe. Decyzja o składzie zawsze należy do Ciebie.
+      </div>
+      <div id="roster-list"></div>
+    </div>
+
+    <!-- ─── Asystent trenera (Filar A: tryb + podpowiedzi V1, kanał konwersacyjny, gotowiec żywieniowy) ─── -->
+    <div id="panel-assistant" class="gc-hidden">
+
+      <div class="gc-section-block">
+        <div class="gc-label">Podpowiedź V1 przy planowaniu sesji</div>
+        <p style="font-size:12px; color:var(--muted); margin-bottom:14px;">
+          Konkretna wskazówka, nie gotowa jednostka treningowa — szczegóły sesji układasz samodzielnie.
+          Faza sezonu ustawiana w Ustawieniach, typ jednostki wybierasz za każdym razem.
+        </p>
+        <label class="gc-label">Typ jednostki</label>
+        <select class="gc-select" id="tip-unit-type-select">
+          <option value="silowa">Siłowa</option>
+          <option value="wytrzymalosciowa">Wytrzymałościowa</option>
+          <option value="techniczna">Techniczna</option>
+          <option value="taktyczna">Taktyczna (gierka zadaniowa)</option>
+        </select>
+        <button class="gc-btn" id="tip-generate-btn" onclick="generateCoachTip()">Wygeneruj podpowiedź</button>
+        <div id="tip-error" class="gc-error gc-hidden"></div>
+        <div id="tip-result"></div>
+      </div>
+
+      <div class="gc-section-block">
+        <div class="gc-label">Zapytaj asystenta</div>
+        <p style="font-size:12px; color:var(--muted); margin-bottom:14px;">
+          Pytania treningowe i o zarządzanie drużyną — odpowie asystent. Pytanie o stan zdrowotny
+          konkretnego zawodnika — skieruje Cię do specjalisty w Marketplace zamiast dawać poradę AI.
+        </p>
+        <textarea class="gc-textarea" id="chat-question-input" placeholder="np. jak rozłożyć obciążenie przed sobotnim meczem?"></textarea>
+        <button class="gc-btn" id="chat-send-btn" onclick="sendCoachChatQuestion()">Zapytaj</button>
+        <div id="chat-error" class="gc-error gc-hidden"></div>
+        <div id="chat-history" style="margin-top:16px;"></div>
+      </div>
+
+      <div class="gc-section-block">
+        <div class="gc-label">Protokół meczowy odżywiania i nawodnienia</div>
+        <p style="font-size:12px; color:var(--muted); margin-bottom:14px;">
+          Gotowa karta do przekazania całej drużynie albo rodzicom — kopiujesz tekst i wysyłasz dalej.
+        </p>
+        <div class="gc-nutrition-card" id="nutrition-card-content"></div>
+        <div class="gc-btn-row" style="margin-top:14px;">
+          <button class="gc-btn gc-btn-secondary" onclick="copyNutritionCard()">Kopiuj tekst</button>
+        </div>
+        <div id="nutrition-copy-ok" class="gc-ok gc-hidden">Skopiowano.</div>
+      </div>
+
+    </div>
+
+    <!-- ─── Ustawienia drużyny ─── -->
+    <div id="panel-settings" class="gc-hidden">
+      <div class="gc-section-block">
+        <label class="gc-label">Poziom widoczności drużyny</label>
+        <select class="gc-select" id="settings-visibility-select">
+          <option value="basic">Podstawowy — diagnoza i ogólna gotowość</option>
+          <option value="extended">Rozszerzony — dodatkowo cele zawodników</option>
+          <option value="full">Pełny — dodatkowo dziennik, mecze i historia urazów</option>
+        </select>
+        <button class="gc-btn" id="settings-save-btn" onclick="saveVisibility()">Zapisz</button>
+        <div id="settings-error" class="gc-error gc-hidden"></div>
+        <div id="settings-ok" class="gc-ok gc-hidden"></div>
+      </div>
+      <p style="font-size:13px; color:var(--muted); margin-bottom:20px;">
+        Poziom widoczności decyduje, co widzisz w profilu każdego zawodnika swojej drużyny.
+        Zmiana obowiązuje natychmiast dla wszystkich zawodników tej drużyny.
+      </p>
+
+      <div class="gc-section-block">
+        <label class="gc-label">Faza sezonu</label>
+        <select class="gc-select" id="settings-season-phase-select">
+          <option value="przygotowawcza">Faza przygotowawcza</option>
+          <option value="sezon_rozgrywkowy">Sezon rozgrywkowy</option>
+        </select>
+        <button class="gc-btn" id="settings-season-save-btn" onclick="saveSeasonPhase()">Zapisz</button>
+        <div id="settings-season-error" class="gc-error gc-hidden"></div>
+        <div id="settings-season-ok" class="gc-ok gc-hidden"></div>
+      </div>
+      <p style="font-size:13px; color:var(--muted);">
+        Zmieniaj rzadko — steruje akcentem podpowiedzi i notatek żywieniowych w zakładce Asystent
+        (np. nawodnienie i tankowanie wokół częstych meczów w sezonie, regeneracja przy cięższym bloku
+        w fazie przygotowawczej).
+      </p>
+    </div>
+
+    <!-- ─── Agregat drużynowy (heatmapa) ─── -->
+    <div id="panel-aggregate" class="gc-hidden">
+      <div id="aggregate-hint" class="gc-empty gc-hidden"></div>
+      <div id="aggregate-body"></div>
+    </div>
   </div>
 
-  <!-- --- Sklad (roster) --- -->
-  <div id="panel-roster">
-  <div id="roster-list"></div>
-  </div>
-
-  <!-- --- Ustawienia druzyny --- -->
-  <div id="panel-settings" class="gc-hidden">
-  <div class="gc-section-block">
-  <label class="gc-label">Poziom widocznosci druzyny</label>
-<select class="gc-select" id="settings-visibility-select">
-<option value="basic">Podstawowy - diagnoza i ogolna gotowosc</option>
-  <option value="extended">Rozszerzony - dodatkowo cele zawodnikow</option>
-<option value="full">Pelny - dodatkowo dziennik, mecze i historia urazow</option>
-</select>
-  <button class="gc-btn" id="settings-save-btn" onclick="saveVisibility()">Zapisz</button>
-  <div id="settings-error" class="gc-error gc-hidden"></div>
-  <div id="settings-ok" class="gc-ok gc-hidden"></div>
-  </div>
-  <p style="font-size:13px; color:var(--muted);">
-  Poziom widocznosci decyduje, co widzisz w profilu kazdego zawodnika swojej druzyny.
-  Zmiana obowiazuje natychmiast dla wszystkich zawodnikow tej druzyny.
-  </p>
-  </div>
-
-  <!-- --- Agregat druzynowy (heatmapa) --- -->
-  <div id="panel-aggregate" class="gc-hidden">
-  <div id="aggregate-hint" class="gc-empty gc-hidden"></div>
-  <div id="aggregate-body"></div>
-  </div>
-  </div>
-
-  <!-- === SZCZEGOLY ZAWODNIKA === -->
+  <!-- ═══ SZCZEGÓŁY ZAWODNIKA ═══ -->
   <div id="view-detail" class="gc-hidden">
-  <div class="gc-back-link" onclick="backToRoster()"><- Wroc do skladu</div>
-  <div class="gc-title" id="detail-player-name">Zawodnik</div>
+    <div class="gc-back-link" onclick="backToRoster()">← Wróć do składu</div>
+    <div class="gc-title" id="detail-player-name">Zawodnik</div>
 
-  <div class="gc-label">Profil</div>
-  <div id="detail-profile" class="gc-section-block"></div>
+    <div class="gc-label">Profil</div>
+    <div id="detail-profile" class="gc-section-block"></div>
 
-  <div class="gc-label" style="margin-top:28px;">Cele</div>
-  <div id="detail-goals"></div>
+    <div class="gc-label" style="margin-top:28px;">Cele</div>
+    <div id="detail-goals"></div>
 
-  <div class="gc-label" style="margin-top:28px;">Dziennik - ostatnie wpisy</div>
-  <div id="detail-journal"></div>
+    <div class="gc-label" style="margin-top:28px;">Dziennik — ostatnie wpisy</div>
+    <div id="detail-journal"></div>
 
-  <div class="gc-label" style="margin-top:28px;">Historia urazow</div>
-  <div id="detail-injuries"></div>
+    <div class="gc-label" style="margin-top:28px;">Historia urazów</div>
+    <div id="detail-injuries"></div>
 
-  <div class="gc-label" style="margin-top:28px;">Mecze</div>
-  <div id="detail-matches"></div>
+    <div class="gc-label" style="margin-top:28px;">Mecze</div>
+    <div id="detail-matches"></div>
 
-  <div class="gc-label" style="margin-top:36px;">Twoje notatki o tym zawodniku</div>
-<div class="gc-section-block">
-<p style="font-size:12px; color:var(--muted); margin-bottom:12px;">
-Notatki widoczne wylacznie dla Ciebie - inny trener tej samej druzyny (jesli kiedys sie pojawi)
-nie zobaczy Twoich zapiskow, a Ty nie zobaczysz jego.
-  </p>
-<textarea class="gc-textarea" id="detail-note-text" placeholder="Obserwacja, ustalenie, cos do zapamietania na nastepny trening..."></textarea>
-  <button class="gc-btn" id="detail-note-submit-btn" onclick="addCoachNote()">Dodaj notatke</button>
-  <div id="detail-notes-error" class="gc-error gc-hidden"></div>
-  <div id="detail-notes-ok" class="gc-ok gc-hidden"></div>
-  </div>
-  <div id="detail-notes-list" style="margin-top:14px;"></div>
-  </div>
-
+    <div class="gc-label" style="margin-top:36px;">Twoje notatki o tym zawodniku</div>
+    <div class="gc-section-block">
+      <p style="font-size:12px; color:var(--muted); margin-bottom:12px;">
+        Notatki widoczne wyłącznie dla Ciebie — inny trener tej samej drużyny (jeśli kiedyś się pojawi)
+        nie zobaczy Twoich zapisków, a Ty nie zobaczysz jego.
+      </p>
+      <textarea class="gc-textarea" id="detail-note-text" placeholder="Obserwacja, ustalenie, coś do zapamiętania na następny trening..."></textarea>
+      <button class="gc-btn" id="detail-note-submit-btn" onclick="addCoachNote()">Dodaj notatkę</button>
+      <div id="detail-notes-error" class="gc-error gc-hidden"></div>
+      <div id="detail-notes-ok" class="gc-ok gc-hidden"></div>
+    </div>
+    <div id="detail-notes-list" style="margin-top:14px;"></div>
   </div>
 
-  <script>
-  // ======================================
-  //  KONFIGURACJA - ten sam projekt Supabase i ten sam publiczny klucz co
-  //  asystent_app.html / index.html / specialist_panel.html. Ten plik jest
-  //  docelowo wdrazany jako coach.html w TEJ SAMEJ domenie Vercel co
-  //  asystent_app.html (patrz claude/INTEGRACJA_NARZEDZI_ROLE.md) - dzieki
-  //  temu sesja logowania jest wspoldzielona z reszta appki zawodnika bez
-  //  zadnej dodatkowej pracy nad SSO (ta sama "szufladka" przegladarki).
-  // ======================================
-  const SUPABASE_URL = 'https://kqrbztsvepjtggjmmcdx.supabase.co';
+</div>
+
+<script>
+// ══════════════════════════════════════
+//  KONFIGURACJA — ten sam projekt Supabase i ten sam publiczny klucz co
+//  asystent_app.html / index.html / specialist_panel.html. Ten plik jest
+//  docelowo wdrażany jako coach.html w TEJ SAMEJ domenie Vercel co
+//  asystent_app.html (patrz claude/INTEGRACJA_NARZEDZI_ROLE.md) — dzięki
+//  temu sesja logowania jest współdzielona z resztą appki zawodnika bez
+//  żadnej dodatkowej pracy nad SSO (ta sama "szufladka" przeglądarki).
+// ══════════════════════════════════════
+const SUPABASE_URL = 'https://kqrbztsvepjtggjmmcdx.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_EoYRIZpDhUSdNSJDXWl4Ew_SG8aJABP';
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// Prog minimalny agregatu druzynowego - ustalony wprost w komentarzu
-// Domeny 08 ("rzad wielkosci: kilka do kilkunastu... nie ma tu nic do
-// rozstrzygniecia programistycznie, to czysta decyzja produktowa") i
-// potwierdzony w zleceniu budowy tego panelu jako twarda wartosc 8.
+// Próg minimalny agregatu drużynowego — ustalony wprost w komentarzu
+// Domeny 08 ("rząd wielkości: kilka do kilkunastu... nie ma tu nic do
+// rozstrzygnięcia programistycznie, to czysta decyzja produktowa") i
+// potwierdzony w zleceniu budowy tego panelu jako twarda wartość 8.
 const TEAM_AGGREGATE_MIN_SIZE = 8;
 
-// Segmenty pogrupowane wg filaru - 1:1 z SEGMENTS_BY_PILLAR w
-// asystent_app.html (to samo zrodlo etykiet PL, ta sama kolejnosc),
-// zeby heatmapa druzynowa uzywala identycznego nazewnictwa co reszta appki.
+// Segmenty pogrupowane wg filaru — 1:1 z SEGMENTS_BY_PILLAR w
+// asystent_app.html (to samo źródło etykiet PL, ta sama kolejność),
+// żeby heatmapa drużynowa używała identycznego nazewnictwa co reszta appki.
 const SEGMENTS_BY_PILLAR = [
-['Filar 1 - Dominacja fizyczna', [
-['moc', 'Moc'],
-['wytrzymalosc', 'Wytrzymalosc'],
-['fizycznosc', 'Fizycznosc'],
-]],
-['Filar 2 - Efektywnosc techniczna', [
-['techFund', 'Technika Fundamentalna'],
-['techSpec', 'Technika Specjalistyczna'],
-]],
-['Filar 3 - Trwalosc organizmu', [
-['tolerancja', 'Tolerancja (Obciazen)'],
-['regeneracja', 'Regeneracja'],
-['odpornosc', 'Odpornosc'],
-['odzywianie', 'Odzywienie'],
-]],
-['Filar 4 - Mentalnosc', [
-['koncentracja', 'Koncentracja'],
-['mental', 'Stan Mentalny'],
-]],
-['Filar 5 - Boiskowa madrosc', [
-['percepcja', 'Percepcja'],
-['decyzja', 'Szybkosc Decyzji'],
-]],
+  ['Filar 1 — Dominacja fizyczna', [
+    ['moc', 'Moc'],
+    ['wytrzymalosc', 'Wytrzymałość'],
+    ['fizycznosc', 'Fizyczność'],
+  ]],
+  ['Filar 2 — Efektywność techniczna', [
+    ['techFund', 'Technika Fundamentalna'],
+    ['techSpec', 'Technika Specjalistyczna'],
+  ]],
+  ['Filar 3 — Trwałość organizmu', [
+    ['tolerancja', 'Tolerancja (Obciążeń)'],
+    ['regeneracja', 'Regeneracja'],
+    ['odpornosc', 'Odporność'],
+    ['odzywianie', 'Odżywienie'],
+  ]],
+  ['Filar 4 — Mentalność', [
+    ['koncentracja', 'Koncentracja'],
+    ['mental', 'Stan Mentalny'],
+  ]],
+  ['Filar 5 — Boiskowa mądrość', [
+    ['percepcja', 'Percepcja'],
+    ['decyzja', 'Szybkość Decyzji'],
+  ]],
 ];
 const SEG_LABELS = Object.fromEntries(SEGMENTS_BY_PILLAR.flatMap(([, segs]) => segs));
 
 const INJURY_MODE_CATEGORY_LABELS = {
-lower_body: 'Dolna czesc ciala',
-  upper_body: 'Gorna czesc ciala',
-  general: 'Ogolne / cale cialo',
-  };
+  lower_body: 'Dolna część ciała',
+  upper_body: 'Górna część ciała',
+  general: 'Ogólne / całe ciało',
+};
+
+// Etykiety plakietek Składu Meczowego (Domena 21) — treść świadomie NIE
+// diagnostyczna/nie werdyktowa, zgodnie z SKLAD_MECZOWY_SYGNALY_RYZYKA.md
+// sekcja 4 ("różnicowany tekstem, nie kolorem"). insufficient_data ZAWSZE
+// pokazywana na każdym poziomie wglądu (sekcja 5: "to nie jest szczegół,
+// to informacja o braku informacji").
+const RISK_BADGE_LABELS = {
+  fatigue: 'Podwyższone zmęczenie',
+  injury_mode: 'Tryb kontuzji',
+  pain: 'Niedawny ból',
+  insufficient_data: 'Za mało danych',
+  match_load: 'Zagęszczenie meczowe',
+};
 
 let currentUser = null;      // { id, email, accessToken }
-let currentTeam = null;      // wiersz public.teams (id, code, coach_name, coach_email, club_name, coach_user_id, visibility_level, created_at)
+let currentTeam = null;      // wiersz public.teams (id, code, coach_name, coach_email, club_name, coach_user_id, visibility_level, season_phase, created_at)
 let rosterCache = [];        // [{ player_user_id, joined_at, users: { full_name, email } }]
 let diagnosisByUser = new Map(); // user_id -> { user_id, scores, created_at } (najnowszy wiersz diagnostics per zawodnik)
-let currentPlayer = null;    // aktywny wpis z rosterCache otwarty w widoku szczegolow
+let currentPlayer = null;    // aktywny wpis z rosterCache otwarty w widoku szczegółów
+let preMatchSignalsByUser = new Map(); // user_id -> { flags, injury_mode_category, pain_entries, match_minutes_7d, entered_last_match_fatigued } (Domena 21)
+let lastGeneratedTipId = null; // id ostatniej podpowiedzi coach_tips, do zapisu feedbacku
 
 function authHeaders() {
   return { apikey: SUPABASE_KEY, Authorization: `Bearer ${currentUser.accessToken}` };
 }
 
 function escapeHtml(str) {
-return String(str == null ? '' : str).replace(/[&<>"']/g, c => ({
-'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-}[c]));
+  return String(str == null ? '' : str).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
 }
 
-// ======================================
+// ══════════════════════════════════════
 //  AUTH
-// ======================================
+// ══════════════════════════════════════
 async function initApp() {
-const { data: { session } } = await supabaseClient.auth.getSession();
-if (session && session.user) await handleSignedIn(session);
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (session && session.user) await handleSignedIn(session);
 
-supabaseClient.auth.onAuthStateChange(async (event, session) => {
-if (event === 'SIGNED_IN' && session && session.user) {
-await handleSignedIn(session);
-} else if (event === 'SIGNED_OUT') {
-currentUser = null;
-currentTeam = null;
-document.getElementById('logout-link').classList.add('gc-hidden');
-showView('login');
-}
-});
+  supabaseClient.auth.onAuthStateChange(async (event, session) => {
+    if (event === 'SIGNED_IN' && session && session.user) {
+      await handleSignedIn(session);
+    } else if (event === 'SIGNED_OUT') {
+      currentUser = null;
+      currentTeam = null;
+      document.getElementById('logout-link').classList.add('gc-hidden');
+      showView('login');
+    }
+  });
 }
 
 async function handleSignedIn(session) {
-currentUser = { id: session.user.id, email: session.user.email, accessToken: session.access_token };
-document.getElementById('logout-link').classList.remove('gc-hidden');
+  currentUser = { id: session.user.id, email: session.user.email, accessToken: session.access_token };
+  document.getElementById('logout-link').classList.remove('gc-hidden');
 
-// public.users powstaje automatycznie triggerem on_auth_user_created
-// (Domena 01) w tej samej transakcji co wiersz auth.users. Krotki retry
-// na wypadek dziwnego porzadku zdarzen przy pierwszym logowaniu -
-// dokladnie ten sam wzorzec co w asystent_app.html (handleSignedIn).
-// Wazne tu z dodatkowego powodu: claim_coach_team() robi UPDATE na
-// teams.coach_user_id, ktore ma FK do public.users(id) - jesli wiersz
-// users jeszcze nie istnieje, to UPDATE zawiedzie z bledem FK, nie
-// cichym brakiem efektu, wiec warto dac triggerowi szanse dogonic.
-let profileReady = false;
-for (let i = 0; i < 5 && !profileReady; i++) {
-const res = await fetch(`${SUPABASE_URL}/rest/v1/users?id=eq.${currentUser.id}&select=id`, { headers: authHeaders() });
-const rows = await res.json();
-if (Array.isArray(rows) && rows.length > 0) { profileReady = true; break; }
-await new Promise(r => setTimeout(r, 400));
-}
-// ZNALEZISKO (przeglad przed wdrozeniem): jesli profil sie nie zdazyl
-// utworzyc, samo pokazanie komunikatu ostrzegawczego nie wystarcza -
-// przycisk "Polacz z druzyna" zostawal klikalny, co prowadzilo do
-// nieczytelnego bledu FK z bazy zamiast jasnej instrukcji "odswiez".
-// Blokujemy przycisk wprost, zeby uzytkownik nie mogl trafic na ten
-// brzydszy blad - jedyna droga naprzod w tym stanie to odswiezenie strony.
-if (!profileReady) {
-document.getElementById('claim-error').textContent =
-'Profil konta jeszcze sie nie utworzyl - odswiez strone za chwile.';
-document.getElementById('claim-error').classList.remove('gc-hidden');
-document.getElementById('claim-submit-btn').disabled = true;
-}
+  // public.users powstaje automatycznie triggerem on_auth_user_created
+  // (Domena 01) w tej samej transakcji co wiersz auth.users. Krótki retry
+  // na wypadek dziwnego porządku zdarzeń przy pierwszym logowaniu —
+  // dokładnie ten sam wzorzec co w asystent_app.html (handleSignedIn).
+  // Ważne tu z dodatkowego powodu: claim_coach_team() robi UPDATE na
+  // teams.coach_user_id, które ma FK do public.users(id) — jeśli wiersz
+  // users jeszcze nie istnieje, to UPDATE zawiedzie z błędem FK, nie
+  // cichym brakiem efektu, więc warto dać triggerowi szansę dogonić.
+  let profileReady = false;
+  for (let i = 0; i < 5 && !profileReady; i++) {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/users?id=eq.${currentUser.id}&select=id`, { headers: authHeaders() });
+    const rows = await res.json();
+    if (Array.isArray(rows) && rows.length > 0) { profileReady = true; break; }
+    await new Promise(r => setTimeout(r, 400));
+  }
+  // ZNALEZISKO (przegląd przed wdrożeniem): jeśli profil się nie zdążył
+  // utworzyć, samo pokazanie komunikatu ostrzegawczego nie wystarcza —
+  // przycisk "Połącz z drużyną" zostawał klikalny, co prowadziło do
+  // nieczytelnego błędu FK z bazy zamiast jasnej instrukcji "odśwież".
+  // Blokujemy przycisk wprost, żeby użytkownik nie mógł trafić na ten
+  // brzydszy błąd — jedyna droga naprzód w tym stanie to odświeżenie strony.
+  if (!profileReady) {
+    document.getElementById('claim-error').textContent =
+      'Profil konta jeszcze się nie utworzył — odśwież stronę za chwilę.';
+    document.getElementById('claim-error').classList.remove('gc-hidden');
+    document.getElementById('claim-submit-btn').disabled = true;
+  }
 
-await checkTeamClaim();
+  await checkTeamClaim();
 }
 
 async function handleSendMagicLink() {
-const email = document.getElementById('login-email').value.trim();
-const btn = document.getElementById('login-btn');
-const errEl = document.getElementById('login-error');
-errEl.classList.add('gc-hidden');
+  const email = document.getElementById('login-email').value.trim();
+  const btn = document.getElementById('login-btn');
+  const errEl = document.getElementById('login-error');
+  errEl.classList.add('gc-hidden');
 
-if (!email || !email.includes('@')) {
-errEl.textContent = 'Podaj prawidlowy adres email.';
-errEl.classList.remove('gc-hidden');
-return;
-}
+  if (!email || !email.includes('@')) {
+    errEl.textContent = 'Podaj prawidłowy adres email.';
+    errEl.classList.remove('gc-hidden');
+    return;
+  }
 
-btn.disabled = true;
-btn.textContent = 'Wysylam...';
-// ODSTEPSTWO OD "kopiuj dokladnie" asystent_app.html (celowe, uzasadnione):
-// dokladamy options.data.role = 'coach'. Domena 01 (handle_new_user)
-// interpretuje raw_user_meta_data.role dokladnie w tym celu ("Rola
-// odczytywana z raw_user_meta_data, zeby trener mogl sie oznaczyc jako
-// 'coach' juz przy rejestracji") - ale to dziala tylko jesli PIERWSZE
-// logowanie faktycznie przekaze te wartosc. Bez tego brand-nowe konto,
-// logujace sie po raz pierwszy wlasnie przez ten panel (nie przez
-// asystent_app.html), dostaloby domyslnie role='player'. Nic tu w tym
-// pliku nie SPRAWDZA users.role (claim_coach_team tez nie), wiec brak
-// tej linii nie zablokowalby zadnej funkcji - ale zostawilby mylacy,
-// niespojny stan w bazie (trener oznaczony jako 'player'), wiec warto
-// to ustawic poprawnie od razu, skoro Domena 01 juz to obsluguje.
-const { error } = await supabaseClient.auth.signInWithOtp({
-email, options: { emailRedirectTo: window.location.href, data: { role: 'coach' } }
-});
-btn.disabled = false;
-btn.textContent = 'Wyslij link do logowania';
+  btn.disabled = true;
+  btn.textContent = 'Wysyłam...';
+  // ODSTĘPSTWO OD "kopiuj dokładnie" asystent_app.html (celowe, uzasadnione):
+  // dokładamy options.data.role = 'coach'. Domena 01 (handle_new_user)
+  // interpretuje raw_user_meta_data.role dokładnie w tym celu ("Rola
+  // odczytywana z raw_user_meta_data, żeby trener mógł się oznaczyć jako
+  // 'coach' już przy rejestracji") — ale to działa tylko jeśli PIERWSZE
+  // logowanie faktycznie przekaże tę wartość. Bez tego brand-nowe konto,
+  // logujące się po raz pierwszy właśnie przez ten panel (nie przez
+  // asystent_app.html), dostałoby domyślnie role='player'. Nic tu w tym
+  // pliku nie SPRAWDZA users.role (claim_coach_team też nie), więc brak
+  // tej linii nie zablokowałby żadnej funkcji — ale zostawiłby mylący,
+  // niespójny stan w bazie (trener oznaczony jako 'player'), więc warto
+  // to ustawić poprawnie od razu, skoro Domena 01 już to obsługuje.
+  const { error } = await supabaseClient.auth.signInWithOtp({
+    email, options: { emailRedirectTo: window.location.href, data: { role: 'coach' } }
+  });
+  btn.disabled = false;
+  btn.textContent = 'Wyślij link do logowania';
 
-if (error) {
-errEl.textContent = 'Nie udalo sie wyslac linku: ' + error.message;
-errEl.classList.remove('gc-hidden');
-} else {
-document.getElementById('login-sent').classList.remove('gc-hidden');
-}
+  if (error) {
+    errEl.textContent = 'Nie udało się wysłać linku: ' + error.message;
+    errEl.classList.remove('gc-hidden');
+  } else {
+    document.getElementById('login-sent').classList.remove('gc-hidden');
+  }
 }
 
 function handleLogout() {
-supabaseClient.auth.signOut();
+  supabaseClient.auth.signOut();
 }
 
-// ======================================
-//  NAWIGACJA MIEDZY WIDOKAMI GLOWNYMI
-// ======================================
+// ══════════════════════════════════════
+//  NAWIGACJA MIĘDZY WIDOKAMI GŁÓWNYMI
+// ══════════════════════════════════════
 const VIEWS = ['login', 'claim', 'app', 'detail'];
 function showView(name) {
-VIEWS.forEach(v => document.getElementById('view-' + v).classList.toggle('gc-hidden', v !== name));
+  VIEWS.forEach(v => document.getElementById('view-' + v).classList.toggle('gc-hidden', v !== name));
 }
 
-// ======================================
-//  PRZYPISANIE TRENERA DO DRUZYNY
-// ======================================
+// ══════════════════════════════════════
+//  PRZYPISANIE TRENERA DO DRUŻYNY
+// ══════════════════════════════════════
 async function checkTeamClaim() {
-try {
-const res = await fetch(`${SUPABASE_URL}/rest/v1/teams?coach_user_id=eq.${currentUser.id}&select=*`, { headers: authHeaders() });
-const rows = await res.json();
-if (Array.isArray(rows) && rows.length > 0) {
-// UWAGA (patrz "CO SWIADOMIE NIE JEST TU ZROBIONE" w pliku SQL
-// Domeny 18): jesli trener ma wiecej niz jedna druzyne, ten panel
-// pokazuje wylacznie PIERWSZA znaleziona - przelacznik druzyn nie
-// jest tu zbudowany (dzis nieznany, nie zgadywany na zapas przypadek).
-currentTeam = rows[0];
-await enterApp();
-} else {
-showView('claim');
-}
-} catch (e) {
-showView('claim');
-}
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/teams?coach_user_id=eq.${currentUser.id}&select=*`, { headers: authHeaders() });
+    const rows = await res.json();
+    if (Array.isArray(rows) && rows.length > 0) {
+      // UWAGA (patrz "CO ŚWIADOMIE NIE JEST TU ZROBIONE" w pliku SQL
+      // Domeny 18): jeśli trener ma więcej niż jedną drużynę, ten panel
+      // pokazuje wyłącznie PIERWSZĄ znalezioną — przełącznik drużyn nie
+      // jest tu zbudowany (dziś nieznany, nie zgadywany na zapas przypadek).
+      currentTeam = rows[0];
+      await enterApp();
+    } else {
+      showView('claim');
+    }
+  } catch (e) {
+    showView('claim');
+  }
 }
 
 async function claimTeam() {
-const errEl = document.getElementById('claim-error');
-const okEl = document.getElementById('claim-ok');
-errEl.classList.add('gc-hidden');
-okEl.classList.add('gc-hidden');
+  const errEl = document.getElementById('claim-error');
+  const okEl = document.getElementById('claim-ok');
+  errEl.classList.add('gc-hidden');
+  okEl.classList.add('gc-hidden');
 
-const code = document.getElementById('claim-code-input').value.trim();
-if (!code) {
-errEl.textContent = 'Podaj kod druzyny.';
-errEl.classList.remove('gc-hidden');
-return;
-}
+  const code = document.getElementById('claim-code-input').value.trim();
+  if (!code) {
+    errEl.textContent = 'Podaj kod drużyny.';
+    errEl.classList.remove('gc-hidden');
+    return;
+  }
 
-const btn = document.getElementById('claim-submit-btn');
-btn.disabled = true;
-btn.textContent = 'Lacze...';
+  const btn = document.getElementById('claim-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Łączę...';
 
-try {
-const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/claim_coach_team`, {
-method: 'POST',
-headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-body: JSON.stringify({ p_team_code: code }),
-});
-if (!res.ok) throw new Error(await res.text());
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/claim_coach_team`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_team_code: code }),
+    });
+    if (!res.ok) throw new Error(await res.text());
 
-const data = await res.json();
-if (!data) {
-// claim_coach_team zwraca NULL zarowno dla zlego kodu, jak i dla
-// e-maila niezgodnego z coach_email druzyny - jeden, wspolny
-// komunikat dla obu przypadkow (patrz uzasadnienie w Domenie 18).
-errEl.textContent =
-'Nie znaleziono druzyny o takim kodzie powiazanej z Twoim adresem e-mail. ' +
-'Sprawdz kod, albo upewnij sie, ze logujesz sie dokladnie tym adresem e-mail, ' +
-'ktory podales przy rejestracji jako trener.';
-errEl.classList.remove('gc-hidden');
-return;
-}
+    const data = await res.json();
+    if (!data) {
+      // claim_coach_team zwraca NULL zarówno dla złego kodu, jak i dla
+      // e-maila niezgodnego z coach_email drużyny — jeden, wspólny
+      // komunikat dla obu przypadków (patrz uzasadnienie w Domenie 18).
+      errEl.textContent =
+        'Nie znaleziono drużyny o takim kodzie powiązanej z Twoim adresem e-mail. ' +
+        'Sprawdź kod, albo upewnij się, że logujesz się dokładnie tym adresem e-mail, ' +
+        'który podałeś przy rejestracji jako trener.';
+      errEl.classList.remove('gc-hidden');
+      return;
+    }
 
-currentTeam = data;
-okEl.textContent = 'Polaczono z druzyna.';
-okEl.classList.remove('gc-hidden');
-await enterApp();
-} catch (e) {
-errEl.textContent = 'Nie udalo sie polaczyc z druzyna: ' + e.message;
-errEl.classList.remove('gc-hidden');
-} finally {
-btn.disabled = false;
-btn.textContent = 'Polacz z druzyna';
-}
+    currentTeam = data;
+    okEl.textContent = 'Połączono z drużyną.';
+    okEl.classList.remove('gc-hidden');
+    await enterApp();
+  } catch (e) {
+    errEl.textContent = 'Nie udało się połączyć z drużyną: ' + e.message;
+    errEl.classList.remove('gc-hidden');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Połącz z drużyną';
+  }
 }
 
 async function enterApp() {
-showView('app');
-document.getElementById('app-team-name').textContent = currentTeam.club_name || currentTeam.code || 'Druzyna';
-switchCoachPanel('roster');
+  showView('app');
+  document.getElementById('app-team-name').textContent = currentTeam.club_name || currentTeam.code || 'Drużyna';
+  switchCoachPanel('roster');
 }
 
-// ======================================
-//  NAWIGACJA W PANELU GLOWNYM
-// ======================================
-const COACH_PANELS = ['roster', 'settings', 'aggregate'];
+// ══════════════════════════════════════
+//  NAWIGACJA W PANELU GŁÓWNYM
+// ══════════════════════════════════════
+const COACH_PANELS = ['roster', 'assistant', 'settings', 'aggregate'];
 function switchCoachPanel(name) {
-COACH_PANELS.forEach(p => {
-document.getElementById('nav-' + p).classList.toggle('active', p === name);
-document.getElementById('panel-' + p).classList.toggle('gc-hidden', p !== name);
-});
-if (name === 'roster') loadRoster();
-if (name === 'settings') loadSettingsPanel();
-if (name === 'aggregate') updateAggregateAvailability();
+  COACH_PANELS.forEach(p => {
+    document.getElementById('nav-' + p).classList.toggle('active', p === name);
+    document.getElementById('panel-' + p).classList.toggle('gc-hidden', p !== name);
+  });
+  if (name === 'roster') loadRoster();
+  if (name === 'assistant') loadAssistantPanel();
+  if (name === 'settings') loadSettingsPanel();
+  if (name === 'aggregate') updateAggregateAvailability();
 }
 
-// ======================================
-//  SKLAD DRUZYNY (roster)
-// ======================================
+// ══════════════════════════════════════
+//  SKŁAD DRUŻYNY (roster)
+// ══════════════════════════════════════
 function parseScores(raw) {
-// diagnostics.scores bywa zapisywany jako string JSON albo jako obiekt
-// zaleznie od sciezki zapisu (patrz claude/api_cron_onboard_diagnosis.js:
-// "scores = typeof scoresRaw === 'string' ? JSON.parse(scoresRaw) : scoresRaw")
-// - ta sama, juz ustalona w tym projekcie defensywna obsluga obu przypadkow.
-if (!raw) return null;
-try { return typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (e) { return null; }
+  // diagnostics.scores bywa zapisywany jako string JSON albo jako obiekt
+  // zależnie od ścieżki zapisu (patrz claude/api_cron_onboard_diagnosis.js:
+  // "scores = typeof scoresRaw === 'string' ? JSON.parse(scoresRaw) : scoresRaw")
+  // — ta sama, już ustalona w tym projekcie defensywna obsługa obu przypadków.
+  if (!raw) return null;
+  try { return typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (e) { return null; }
 }
 
 function averageScore(scoresObj) {
-if (!scoresObj) return null;
-const vals = Object.values(scoresObj).filter(v => typeof v === 'number');
-if (!vals.length) return null;
-return Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+  if (!scoresObj) return null;
+  const vals = Object.values(scoresObj).filter(v => typeof v === 'number');
+  if (!vals.length) return null;
+  return Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
 }
 
 async function loadRoster() {
-const listEl = document.getElementById('roster-list');
-listEl.innerHTML = '<div class="gc-empty">Wczytuje sklad...</div>';
+  const listEl = document.getElementById('roster-list');
+  listEl.innerHTML = '<div class="gc-empty">Wczytuję skład...</div>';
 
-try {
-// team_memberships.player_user_id ma FK do public.users(id) - PostgREST
-// moze wiec osadzic (embed) users(full_name,email) bezposrednio w tym
-// zapytaniu, ten sam wzorzec co pain_entries w asystent_app.html czy
-// specialist_availability w specialist_panel.html. Wymaga polityki RLS
-// "users_coach_select" z Domeny 18 - bez niej users w wyniku bedzie NULL
-// dla kazdego wiersza (RLS blokuje embed tak samo jak bezposrednie zapytanie).
-const res = await fetch(
-`${SUPABASE_URL}/rest/v1/team_memberships?team_id=eq.${currentTeam.id}&status=eq.active&order=joined_at.asc&select=player_user_id,joined_at,users(full_name,email)`,
-{ headers: authHeaders() }
-);
-const rows = await res.json();
-rosterCache = Array.isArray(rows) ? rows : [];
-} catch (e) {
-listEl.innerHTML = '<div class="gc-empty">Nie udalo sie wczytac skladu druzyny.</div>';
-rosterCache = [];
-updateAggregateAvailability();
-return;
+  try {
+    // team_memberships.player_user_id ma FK do public.users(id) — PostgREST
+    // może więc osadzić (embed) users(full_name,email) bezpośrednio w tym
+    // zapytaniu, ten sam wzorzec co pain_entries w asystent_app.html czy
+    // specialist_availability w specialist_panel.html. Wymaga polityki RLS
+    // "users_coach_select" z Domeny 18 — bez niej users w wyniku będzie NULL
+    // dla każdego wiersza (RLS blokuje embed tak samo jak bezpośrednie zapytanie).
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/team_memberships?team_id=eq.${currentTeam.id}&status=eq.active&order=joined_at.asc&select=player_user_id,joined_at,users(full_name,email)`,
+      { headers: authHeaders() }
+    );
+    const rows = await res.json();
+    rosterCache = Array.isArray(rows) ? rows : [];
+  } catch (e) {
+    listEl.innerHTML = '<div class="gc-empty">Nie udało się wczytać składu drużyny.</div>';
+    rosterCache = [];
+    updateAggregateAvailability();
+    return;
+  }
+
+  if (!rosterCache.length) {
+    listEl.innerHTML = '<div class="gc-empty">Brak aktywnych zawodników w drużynie.</div>';
+    diagnosisByUser = new Map();
+    updateAggregateAvailability();
+    return;
+  }
+
+  await Promise.all([
+    loadLatestDiagnoses(rosterCache.map(r => r.player_user_id)),
+    loadPreMatchSignals(),
+  ]);
+
+  listEl.innerHTML = rosterCache.map(renderRosterCard).join('');
+  updateAggregateAvailability();
 }
 
-if (!rosterCache.length) {
-listEl.innerHTML = '<div class="gc-empty">Brak aktywnych zawodnikow w druzynie.</div>';
-diagnosisByUser = new Map();
-updateAggregateAvailability();
-return;
-}
-
-await loadLatestDiagnoses(rosterCache.map(r => r.player_user_id));
-
-listEl.innerHTML = rosterCache.map(renderRosterCard).join('');
-updateAggregateAvailability();
-}
 async function loadLatestDiagnoses(playerIds) {
-diagnosisByUser = new Map();
-if (!playerIds.length) return;
+  diagnosisByUser = new Map();
+  if (!playerIds.length) return;
 
-try {
-// Ten sam filtr, ktorego asystent_app.html i api_cron_onboard_diagnosis.js
-// juz uzywaja jako jedyne zrodlo prawdy "czy to faktycznie ukonczona
-// diagnoza": event='email_submitted' + scores niepuste (diagnostics to
-// log zdarzen z ankiety, wiele wierszy na osobe - results_generated/
-// waitlist_signup/consultation_request/... to NIE to samo co ukonczona
-// diagnoza). order=created_at.desc + branie PIERWSZEGO wystapienia per
-// user_id nizej odtwarza dokladnie ten sam wzorzec "najnowszy wiersz per
-// zawodnik", co fetchLatestDiagnosisPerUser() w api_cron_onboard_diagnosis.js.
-const res = await fetch(
-`${SUPABASE_URL}/rest/v1/diagnostics?user_id=in.(${playerIds.join(',')})&event=eq.email_submitted&scores=not.is.null&order=created_at.desc&select=user_id,scores,created_at`,
-{ headers: authHeaders() }
-);
-const rows = await res.json();
-if (Array.isArray(rows)) {
-rows.forEach(row => {
-if (!diagnosisByUser.has(row.user_id)) diagnosisByUser.set(row.user_id, row);
-});
+  try {
+    // Ten sam filtr, którego asystent_app.html i api_cron_onboard_diagnosis.js
+    // już używają jako jedyne źródło prawdy "czy to faktycznie ukończona
+    // diagnoza": event='email_submitted' + scores niepuste (diagnostics to
+    // log zdarzeń z ankiety, wiele wierszy na osobę — results_generated/
+    // waitlist_signup/consultation_request/... to NIE to samo co ukończona
+    // diagnoza). order=created_at.desc + branie PIERWSZEGO wystąpienia per
+    // user_id niżej odtwarza dokładnie ten sam wzorzec "najnowszy wiersz per
+    // zawodnik", co fetchLatestDiagnosisPerUser() w api_cron_onboard_diagnosis.js.
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/diagnostics?user_id=in.(${playerIds.join(',')})&event=eq.email_submitted&scores=not.is.null&order=created_at.desc&select=user_id,scores,created_at`,
+      { headers: authHeaders() }
+    );
+    const rows = await res.json();
+    if (Array.isArray(rows)) {
+      rows.forEach(row => {
+        if (!diagnosisByUser.has(row.user_id)) diagnosisByUser.set(row.user_id, row);
+      });
+    }
+  } catch (e) {
+    // Brak diagnoz nie powinien blokować wyświetlenia reszty rostera —
+    // po prostu każda karta pokaże "brak odnotowanej diagnozy".
+  }
 }
-} catch (e) {
-// Brak diagnoz nie powinien blokowac wyswietlenia reszty rostera -
-// po prostu kazda karta pokaze "brak odnotowanej diagnozy".
+
+// Skład Meczowy (Domena 21) — pięć flag ryzyka per zawodnik, wołane RAZ dla
+// całej drużyny (get_pre_match_signals(team_id), nie per zawodnik). Brak
+// wyniku dla danego gracza (np. błąd sieci) świadomie NIE pokazuje żadnej
+// plakietki dla niego — to NIE to samo co "insufficient_data" (które jest
+// jawną flagą z backendu), więc nie mieszamy tych dwóch stanów.
+async function loadPreMatchSignals() {
+  preMatchSignalsByUser = new Map();
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_pre_match_signals`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_team_id: currentTeam.id }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    (data && data.results || []).forEach(row => {
+      preMatchSignalsByUser.set(row.player_user_id, row);
+    });
+  } catch (e) {
+    // Cicha degradacja do "brak plakietek" — Skład Meczowy jest dodatkiem
+    // do rostera, nie warunkiem jego wyświetlenia. Błąd nie blokuje reszty.
+  }
 }
+
+// Mapowanie widoczności flag na 3 poziomy wglądu (SKLAD_MECZOWY_SYGNALY_
+// RYZYKA.md, sekcja 5) — reuse istniejącego team.visibility_level, zero
+// nowego mechanizmu. insufficient_data ZAWSZE widoczna na każdym poziomie.
+function visibleRiskFlagKeys(visibilityLevel) {
+  const keys = ['fatigue', 'insufficient_data']; // Podstawowy
+  if (visibilityLevel === 'extended' || visibilityLevel === 'full') keys.push('injury_mode');
+  if (visibilityLevel === 'full') keys.push('pain', 'match_load');
+  return keys;
+}
+
+function renderRiskBadges(playerId) {
+  const signals = preMatchSignalsByUser.get(playerId);
+  if (!signals || !signals.flags) return '';
+
+  const allowedKeys = visibleRiskFlagKeys(currentTeam.visibility_level || 'basic');
+  const activeBadges = allowedKeys
+    .filter(key => signals.flags[key])
+    .map(key => `<span class="gc-risk-badge">${escapeHtml(RISK_BADGE_LABELS[key])}</span>`);
+
+  if (!activeBadges.length) return '';
+  return `<div class="gc-risk-badges">${activeBadges.join('')}</div>`;
 }
 
 function renderRosterCard(row) {
-const u = row.users || {};
-const name = u.full_name || u.email;
-// Jesli ANI full_name ANI email nie doszly (np. polityka
-// users_coach_select z Domeny 18 nie jest jeszcze wdrozona na tej bazie),
-// pokaz to wprost jako TODO, nie cichy pusty ciag - zgodnie z zasada
-// "zero cichych bledow zamiast jasnego komunikatu" z tego zlecenia.
-const nameLabel = name || 'Zawodnik (brak danych identyfikacyjnych - sprawdz, czy wdrozono Domene 18 / users_coach_select)';
+  const u = row.users || {};
+  const name = u.full_name || u.email;
+  // Jeśli ANI full_name ANI email nie doszły (np. polityka
+  // users_coach_select z Domeny 18 nie jest jeszcze wdrożona na tej bazie),
+  // pokaż to wprost jako TODO, nie cichy pusty ciąg — zgodnie z zasadą
+  // "zero cichych błędów zamiast jasnego komunikatu" z tego zlecenia.
+  const nameLabel = name || 'Zawodnik (brak danych identyfikacyjnych — sprawdź, czy wdrożono Domenę 18 / users_coach_select)';
 
-const diag = diagnosisByUser.get(row.player_user_id);
-let diagLabel = 'Brak odnotowanej diagnozy.';
-if (diag) {
-const scores = parseScores(diag.scores);
-const avg = averageScore(scores);
-const dateLabel = new Date(diag.created_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', year: 'numeric' });
-diagLabel = avg !== null
-? `Ostatnia diagnoza: ${dateLabel} - ogolny wynik ${avg}/100`
-: `Ostatnia diagnoza: ${dateLabel}`;
+  const diag = diagnosisByUser.get(row.player_user_id);
+  let diagLabel = 'Brak odnotowanej diagnozy.';
+  if (diag) {
+    const scores = parseScores(diag.scores);
+    const avg = averageScore(scores);
+    const dateLabel = new Date(diag.created_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', year: 'numeric' });
+    diagLabel = avg !== null
+      ? `Ostatnia diagnoza: ${dateLabel} — ogólny wynik ${avg}/100`
+      : `Ostatnia diagnoza: ${dateLabel}`;
+  }
+
+  return `
+    <div class="gc-roster-card" onclick="openPlayerDetail('${row.player_user_id}')">
+      <div class="gc-roster-name">${escapeHtml(nameLabel)}</div>
+      <div class="gc-roster-meta">${escapeHtml(diagLabel)}</div>
+      ${renderRiskBadges(row.player_user_id)}
+    </div>
+  `;
 }
 
-return `
-<div class="gc-roster-card" onclick="openPlayerDetail('${row.player_user_id}')">
-<div class="gc-roster-name">${escapeHtml(nameLabel)}</div>
-<div class="gc-roster-meta">${escapeHtml(diagLabel)}</div>
-</div>
-`;
-}
-
-// ======================================
-//  SZCZEGOLY ZAWODNIKA
-// ======================================
+// ══════════════════════════════════════
+//  SZCZEGÓŁY ZAWODNIKA
+// ══════════════════════════════════════
 function clearDetailSections() {
-['detail-profile', 'detail-goals', 'detail-journal', 'detail-injuries', 'detail-matches', 'detail-notes-list'].forEach(id => {
-document.getElementById(id).innerHTML = '<div class="gc-empty">Wczytuje...</div>';
-});
-document.getElementById('detail-note-text').value = '';
-document.getElementById('detail-notes-error').classList.add('gc-hidden');
-document.getElementById('detail-notes-ok').classList.add('gc-hidden');
+  ['detail-profile', 'detail-goals', 'detail-journal', 'detail-injuries', 'detail-matches', 'detail-notes-list'].forEach(id => {
+    document.getElementById(id).innerHTML = '<div class="gc-empty">Wczytuję...</div>';
+  });
+  document.getElementById('detail-note-text').value = '';
+  document.getElementById('detail-notes-error').classList.add('gc-hidden');
+  document.getElementById('detail-notes-ok').classList.add('gc-hidden');
 }
 
 async function openPlayerDetail(playerId) {
-currentPlayer = rosterCache.find(r => r.player_user_id === playerId) || { player_user_id: playerId, users: {} };
-showView('detail');
+  currentPlayer = rosterCache.find(r => r.player_user_id === playerId) || { player_user_id: playerId, users: {} };
+  showView('detail');
 
-const u = currentPlayer.users || {};
-document.getElementById('detail-player-name').textContent = u.full_name || u.email || 'Zawodnik';
-clearDetailSections();
+  const u = currentPlayer.users || {};
+  document.getElementById('detail-player-name').textContent = u.full_name || u.email || 'Zawodnik';
+  clearDetailSections();
 
-await Promise.all([
-loadPlayerProfileSection(playerId),
-loadPlayerGoalsSection(playerId),
-loadPlayerJournalSection(playerId),
-loadPlayerInjurySection(playerId),
-loadPlayerMatchSection(playerId),
-loadCoachNotesSection(playerId),
-]);
+  await Promise.all([
+    loadPlayerProfileSection(playerId),
+    loadPlayerGoalsSection(playerId),
+    loadPlayerJournalSection(playerId),
+    loadPlayerInjurySection(playerId),
+    loadPlayerMatchSection(playerId),
+    loadCoachNotesSection(playerId),
+  ]);
 }
 
 function backToRoster() {
-currentPlayer = null;
-showView('app');
-switchCoachPanel('roster');
+  currentPlayer = null;
+  showView('app');
+  switchCoachPanel('roster');
 }
 
-// Wspolny komunikat dla "sekcja pusta" - zgodnie z jawna instrukcja tego
-// zlecenia: RLS i tak wymusza dostep na poziomie bazy (patrz coach_sees_goals/
-// coach_sees_journal_details/coach_sees_injury_history w Domenie 08) -
-// pusty wynik zapytania moze znaczyc ALBO "brak dostepu na obecnym poziomie
-// widocznosci druzyny", ALBO "zawodnik po prostu nie ma jeszcze takich
-// danych". Frontend swiadomie NIE odroznia tych dwoch przypadkow (nie
-// duplikuje logiki visibility_level po stronie klienta) - jeden, neutralny
-// komunikat pokrywajacy oba, tak jak wprost dopuszcza tresc zlecenia.
-const EMPTY_SECTION_MESSAGE = 'Brak danych / brak dostepu na tym poziomie.';
+// Wspólny komunikat dla "sekcja pusta" — zgodnie z jawną instrukcją tego
+// zlecenia: RLS i tak wymusza dostęp na poziomie bazy (patrz coach_sees_goals/
+// coach_sees_journal_details/coach_sees_injury_history w Domenie 08) —
+// pusty wynik zapytania może znaczyć ALBO "brak dostępu na obecnym poziomie
+// widoczności drużyny", ALBO "zawodnik po prostu nie ma jeszcze takich
+// danych". Frontend świadomie NIE odróżnia tych dwóch przypadków (nie
+// duplikuje logiki visibility_level po stronie klienta) — jeden, neutralny
+// komunikat pokrywający oba, tak jak wprost dopuszcza treść zlecenia.
+const EMPTY_SECTION_MESSAGE = 'Brak danych / brak dostępu na tym poziomie.';
 
 async function loadPlayerProfileSection(playerId) {
-const el = document.getElementById('detail-profile');
-try {
-const res = await fetch(`${SUPABASE_URL}/rest/v1/player_profiles?user_id=eq.${playerId}&select=*`, { headers: authHeaders() });
-const rows = await res.json();
-const p = Array.isArray(rows) && rows[0];
-if (!p) { el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`; return; }
+  const el = document.getElementById('detail-profile');
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/player_profiles?user_id=eq.${playerId}&select=*`, { headers: authHeaders() });
+    const rows = await res.json();
+    const p = Array.isArray(rows) && rows[0];
+    if (!p) { el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`; return; }
 
-const parts = [];
-if (p.position_primary) parts.push('Pozycja: ' + p.position_primary + (p.position_secondary ? ' / ' + p.position_secondary : ''));
-  if (p.current_level) parts.push('Poziom gry: ' + p.current_level);
-if (p.injury_mode_active) {
-const catLabel = INJURY_MODE_CATEGORY_LABELS[p.injury_mode_category] || p.injury_mode_category || '';
-  parts.push('Tryb kontuzji aktywny (' + catLabel + ')');
-}
-el.innerHTML = parts.length
-  ? parts.map(t => `<div style="margin-bottom:6px;">${escapeHtml(t)}</div>`).join('')
-  : `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`;
-} catch (e) {
-el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`;
-}
+    const parts = [];
+    if (p.position_primary) parts.push('Pozycja: ' + p.position_primary + (p.position_secondary ? ' / ' + p.position_secondary : ''));
+    if (p.current_level) parts.push('Poziom gry: ' + p.current_level);
+    if (p.injury_mode_active) {
+      const catLabel = INJURY_MODE_CATEGORY_LABELS[p.injury_mode_category] || p.injury_mode_category || '';
+      parts.push('Tryb kontuzji aktywny (' + catLabel + ')');
+    }
+    el.innerHTML = parts.length
+      ? parts.map(t => `<div style="margin-bottom:6px;">${escapeHtml(t)}</div>`).join('')
+      : `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`;
+  } catch (e) {
+    el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`;
+  }
 }
 
 async function loadPlayerGoalsSection(playerId) {
-const el = document.getElementById('detail-goals');
-try {
-const res = await fetch(
-`${SUPABASE_URL}/rest/v1/goals?user_id=eq.${playerId}&order=is_priority.desc,created_at.desc&select=*`,
-{ headers: authHeaders() }
-);
-const rows = await res.json();
-if (!Array.isArray(rows) || !rows.length) { el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`; return; }
+  const el = document.getElementById('detail-goals');
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/goals?user_id=eq.${playerId}&order=is_priority.desc,created_at.desc&select=*`,
+      { headers: authHeaders() }
+    );
+    const rows = await res.json();
+    if (!Array.isArray(rows) || !rows.length) { el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`; return; }
 
-el.innerHTML = rows.map(g => {
-const label = SEG_LABELS[g.segment_id] || g.segment_id;
-let statusLabel = g.status === 'completed' ? 'Ukonczony' : g.status === 'abandoned' ? 'Porzucony' : (g.is_priority ? 'Priorytetowy, aktywny' : 'Aktywny');
-const meta = [statusLabel];
-if (g.horizon_weeks) meta.push(`horyzont: ${g.horizon_weeks} tyg.`);
-return `
-<div class="gc-goal-card">
-<div class="gc-goal-top"><span class="gc-goal-segment">${escapeHtml(label)}</span></div>
-${g.refinement_note ? `<div class="gc-history-detail" style="margin-bottom:6px;">${escapeHtml(g.refinement_note)}</div>` : ''}
-<div class="gc-goal-meta">${meta.join(' * ')}</div>
-</div>
-`;
-}).join('');
-} catch (e) {
-el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`;
-}
+    el.innerHTML = rows.map(g => {
+      const label = SEG_LABELS[g.segment_id] || g.segment_id;
+      let statusLabel = g.status === 'completed' ? 'Ukończony' : g.status === 'abandoned' ? 'Porzucony' : (g.is_priority ? 'Priorytetowy, aktywny' : 'Aktywny');
+      const meta = [statusLabel];
+      if (g.horizon_weeks) meta.push(`horyzont: ${g.horizon_weeks} tyg.`);
+      return `
+        <div class="gc-goal-card">
+          <div class="gc-goal-top"><span class="gc-goal-segment">${escapeHtml(label)}</span></div>
+          ${g.refinement_note ? `<div class="gc-history-detail" style="margin-bottom:6px;">${escapeHtml(g.refinement_note)}</div>` : ''}
+          <div class="gc-goal-meta">${meta.join(' · ')}</div>
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`;
+  }
 }
 
 async function loadPlayerJournalSection(playerId) {
-const el = document.getElementById('detail-journal');
-try {
-const res = await fetch(
-`${SUPABASE_URL}/rest/v1/daily_logs?user_id=eq.${playerId}&order=created_at.desc&limit=15&select=*,pain_entries(*)`,
-{ headers: authHeaders() }
-);
-const rows = await res.json();
-if (!Array.isArray(rows) || !rows.length) { el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`; return; }
-el.innerHTML = rows.map(renderJournalRowForCoach).join('');
-} catch (e) {
-el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`;
-}
+  const el = document.getElementById('detail-journal');
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/daily_logs?user_id=eq.${playerId}&order=created_at.desc&limit=15&select=*,pain_entries(*)`,
+      { headers: authHeaders() }
+    );
+    const rows = await res.json();
+    if (!Array.isArray(rows) || !rows.length) { el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`; return; }
+    el.innerHTML = rows.map(renderJournalRowForCoach).join('');
+  } catch (e) {
+    el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`;
+  }
 }
 
 function renderJournalRowForCoach(row) {
-const dateLabel = new Date(row.created_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' });
-const typeLabel = row.entry_type === 'morning' ? 'Poranny' : 'Potreningowy';
-const p = row.payload || {};
-const parts = [];
-if (row.entry_type === 'morning') {
-if (p.sleep_hours !== undefined) parts.push(`sen: ${p.sleep_hours}h`);
-if (p.morning_fatigue !== undefined) parts.push(`zmeczenie: ${p.morning_fatigue}/10`);
-if (p.mood_motivation !== undefined) parts.push(`nastroj: ${p.mood_motivation}/10`);
-} else {
-if (row.session_type) parts.push(row.session_type);
-if (p.rpe !== undefined) parts.push(`RPE: ${p.rpe}/10`);
-if (p.post_fatigue !== undefined) parts.push(`zmeczenie: ${p.post_fatigue}/10`);
-}
+  const dateLabel = new Date(row.created_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' });
+  const typeLabel = row.entry_type === 'morning' ? 'Poranny' : 'Potreningowy';
+  const p = row.payload || {};
+  const parts = [];
+  if (row.entry_type === 'morning') {
+    if (p.sleep_hours !== undefined) parts.push(`sen: ${p.sleep_hours}h`);
+    if (p.morning_fatigue !== undefined) parts.push(`zmęczenie: ${p.morning_fatigue}/10`);
+    if (p.mood_motivation !== undefined) parts.push(`nastrój: ${p.mood_motivation}/10`);
+  } else {
+    if (row.session_type) parts.push(row.session_type);
+    if (p.rpe !== undefined) parts.push(`RPE: ${p.rpe}/10`);
+    if (p.post_fatigue !== undefined) parts.push(`zmęczenie: ${p.post_fatigue}/10`);
+  }
 
-const pains = row.pain_entries || [];
-const painTags = pains.map(pe =>
-`<span class="gc-pain-tag">${escapeHtml(pe.body_location)}${pe.side === 'left' ? ' (L)' : pe.side === 'right' ? ' (P)' : ''} - ${pe.intensity}/10</span>`
-).join('');
+  const pains = row.pain_entries || [];
+  const painTags = pains.map(pe =>
+    `<span class="gc-pain-tag">${escapeHtml(pe.body_location)}${pe.side === 'left' ? ' (L)' : pe.side === 'right' ? ' (P)' : ''} — ${pe.intensity}/10</span>`
+  ).join('');
 
-return `
-<div class="gc-history-card">
-<div class="gc-history-top">
-<span class="gc-history-type">${typeLabel}</span>
-<span class="gc-history-date">${dateLabel}</span>
-</div>
-<div class="gc-history-detail">${escapeHtml(parts.join(' * ') || '-')}</div>
-${painTags}
-</div>
-`;
+  return `
+    <div class="gc-history-card">
+      <div class="gc-history-top">
+        <span class="gc-history-type">${typeLabel}</span>
+        <span class="gc-history-date">${dateLabel}</span>
+      </div>
+      <div class="gc-history-detail">${escapeHtml(parts.join(' · ') || '—')}</div>
+      ${painTags}
+    </div>
+  `;
 }
 
 async function loadPlayerInjurySection(playerId) {
-const el = document.getElementById('detail-injuries');
-try {
-const res = await fetch(
-`${SUPABASE_URL}/rest/v1/injury_history?user_id=eq.${playerId}&order=created_at.desc&select=*`,
-{ headers: authHeaders() }
-);
-const rows = await res.json();
-if (!Array.isArray(rows) || !rows.length) { el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`; return; }
+  const el = document.getElementById('detail-injuries');
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/injury_history?user_id=eq.${playerId}&order=created_at.desc&select=*`,
+      { headers: authHeaders() }
+    );
+    const rows = await res.json();
+    if (!Array.isArray(rows) || !rows.length) { el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`; return; }
 
-el.innerHTML = rows.map(row => {
-const status = row.fully_healed ? 'Zagojona' : 'W trakcie leczenia';
-return `
-<div class="gc-history-card">
-<div class="gc-history-top">
-<span class="gc-history-type">${escapeHtml(row.injury_type)}</span>
-<span class="gc-history-date">${status}</span>
-</div>
-<div class="gc-history-detail">${escapeHtml(row.body_location)}${row.side === 'left' ? ' (L)' : row.side === 'right' ? ' (P)' : ''}</div>
-</div>
-`;
-}).join('');
-} catch (e) {
-el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`;
-}
+    el.innerHTML = rows.map(row => {
+      const status = row.fully_healed ? 'Zagojona' : 'W trakcie leczenia';
+      return `
+        <div class="gc-history-card">
+          <div class="gc-history-top">
+            <span class="gc-history-type">${escapeHtml(row.injury_type)}</span>
+            <span class="gc-history-date">${status}</span>
+          </div>
+          <div class="gc-history-detail">${escapeHtml(row.body_location)}${row.side === 'left' ? ' (L)' : row.side === 'right' ? ' (P)' : ''}</div>
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`;
+  }
 }
 
 async function loadPlayerMatchSection(playerId) {
-const el = document.getElementById('detail-matches');
-try {
-const res = await fetch(
-`${SUPABASE_URL}/rest/v1/match_contexts?user_id=eq.${playerId}&order=created_at.desc&limit=10&select=*`,
-{ headers: authHeaders() }
-);
-const rows = await res.json();
-if (!Array.isArray(rows) || !rows.length) { el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`; return; }
+  const el = document.getElementById('detail-matches');
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/match_contexts?user_id=eq.${playerId}&order=created_at.desc&limit=10&select=*`,
+      { headers: authHeaders() }
+    );
+    const rows = await res.json();
+    if (!Array.isArray(rows) || !rows.length) { el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`; return; }
 
-el.innerHTML = rows.map(row => {
-const dateLabel = new Date(row.created_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', year: 'numeric' });
-const parts = [];
-if (row.own_score !== null && row.own_score !== undefined && row.opponent_score !== null && row.opponent_score !== undefined) {
-parts.push(`wynik: ${row.own_score}:${row.opponent_score}`);
-}
-if (row.minutes_played !== null && row.minutes_played !== undefined) parts.push(`${row.minutes_played} min`);
-if (row.match_rpe !== null && row.match_rpe !== undefined) parts.push(`RPE: ${row.match_rpe}/10`);
-return `
-<div class="gc-history-card">
-<div class="gc-history-top">
-<span class="gc-history-type">${escapeHtml(row.game_type || '')}</span>
-<span class="gc-history-date">${dateLabel}</span>
-</div>
-<div class="gc-history-detail">${escapeHtml(parts.join(' * ') || '-')}</div>
-</div>
-`;
-}).join('');
-} catch (e) {
-el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`;
-}
+    el.innerHTML = rows.map(row => {
+      const dateLabel = new Date(row.created_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', year: 'numeric' });
+      const parts = [];
+      if (row.own_score !== null && row.own_score !== undefined && row.opponent_score !== null && row.opponent_score !== undefined) {
+        parts.push(`wynik: ${row.own_score}:${row.opponent_score}`);
+      }
+      if (row.minutes_played !== null && row.minutes_played !== undefined) parts.push(`${row.minutes_played} min`);
+      if (row.match_rpe !== null && row.match_rpe !== undefined) parts.push(`RPE: ${row.match_rpe}/10`);
+      return `
+        <div class="gc-history-card">
+          <div class="gc-history-top">
+            <span class="gc-history-type">${escapeHtml(row.game_type || '')}</span>
+            <span class="gc-history-date">${dateLabel}</span>
+          </div>
+          <div class="gc-history-detail">${escapeHtml(parts.join(' · ') || '—')}</div>
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`;
+  }
 }
 
-// ======================================
-//  NOTATKI TRENERA (coach_notes) - tylko dodawanie i przeglad WLASNYCH
-//  notatek (coach_user_id = auth.uid(), wypelniane tu jawnie przy zapisie).
-// ======================================
+// ══════════════════════════════════════
+//  NOTATKI TRENERA (coach_notes) — tylko dodawanie i przegląd WŁASNYCH
+//  notatek (coach_user_id = auth.uid(), wypełniane tu jawnie przy zapisie).
+// ══════════════════════════════════════
 async function loadCoachNotesSection(playerId) {
-const listEl = document.getElementById('detail-notes-list');
-try {
-const res = await fetch(
-`${SUPABASE_URL}/rest/v1/coach_notes?coach_user_id=eq.${currentUser.id}&user_id=eq.${playerId}&order=updated_at.desc&select=*`,
-{ headers: authHeaders() }
-);
-const rows = await res.json();
-listEl.innerHTML = Array.isArray(rows) && rows.length
-? rows.map(renderCoachNoteCard).join('')
-: '<div class="gc-empty">Brak Twoich notatek o tym zawodniku.</div>';
-} catch (e) {
-listEl.innerHTML = '<div class="gc-empty">Nie udalo sie wczytac notatek.</div>';
-}
+  const listEl = document.getElementById('detail-notes-list');
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/coach_notes?coach_user_id=eq.${currentUser.id}&user_id=eq.${playerId}&order=updated_at.desc&select=*`,
+      { headers: authHeaders() }
+    );
+    const rows = await res.json();
+    listEl.innerHTML = Array.isArray(rows) && rows.length
+      ? rows.map(renderCoachNoteCard).join('')
+      : '<div class="gc-empty">Brak Twoich notatek o tym zawodniku.</div>';
+  } catch (e) {
+    listEl.innerHTML = '<div class="gc-empty">Nie udało się wczytać notatek.</div>';
+  }
 }
 
 function renderCoachNoteCard(row) {
-const dateLabel = row.updated_at
-? new Date(row.updated_at).toLocaleString('pl-PL', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-: '';
-return `
-<div class="gc-history-card">
-<div class="gc-history-top"><span class="gc-history-date">${dateLabel}</span></div>
-<div class="gc-history-detail">${escapeHtml(row.note)}</div>
-</div>
-`;
+  const dateLabel = row.updated_at
+    ? new Date(row.updated_at).toLocaleString('pl-PL', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : '';
+  return `
+    <div class="gc-history-card">
+      <div class="gc-history-top"><span class="gc-history-date">${dateLabel}</span></div>
+      <div class="gc-history-detail">${escapeHtml(row.note)}</div>
+    </div>
+  `;
 }
 
 async function addCoachNote() {
-const errEl = document.getElementById('detail-notes-error');
-const okEl = document.getElementById('detail-notes-ok');
-errEl.classList.add('gc-hidden');
-okEl.classList.add('gc-hidden');
+  const errEl = document.getElementById('detail-notes-error');
+  const okEl = document.getElementById('detail-notes-ok');
+  errEl.classList.add('gc-hidden');
+  okEl.classList.add('gc-hidden');
 
-const textEl = document.getElementById('detail-note-text');
-const note = textEl.value.trim();
-if (!note) {
-errEl.textContent = 'Wpisz tresc notatki.';
-errEl.classList.remove('gc-hidden');
-return;
+  const textEl = document.getElementById('detail-note-text');
+  const note = textEl.value.trim();
+  if (!note) {
+    errEl.textContent = 'Wpisz treść notatki.';
+    errEl.classList.remove('gc-hidden');
+    return;
+  }
+
+  // coach_notes (tabela legacy — patrz Domena 08/index.html) wymaga
+  // player_email jako pola identyfikującego zawodnika (obok team_code) —
+  // dokładnie te same kolumny, których index.html już używa przy zapisie
+  // (`{ player_email, team_code, note, updated_at }`). Bez adresu e-mail
+  // zawodnika (dostępnego tu tylko dzięki polityce users_coach_select z
+  // Domeny 18) świadomie NIE wysyłamy zapytania z pustym/zgadywanym
+  // player_email — pokazujemy wprost dlaczego się nie da, zamiast ryzykować
+  // ciche zapisanie wadliwego wiersza albo nieczytelny błąd 400 z Supabase.
+  //
+  // UWAGA (przegląd przed wdrożeniem — patrz Domena 18, sekcja 4): ten
+  // zwykły POST (bez `Prefer: resolution=merge-duplicates`) świadomie
+  // zakłada model "historia wielu notatek w czasie", nie "jedna,
+  // nadpisywana notatka" jak stary `saveCoachNote()` w index.html. Jeśli
+  // na produkcyjnej bazie wciąż istnieje legacy UNIQUE constraint na
+  // coach_notes(player_email, team_code) i Domena 18 (sekcja 4) nie
+  // została jeszcze uruchomiona, druga i kolejne notatki tego samego
+  // trenera o tym samym zawodniku dostaną błąd 409 zamiast się zapisać —
+  // widoczny tu jako zwykły komunikat błędu niżej (catch), nie cichy brak.
+  const u = (currentPlayer && currentPlayer.users) || {};
+  if (!u.email) {
+    errEl.textContent =
+      'Nie udało się pobrać adresu e-mail zawodnika (wymagany do zapisania notatki). ' +
+      'Sprawdź, czy na bazie wdrożono Domenę 18 (polityka users_coach_select), albo odśwież stronę.';
+    errEl.classList.remove('gc-hidden');
+    return;
+  }
+
+  const btn = document.getElementById('detail-note-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Zapisuję...';
+
+  try {
+    const body = {
+      team_code: currentTeam.code,
+      player_email: u.email,
+      user_id: currentPlayer.player_user_id,
+      coach_user_id: currentUser.id,
+      note,
+      updated_at: new Date().toISOString(),
+    };
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/coach_notes`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(await res.text());
+
+    textEl.value = '';
+    okEl.textContent = 'Notatka zapisana.';
+    okEl.classList.remove('gc-hidden');
+    await loadCoachNotesSection(currentPlayer.player_user_id);
+  } catch (e) {
+    errEl.textContent = 'Nie udało się zapisać notatki: ' + e.message;
+    errEl.classList.remove('gc-hidden');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Dodaj notatkę';
+  }
 }
 
-// coach_notes (tabela legacy - patrz Domena 08/index.html) wymaga
-// player_email jako pola identyfikujacego zawodnika (obok team_code) -
-// dokladnie te same kolumny, ktorych index.html juz uzywa przy zapisie
-// (`{ player_email, team_code, note, updated_at }`). Bez adresu e-mail
-// zawodnika (dostepnego tu tylko dzieki polityce users_coach_select z
-// Domeny 18) swiadomie NIE wysylamy zapytania z pustym/zgadywanym
-// player_email - pokazujemy wprost dlaczego sie nie da, zamiast ryzykowac
-// ciche zapisanie wadliwego wiersza albo nieczytelny blad 400 z Supabase.
-//
-// UWAGA (przeglad przed wdrozeniem - patrz Domena 18, sekcja 4): ten
-// zwykly POST (bez `Prefer: resolution=merge-duplicates`) swiadomie
-// zaklada model "historia wielu notatek w czasie", nie "jedna,
-// nadpisywana notatka" jak stary `saveCoachNote()` w index.html. Jesli
-// na produkcyjnej bazie wciaz istnieje legacy UNIQUE constraint na
-// coach_notes(player_email, team_code) i Domena 18 (sekcja 4) nie
-// zostala jeszcze uruchomiona, druga i kolejne notatki tego samego
-// trenera o tym samym zawodniku dostana blad 409 zamiast sie zapisac -
-// widoczny tu jako zwykly komunikat bledu nizej (catch), nie cichy brak.
-const u = (currentPlayer && currentPlayer.users) || {};
-if (!u.email) {
-errEl.textContent =
-'Nie udalo sie pobrac adresu e-mail zawodnika (wymagany do zapisania notatki). ' +
-'Sprawdz, czy na bazie wdrozono Domene 18 (polityka users_coach_select), albo odswiez strone.';
-errEl.classList.remove('gc-hidden');
-return;
+// ══════════════════════════════════════
+//  ASYSTENT TRENERA (Filar A, Domena 22) — tryb + podpowiedzi V1,
+//  kanał konwersacyjny, gotowiec żywieniowy. Wywołuje /api/generate-coach-tip,
+//  /api/coach-chat, /api/submit-coach-tip-feedback (ten sam Vercel deployment,
+//  ścieżka względna — te same konwencje co reszta appki).
+// ══════════════════════════════════════
+function loadAssistantPanel() {
+  document.getElementById('tip-result').innerHTML = '';
+  document.getElementById('tip-error').classList.add('gc-hidden');
+  document.getElementById('chat-error').classList.add('gc-hidden');
+  document.getElementById('chat-history').innerHTML = '';
+  renderNutritionCard();
 }
 
-const btn = document.getElementById('detail-note-submit-btn');
-btn.disabled = true;
-btn.textContent = 'Zapisuje...';
+async function generateCoachTip() {
+  const errEl = document.getElementById('tip-error');
+  const resultEl = document.getElementById('tip-result');
+  errEl.classList.add('gc-hidden');
 
-try {
-const body = {
-team_code: currentTeam.code,
-player_email: u.email,
-user_id: currentPlayer.player_user_id,
-coach_user_id: currentUser.id,
-note,
-updated_at: new Date().toISOString(),
-};
-const res = await fetch(`${SUPABASE_URL}/rest/v1/coach_notes`, {
-method: 'POST',
-headers: { ...authHeaders(), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-body: JSON.stringify(body),
-});
-if (!res.ok) throw new Error(await res.text());
+  const unitType = document.getElementById('tip-unit-type-select').value;
+  const btn = document.getElementById('tip-generate-btn');
+  btn.disabled = true;
+  btn.textContent = 'Generuję...';
 
-textEl.value = '';
-okEl.textContent = 'Notatka zapisana.';
-okEl.classList.remove('gc-hidden');
-await loadCoachNotesSection(currentPlayer.player_user_id);
-} catch (e) {
-errEl.textContent = 'Nie udalo sie zapisac notatki: ' + e.message;
-errEl.classList.remove('gc-hidden');
-} finally {
-btn.disabled = false;
-btn.textContent = 'Dodaj notatke';
+  try {
+    const res = await fetch('/api/generate-coach-tip', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ coachUserId: currentUser.id, teamId: currentTeam.id, unitType }),
+    });
+    const data = await res.json();
+
+    if (!data.ok) {
+      errEl.textContent = data.reason || data.error || 'Nie udało się wygenerować podpowiedzi.';
+      errEl.classList.remove('gc-hidden');
+      return;
+    }
+
+    lastGeneratedTipId = data.tip.id;
+    resultEl.innerHTML = `
+      <div class="gc-tip-card">
+        <div class="gc-tip-label">Podpowiedź</div>
+        <div class="gc-tip-text">${escapeHtml(data.tip.tip_text)}</div>
+        ${data.tip.nutrition_note_text ? `<div class="gc-nutrition-note">${escapeHtml(data.tip.nutrition_note_text)}</div>` : ''}
+        <div class="gc-feedback-row">
+          <button class="gc-feedback-btn" id="tip-feedback-useful" onclick="submitTipFeedback('useful')">Przydatne</button>
+          <button class="gc-feedback-btn" id="tip-feedback-not-now" onclick="submitTipFeedback('not_now')">Nie teraz</button>
+        </div>
+      </div>
+    `;
+  } catch (e) {
+    // ANTHROPIC_API_KEY może jeszcze nie być skonfigurowany w Vercel (ten
+    // sam, już znany brak co przy Centrum Decyzji zawodnika) — błąd 500
+    // z czytelnym komunikatem z backendu wyląduje tutaj jako zwykły tekst.
+    errEl.textContent = 'Nie udało się wygenerować podpowiedzi: ' + e.message;
+    errEl.classList.remove('gc-hidden');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Wygeneruj podpowiedź';
+  }
 }
+
+async function submitTipFeedback(response) {
+  if (!lastGeneratedTipId) return;
+  const usefulBtn = document.getElementById('tip-feedback-useful');
+  const notNowBtn = document.getElementById('tip-feedback-not-now');
+  usefulBtn.disabled = true;
+  notNowBtn.disabled = true;
+  (response === 'useful' ? usefulBtn : notNowBtn).classList.add('chosen');
+
+  try {
+    await fetch('/api/submit-coach-tip-feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ coachUserId: currentUser.id, tipId: lastGeneratedTipId, response }),
+    });
+  } catch (e) {
+    // Lekki feedback — brak potwierdzenia w UI przy błędzie sieci jest
+    // świadomie akceptowalne, to nie jest akcja krytyczna dla trenera.
+  }
 }
 
-// ======================================
-//  USTAWIENIA DRUZYNY (visibility_level)
-// ======================================
+async function sendCoachChatQuestion() {
+  const errEl = document.getElementById('chat-error');
+  const historyEl = document.getElementById('chat-history');
+  errEl.classList.add('gc-hidden');
+
+  const input = document.getElementById('chat-question-input');
+  const questionText = input.value.trim();
+  if (!questionText) {
+    errEl.textContent = 'Wpisz pytanie.';
+    errEl.classList.remove('gc-hidden');
+    return;
+  }
+
+  const btn = document.getElementById('chat-send-btn');
+  btn.disabled = true;
+  btn.textContent = 'Pytam...';
+
+  try {
+    const res = await fetch('/api/coach-chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ coachUserId: currentUser.id, teamId: currentTeam.id, questionText }),
+    });
+    const data = await res.json();
+
+    if (!data.ok) {
+      errEl.textContent = data.reason || data.error || 'Nie udało się uzyskać odpowiedzi.';
+      errEl.classList.remove('gc-hidden');
+      return;
+    }
+
+    const ex = data.exchange;
+    const redirectClass = ex.redirected_to_marketplace ? ' gc-redirect' : '';
+    const marketplaceLink = ex.redirected_to_marketplace
+      ? '<a class="gc-marketplace-link" href="marketplace_index.html">Zobacz specjalistów w Marketplace →</a>'
+      : '';
+    historyEl.insertAdjacentHTML('afterbegin', `
+      <div class="gc-chat-exchange">
+        <div class="gc-chat-question">${escapeHtml(ex.question_text)}</div>
+        <div class="gc-chat-answer${redirectClass}">${escapeHtml(ex.answer_text)}${marketplaceLink}</div>
+      </div>
+    `);
+    input.value = '';
+  } catch (e) {
+    errEl.textContent = 'Nie udało się uzyskać odpowiedzi: ' + e.message;
+    errEl.classList.remove('gc-hidden');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Zapytaj';
+  }
+}
+
+// Gotowiec żywieniowy (NARZEDZIE_TRENERA_DECYZJE_PROJEKTOWE.md, "ODŻYWIANIE
+// DLA TRENERA", punkt 2) — statyczna, gotowa karta z ogólnej wiedzy
+// żywieniowej sportowej ("energia do gry", NIGDY kontrola wagi/sylwetki —
+// istotne przy nieletnich zawodnikach), nie generowana przez AI za każdym
+// razem. Trener kopiuje i przekazuje drużynie/rodzicom.
+const NUTRITION_CARD_TEXT = `PROTOKÓŁ MECZOWY — ODŻYWIANIE I NAWODNIENIE
+
+PRZED MECZEM (2-3h wcześniej)
+Pełnowartościowy posiłek z węglowodanami złożonymi (ryż, makaron, pieczywo) i lekkostrawnym białkiem. Unikaj tłustych i bardzo błonnikowych potraw tuż przed grą — spowalniają trawienie i mogą przeszkadzać w trakcie meczu.
+
+NAWODNIENIE W DNIU MECZU
+Regularne picie wody przez cały dzień, nie tylko tuż przed wyjściem na boisko. Domowy izotonik: 1 litr wody + szczypta soli + 2-3 łyżki miodu lub cukru + sok z cytryny — prosty sposób na uzupełnienie elektrolitów bez kupowania gotowych napojów.
+
+W PRZERWIE
+Kilka łyków izotoniku lub wody, ewentualnie banan albo garść rodzynek — szybka, łatwo przyswajalna energia, bez obciążania żołądka przed drugą połową.
+
+PO MECZU (do 30-60 minut)
+Uzupełnienie płynów i węglowodanów jak najszybciej po zakończeniu gry — to "okno" najlepiej wspiera regenerację przed kolejnym treningiem. Dobry wybór: kanapka, banan, odżywczy koktajl mleczny.
+
+WAŻNE
+To ogólna edukacja żywieniowa, nie porada medyczna. Przy alergiach, nietolerancjach albo innych indywidualnych ograniczeniach zdrowotnych — skonsultuj się ze specjalistą (Marketplace Gamechange).`;
+
+function renderNutritionCard() {
+  const el = document.getElementById('nutrition-card-content');
+  const blocks = NUTRITION_CARD_TEXT.split('\n\n');
+  el.innerHTML = blocks.map(block => {
+    const lines = block.split('\n');
+    const heading = lines[0];
+    const body = lines.slice(1).join(' ');
+    return `<h4>${escapeHtml(heading)}</h4><p>${escapeHtml(body)}</p>`;
+  }).join('');
+}
+
+async function copyNutritionCard() {
+  const okEl = document.getElementById('nutrition-copy-ok');
+  try {
+    await navigator.clipboard.writeText(NUTRITION_CARD_TEXT);
+    okEl.classList.remove('gc-hidden');
+    setTimeout(() => okEl.classList.add('gc-hidden'), 2500);
+  } catch (e) {
+    // Clipboard API może wymagać interakcji użytkownika/zezwolenia w
+    // niektórych przeglądarkach — świadomie bez zapasowego mechanizmu
+    // document.execCommand('copy') (przestarzały, niespójny między
+    // przeglądarkami); trener może zaznaczyć i skopiować tekst ręcznie.
+  }
+}
+
+// ══════════════════════════════════════
+//  USTAWIENIA DRUŻYNY (visibility_level, season_phase)
+// ══════════════════════════════════════
 function loadSettingsPanel() {
-document.getElementById('settings-visibility-select').value = currentTeam.visibility_level || 'basic';
+  document.getElementById('settings-visibility-select').value = currentTeam.visibility_level || 'basic';
+  document.getElementById('settings-season-phase-select').value = currentTeam.season_phase || 'przygotowawcza';
 }
 
 async function saveVisibility() {
-const errEl = document.getElementById('settings-error');
-const okEl = document.getElementById('settings-ok');
-errEl.classList.add('gc-hidden');
-okEl.classList.add('gc-hidden');
+  const errEl = document.getElementById('settings-error');
+  const okEl = document.getElementById('settings-ok');
+  errEl.classList.add('gc-hidden');
+  okEl.classList.add('gc-hidden');
 
-const level = document.getElementById('settings-visibility-select').value;
-const btn = document.getElementById('settings-save-btn');
-btn.disabled = true;
-btn.textContent = 'Zapisuje...';
+  const level = document.getElementById('settings-visibility-select').value;
+  const btn = document.getElementById('settings-save-btn');
+  btn.disabled = true;
+  btn.textContent = 'Zapisuję...';
 
-try {
-// Zwykly PATCH - dziala bez SECURITY DEFINER, bo na tym etapie
-// teams.coach_user_id jest JUZ ustawione (przez claim_coach_team przy
-// pierwszym polaczeniu), wiec polityka "teams_coach_manage_own"
-// (auth.uid() = coach_user_id) z Domeny 08 przepuszcza ten zapis.
-const res = await fetch(`${SUPABASE_URL}/rest/v1/teams?id=eq.${currentTeam.id}`, {
-method: 'PATCH',
-headers: { ...authHeaders(), 'Content-Type': 'application/json', Prefer: 'return=representation' },
-body: JSON.stringify({ visibility_level: level }),
-});
-if (!res.ok) throw new Error(await res.text());
+  try {
+    // Zwykły PATCH — działa bez SECURITY DEFINER, bo na tym etapie
+    // teams.coach_user_id jest JUŻ ustawione (przez claim_coach_team przy
+    // pierwszym połączeniu), więc polityka "teams_coach_manage_own"
+    // (auth.uid() = coach_user_id) z Domeny 08 przepuszcza ten zapis.
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/teams?id=eq.${currentTeam.id}`, {
+      method: 'PATCH',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json', Prefer: 'return=representation' },
+      body: JSON.stringify({ visibility_level: level }),
+    });
+    if (!res.ok) throw new Error(await res.text());
 
-const rows = await res.json();
-if (Array.isArray(rows) && rows[0]) currentTeam = rows[0];
+    const rows = await res.json();
+    if (Array.isArray(rows) && rows[0]) currentTeam = rows[0];
 
-okEl.textContent = 'Zapisano poziom widocznosci.';
-okEl.classList.remove('gc-hidden');
-} catch (e) {
-errEl.textContent = 'Nie udalo sie zapisac: ' + e.message;
-errEl.classList.remove('gc-hidden');
-} finally {
-btn.disabled = false;
-btn.textContent = 'Zapisz';
+    okEl.textContent = 'Zapisano poziom widoczności.';
+    okEl.classList.remove('gc-hidden');
+  } catch (e) {
+    errEl.textContent = 'Nie udało się zapisać: ' + e.message;
+    errEl.classList.remove('gc-hidden');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Zapisz';
+  }
 }
+
+// Faza sezonu (Domena 22) — ten sam wzorzec PATCH co saveVisibility() wyżej,
+// pokryte tą samą polityką RLS "teams_coach_manage_own" (ta sama tabela).
+async function saveSeasonPhase() {
+  const errEl = document.getElementById('settings-season-error');
+  const okEl = document.getElementById('settings-season-ok');
+  errEl.classList.add('gc-hidden');
+  okEl.classList.add('gc-hidden');
+
+  const phase = document.getElementById('settings-season-phase-select').value;
+  const btn = document.getElementById('settings-season-save-btn');
+  btn.disabled = true;
+  btn.textContent = 'Zapisuję...';
+
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/teams?id=eq.${currentTeam.id}`, {
+      method: 'PATCH',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json', Prefer: 'return=representation' },
+      body: JSON.stringify({ season_phase: phase }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+
+    const rows = await res.json();
+    if (Array.isArray(rows) && rows[0]) currentTeam = rows[0];
+
+    okEl.textContent = 'Zapisano fazę sezonu.';
+    okEl.classList.remove('gc-hidden');
+  } catch (e) {
+    errEl.textContent = 'Nie udało się zapisać: ' + e.message;
+    errEl.classList.remove('gc-hidden');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Zapisz';
+  }
 }
 
-// ======================================
-//  AGREGAT DRUZYNOWY (heatmapa) - liczony w JS z najnowszych diagnostics.scores
-//  kazdego widocznego zawodnika (rosterCache/diagnosisByUser juz wczytane
-//  przez loadRoster()). Pokazywany TYLKO przy >=8 aktywnych zawodnikach.
-// ======================================
+// ══════════════════════════════════════
+//  AGREGAT DRUŻYNOWY (heatmapa) — liczony w JS z najnowszych diagnostics.scores
+//  każdego widocznego zawodnika (rosterCache/diagnosisByUser już wczytane
+//  przez loadRoster()). Pokazywany TYLKO przy ≥8 aktywnych zawodnikach.
+// ══════════════════════════════════════
 function updateAggregateAvailability() {
-const hintEl = document.getElementById('aggregate-hint');
-const bodyEl = document.getElementById('aggregate-body');
-const count = rosterCache.length;
+  const hintEl = document.getElementById('aggregate-hint');
+  const bodyEl = document.getElementById('aggregate-body');
+  const count = rosterCache.length;
 
-if (count < TEAM_AGGREGATE_MIN_SIZE) {
-hintEl.classList.remove('gc-hidden');
-hintEl.textContent =
-`Agregat druzynowy pojawi sie dopiero przy co najmniej ${TEAM_AGGREGATE_MIN_SIZE} aktywnych zawodnikach ` +
-`(prog ustalony ze wzgledu na prywatnosc - mniejsza grupa moglaby zdradzac wynik pojedynczej osoby). ` +
-`Obecnie aktywnych zawodnikow: ${count}.`;
-bodyEl.innerHTML = '';
-return;
-}
+  if (count < TEAM_AGGREGATE_MIN_SIZE) {
+    hintEl.classList.remove('gc-hidden');
+    hintEl.textContent =
+      `Agregat drużynowy pojawi się dopiero przy co najmniej ${TEAM_AGGREGATE_MIN_SIZE} aktywnych zawodnikach ` +
+      `(próg ustalony ze względu na prywatność — mniejsza grupa mogłaby zdradzać wynik pojedynczej osoby). ` +
+      `Obecnie aktywnych zawodników: ${count}.`;
+    bodyEl.innerHTML = '';
+    return;
+  }
 
-hintEl.classList.add('gc-hidden');
-renderAggregate();
+  hintEl.classList.add('gc-hidden');
+  renderAggregate();
 }
 
 function renderAggregate() {
-const bodyEl = document.getElementById('aggregate-body');
-const sums = {};
-const counts = {};
+  const bodyEl = document.getElementById('aggregate-body');
+  const sums = {};
+  const counts = {};
 
-diagnosisByUser.forEach(diag => {
-const scores = parseScores(diag.scores);
-if (!scores) return;
-Object.entries(scores).forEach(([segId, val]) => {
-if (typeof val !== 'number') return;
-sums[segId] = (sums[segId] || 0) + val;
-counts[segId] = (counts[segId] || 0) + 1;
-});
-});
+  diagnosisByUser.forEach(diag => {
+    const scores = parseScores(diag.scores);
+    if (!scores) return;
+    Object.entries(scores).forEach(([segId, val]) => {
+      if (typeof val !== 'number') return;
+      sums[segId] = (sums[segId] || 0) + val;
+      counts[segId] = (counts[segId] || 0) + 1;
+    });
+  });
 
-const contributingPlayers = diagnosisByUser.size;
-if (!contributingPlayers) {
-bodyEl.innerHTML = '<div class="gc-empty">Zaden z aktywnych zawodnikow nie ma jeszcze odnotowanej diagnozy - brak danych do agregatu.</div>';
-return;
-}
+  const contributingPlayers = diagnosisByUser.size;
+  if (!contributingPlayers) {
+    bodyEl.innerHTML = '<div class="gc-empty">Żaden z aktywnych zawodników nie ma jeszcze odnotowanej diagnozy — brak danych do agregatu.</div>';
+    return;
+  }
 
-const sections = SEGMENTS_BY_PILLAR.map(([pillar, segs]) => {
-const rows = segs.map(([segId, label]) => {
-const n = counts[segId] || 0;
-if (!n) {
-return `
-<div class="gc-bar-row">
-<div class="gc-bar-label"><span>${label}</span><span style="color:var(--muted);">brak danych</span></div>
-</div>
-`;
-}
-const avg = Math.round(sums[segId] / n);
-return `
-<div class="gc-bar-row">
-<div class="gc-bar-label"><span>${label}</span><span>${avg}/100 (n=${n})</span></div>
-<div class="gc-bar-track"><div class="gc-bar-fill" style="width:${avg}%;"></div></div>
-</div>
-`;
-}).join('');
-return `<div class="gc-goal-pillar" style="margin:18px 0 8px;">${pillar}</div>${rows}`;
-}).join('');
+  const sections = SEGMENTS_BY_PILLAR.map(([pillar, segs]) => {
+    const rows = segs.map(([segId, label]) => {
+      const n = counts[segId] || 0;
+      if (!n) {
+        return `
+          <div class="gc-bar-row">
+            <div class="gc-bar-label"><span>${label}</span><span style="color:var(--muted);">brak danych</span></div>
+          </div>
+        `;
+      }
+      const avg = Math.round(sums[segId] / n);
+      return `
+        <div class="gc-bar-row">
+          <div class="gc-bar-label"><span>${label}</span><span>${avg}/100 (n=${n})</span></div>
+          <div class="gc-bar-track"><div class="gc-bar-fill" style="width:${avg}%;"></div></div>
+        </div>
+      `;
+    }).join('');
+    return `<div class="gc-goal-pillar" style="margin:18px 0 8px;">${pillar}</div>${rows}`;
+  }).join('');
 
-bodyEl.innerHTML = sections + `
-<div class="gc-goal-meta" style="margin-top:18px;">
-Agregat liczony na podstawie ${contributingPlayers} z ${rosterCache.length} aktywnych zawodnikow,
-ktorzy maja odnotowana, ukonczona diagnoze. Segmenty z n mniejszym niz kilka respondentow wciaz moga
-w praktyce odzwierciedlac wynik pojedynczej osoby (prog 8 dotyczy CALEJ druzyny, nie liczby respondentow
-per segment - swiadome uproszczenie, patrz plik SQL Domeny 18).
-</div>
-`;
+  bodyEl.innerHTML = sections + `
+    <div class="gc-goal-meta" style="margin-top:18px;">
+      Agregat liczony na podstawie ${contributingPlayers} z ${rosterCache.length} aktywnych zawodników,
+      którzy mają odnotowaną, ukończoną diagnozę. Segmenty z n mniejszym niż kilka respondentów wciąż mogą
+      w praktyce odzwierciedlać wynik pojedynczej osoby (próg 8 dotyczy CAŁEJ drużyny, nie liczby respondentów
+      per segment — świadome uproszczenie, patrz plik SQL Domeny 18).
+    </div>
+  `;
 }
 
 initApp();
@@ -1011,53 +1410,68 @@ initApp();
 </html>
 
 <!--
-==============================================================
-CO SWIADOMIE NIE JEST TU ZROBIONE
+  ══════════════════════════════════════════════════════════════
+  CO ŚWIADOMIE NIE JEST TU ZROBIONE
 
-1. Wiele druzyn na jednego trenera - po zalogowaniu panel bierze
-PIERWSZA druzyne znaleziona po teams.coach_user_id i nie oferuje
-przelacznika. Baza na wiele druzyn pozwala (patrz plik SQL Domeny 18),
-ten frontend - nie. Do dobudowania, jesli faktycznie sie pojawi.
+  1. Wiele drużyn na jednego trenera — po zalogowaniu panel bierze
+     PIERWSZĄ drużynę znalezioną po teams.coach_user_id i nie oferuje
+     przełącznika. Baza na wiele drużyn pozwala (patrz plik SQL Domeny 18),
+     ten frontend — nie. Do dobudowania, jeśli faktycznie się pojawi.
 
-2. Edycja/usuwanie notatek trenera - tylko dodawanie i chronologiczny
-przeglad wlasnych notatek. RLS (coach_notes_owner_write, Domena 08)
-technicznie pozwolilby na UPDATE/DELETE, ale ten panel tego nie
-oferuje - najprostsza, wystarczajaca wersja na start.
+  2. Edycja/usuwanie notatek trenera — tylko dodawanie i chronologiczny
+     przegląd własnych notatek. RLS (coach_notes_owner_write, Domena 08)
+     technicznie pozwoliłby na UPDATE/DELETE, ale ten panel tego nie
+     oferuje — najprostsza, wystarczająca wersja na start.
 
-3. Zapraszanie/onboarding nowego zawodnika przez trenera - zgodnie z
-Funkcja 9 to zawodnik sam dolacza do druzyny podajac kod (istniejacy
-mechanizm, poza zakresem tego panelu). Panel trenera tylko CZYTA
-roster, nigdy nie tworzy kont zawodnikow.
+  3. Zapraszanie/onboarding nowego zawodnika przez trenera — zgodnie z
+     Funkcją 9 to zawodnik sam dołącza do drużyny podając kod (istniejący
+     mechanizm, poza zakresem tego panelu). Panel trenera tylko CZYTA
+     roster, nigdy nie tworzy kont zawodników.
 
-4. Prywatny tryb trenera (coach_player_relationships, Domena 08,
-sekcja 3) - relacja 1:1 poza druzyna, z granularnymi flagami
-udostepniania. Ten panel obsluguje wylacznie sciezke druzynowa
-(team_memberships) - zawodnicy udostepniajacy dane prywatnie, bez
-bycia w zadnej druzynie tego trenera, nie pojawia sie tu nigdzie.
+  4. Prywatny tryb trenera (coach_player_relationships, Domena 08,
+     sekcja 3) — relacja 1:1 poza drużyną, z granularnymi flagami
+     udostępniania. Ten panel obsługuje wyłącznie ścieżkę drużynową
+     (team_memberships) — zawodnicy udostępniający dane prywatnie, bez
+     bycia w żadnej drużynie tego trenera, nie pojawią się tu nigdzie.
 
-5. Widok "trend" dla poziomu widocznosci 'extended' bez pelnego
-dostepu do dziennika - Domena 08 wspomina to jako cos, co "backend
-liczy na zywo, nie surowy odczyt wierszy" (stad brak osobnej
-polityki RLS dla samego trendu). Nie zaimplementowane w tym pliku -
-wymagaloby osobnej funkcji/agregatu backendu, poza zakresem zlecenia.
+  5. Widok "trend" dla poziomu widoczności 'extended' bez pełnego
+     dostępu do dziennika — Domena 08 wspomina to jako coś, co "backend
+     liczy na żywo, nie surowy odczyt wierszy" (stąd brak osobnej
+     polityki RLS dla samego trendu). Nie zaimplementowane w tym pliku —
+     wymagałoby osobnej funkcji/agregatu backendu, poza zakresem zlecenia.
 
-6. Deep-link / most sesji miedzy tym panelem a asystent_app.html czy
-Marketplace - opisane jako osobny temat w
-claude/INTEGRACJA_NARZEDZI_ROLE.md, nieczesc tego zlecenia.
+  6. Deep-link / most sesji między tym panelem a asystent_app.html czy
+     Marketplace — opisane jako osobny temat w
+     claude/INTEGRACJA_NARZEDZI_ROLE.md, nieczęść tego zlecenia.
 
-7. E-mail/powiadomienia (np. przypomnienie dla trenera o nieprzejrzanym
-zawodniku) - brak, ten panel jest czysto "pull" (trener sam wchodzi
-i sprawdza), bez zadnej logiki wypychajacej.
+  7. E-mail/powiadomienia (np. przypomnienie dla trenera o nieprzejrzanym
+     zawodniku) — brak, ten panel jest czysto "pull" (trener sam wchodzi
+     i sprawdza), bez żadnej logiki wypychającej.
 
-8. Paginacja/wyszukiwanie w roscie przy bardzo duzych druzynach
-(>20-30 zawodnikow) - dzis prosta, niepaginowana lista. Wystarczajace
-przy skali pilotazu, warte rewizji, gdyby druzyny realnie urosly.
+  8. Paginacja/wyszukiwanie w roście przy bardzo dużych drużynach
+     (>20-30 zawodników) — dziś prosta, niepaginowana lista. Wystarczające
+     przy skali pilotażu, warte rewizji, gdyby drużyny realnie urosły.
 
-9. Centrum Decyzji / decision_recommendations w widoku szczegolow
-zawodnika - mimo ze ta tabela ma te sama bramke RLS co dziennik
-(coach_sees_journal_details, Domena 08), swiadomie pominiete tutaj:
-to tresc generowana dla ZAWODNIKA (feedback zawodnika na wlasne
-rekomendacje), nie oczywisty element panelu trenera - do rozwazenia
-osobno, nie zgadywane teraz.
-==============================================================
+  9. Centrum Decyzji / decision_recommendations w widoku szczegółów
+     zawodnika — mimo że ta tabela ma tę samą bramkę RLS co dziennik
+     (coach_sees_journal_details, Domena 08), świadomie pominięte tutaj:
+     to treść generowana dla ZAWODNIKA (feedback zawodnika na własne
+     rekomendacje), nie oczywisty element panelu trenera — do rozważenia
+     osobno, nie zgadywane teraz.
+
+  10. Skład Meczowy (Domena 21, Krok 3.7) — plakietki wołają
+      get_pre_match_signals RAZ na cały roster przy każdym wejściu w
+      zakładkę Skład (nie cache'owane między wizytami) — świadomie
+      prostsze niż inwalidacja cache przy zmianie danych zawodnika,
+      koszt to jedno dodatkowe zapytanie RPC per wejście w zakładkę.
+
+  11. Asystent trenera (Domena 22, Krok 3.8-3.10) — silnik V1 wymaga
+      ANTHROPIC_API_KEY w Vercel (ten sam, już znany brak co przy
+      Centrum Decyzji zawodnika) — do czasu jego skonfigurowania
+      przyciski "Wygeneruj podpowiedź"/"Zapytaj" pokażą czytelny błąd
+      zamiast wyniku. Historia poprzednich podpowiedzi/pytań (tabele
+      coach_tips/coach_chat_exchanges mają politykę SELECT dla trenera)
+      NIE jest tu wczytywana przy wejściu w zakładkę — panel pokazuje
+      tylko wynik bieżącej sesji, przegląd historii to możliwe rozszerzenie.
+  ══════════════════════════════════════════════════════════════
 -->
