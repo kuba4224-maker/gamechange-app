@@ -862,11 +862,25 @@ async function callAnthropic(systemPrompt, userPrompt) {
   if (!textBlock) throw new Error('Odpowiedź Anthropic bez bloku tekstowego.');
   let parsed;
   try {
-    parsed = JSON.parse(textBlock.text);
+    parsed = JSON.parse(stripMarkdownJsonFence(textBlock.text));
   } catch (e) {
     throw new Error(`Nie udało się sparsować JSON z odpowiedzi AI: ${e.message}. Surowa odpowiedź (pierwsze 500 znaków): ${textBlock.text.slice(0, 500)}`);
   }
   return parsed;
+}
+
+// POPRAWKA (31.07.2026 — sesja naprawcza, patrz claude/SESJA_START_NAPRAWA_
+// JSON_RECOMMENDATION.md): ten sam błąd znaleziony i naprawiony 30.07.2026
+// w api/validate-goal-refinement.js (żywy test na produkcji) — mimo
+// instrukcji w system prompcie "zwróć WYŁĄCZNIE poprawny JSON (bez
+// markdown, bez bloków kodu)", model Anthropic czasem i tak owija
+// odpowiedź w blok kodu markdown (```json ... ```), co wcześniej psuło
+// JSON.parse (rzucało błąd zamiast zwrócić wynik). Funkcja poniżej
+// skopiowana 1:1 z już przetestowanej wersji w validate-goal-refinement.js.
+function stripMarkdownJsonFence(text) {
+    const trimmed = text.trim();
+    const match = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+    return match ? match[1] : trimmed;
 }
 
 // ------------------------------------------------------------
