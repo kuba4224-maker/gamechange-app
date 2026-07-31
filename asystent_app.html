@@ -4,9 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Gamechange — Asystent Sportowca</title>
-<link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#0e0d0b">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Gamechange">
@@ -2562,17 +2560,6 @@ function resetMatchForm() {
 
 initApp();
 
-// Rejestracja service workera — wyłącznie instalowalność (ikona na ekranie
-// głównym telefonu, tryb "standalone" bez paska adresu), NIE pełny tryb
-// offline. Patrz claude/asystent_sw.js po pełne uzasadnienie strategii
-// network-first. Warunek `'serviceWorker' in navigator` to standardowy,
-// bezpieczny fallback dla przeglądarek bez wsparcia — po prostu nic się
-// wtedy nie dzieje, appka działa dalej normalnie jak dziś.
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch((e) => console.log('SW registration failed:', e));
-  });
-}
 </script>
 
 </body>
