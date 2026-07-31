@@ -50,10 +50,23 @@
 // Do zrobienia w kolejnym kroku — patrz notatka w checkliście.
 //
 // WDROŻONE: 29.07.2026, przez Cowork samodzielnie w przeglądarce (GitHub).
+//
+// ROZSZERZENIE 31.07.2026 (noc, Krok 5b, Blok Skupienia — Prowadzenie):
+// dopisane trzy nowe rytmy (6, 7, 8) — focus_block_checkins (pytania
+// kontrolne co ~14 dni), focus_block_maintenance (sprawdzenia Fazy 4 co
+// ~45 dni dla zamkniętych bloków), focus_block_adaptation (adaptacja po
+// sygnale bólu/zmęczenia, deterministyczna, bez AI, patrz
+// lib/focus-block-adaptation.js). Zależność: tabela focus_block_checkins
+// i kolumny last_content_dose_stage/last_content_dose_at/last_adaptation_at
+// na focus_blocks (migracja SQL #3, claude/SQL_3_INSTRUKCJE_KROK5B_31_07_2026_NOC.md
+// w Project Knowledge) MUSZĄ być uruchomione, inaczej te trzy rytmy będą
+// się wywalać (catch per-blok, nie przerywa reszty crona, ale nic nie
+// wyśle dopóki tabela nie istnieje).
 // ============================================================
 
 const { createClient } = require('@supabase/supabase-js');
 const { sendPush, verifyFirebaseConfig } = require('./send-push');
+const { runFocusBlockAdaptation } = require('../lib/focus-block-adaptation');
 
 function getAdminClient() {
   const url = process.env.SUPABASE_URL;
@@ -88,6 +101,12 @@ const PRE_MATCH_EVENING_WINDOW_HOUR = 19; // wieczorem, dzień przed meczem
 const PRE_MATCH_MORNING_WINDOW_HOUR = 7;  // NOWE 29.07.2026 — rano, w dniu meczu (spec: "dwa wysłania")
 const WEEKLY_SUMMARY_WEEKDAY = 0;     // 0 = niedziela
 const CONTEXTUAL_INSIGHT_MIN_GAP_DAYS = 3; // NOWE 29.07.2026 — spec: "max 1 na 3 dni"
+
+// NOWE 31.07.2026 (Krok 5b) — okna/interwały dla rytmów Bloku Skupienia.
+const FOCUS_BLOCK_CHECKIN_INTERVAL_DAYS = 14;   // Faza 2a: co ~2 tygodnie
+const FOCUS_BLOCK_CHECKIN_WINDOW_HOUR = 10;     // stałe okno rano
+const FOCUS_BLOCK_MAINTENANCE_INTERVAL_DAYS = 45; // Faza 4: "rzadkie" sprawdzanie, ~1.5 miesiąca
+const FOCUS_BLOCK_MAINTENANCE_WINDOW_HOUR = 10;
 
 // Etykiety segmentów do wstawienia w treść weekly_summary ("z celem
 // [nazwa]") — zweryfikowane wprost z SEGMENT_NAME_TO_ID w
@@ -466,13 +485,141 @@ async function runContextualInsight(supabase, results) {
   }
 }
 
+// ------------------------------------------------------------
+// Rytm 6: focus_block_checkins — Faza 2a Bloku Skupienia. Co ~14 dni na
+// aktywny blok generuje pytanie kontrolne (i ewentualną dawkę treści,
+// Faza 2b) przez api/generate-focus-block-content.js (action: 'checkin'),
+// zapisuje wiersz w focus_block_checkins, wysyła push.
+// NOWE 31.07.2026 (Krok 5b).
+// ------------------------------------------------------------
+async function runFocusBlockCheckins(supabase, warsawNow, results) {
+  if (!hourInWindow(warsawNow.hour, FOCUS_BLOCK_CHECKIN_WINDOW_HOUR)) return;
+
+  const { data: blocks, error } = await supabase
+    .from('focus_blocks')
+    .select('id, user_id, started_at')
+    .eq('status', 'active');
+  if (error || !blocks || blocks.length === 0) return;
+
+  const { generateCheckin } = require('./generate-focus-block-content')._internal;
+
+  for (const block of blocks) {
+    try {
+      const { data: lastCheckin } = await supabase
+        .from('focus_block_checkins')
+        .select('asked_at')
+        .eq('focus_block_id', block.id)
+        .eq('checkin_type', 'progress')
+        .order('asked_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const sinceRef = lastCheckin ? new Date(lastCheckin.asked_at) : new Date(block.started_at);
+      const daysSince = (Date.now() - sinceRef.getTime()) / (24 * 60 * 60 * 1000);
+      if (daysSince < FOCUS_BLOCK_CHECKIN_INTERVAL_DAYS) continue;
+
+      const generated = await generateCheckin({ focusBlockId: block.id });
+      if (!generated.ok) continue;
+
+      const { data: inserted, error: insertError } = await supabase
+        .from('focus_block_checkins')
+        .insert({ focus_block_id: block.id, checkin_type: 'progress', question_text: generated.question })
+        .select('id')
+        .single();
+      if (insertError) {
+        console.error('cron-send-notifications: runFocusBlockCheckins insert error:', insertError);
+        continue;
+      }
+
+      if (generated.contentDose) {
+        await supabase.from('focus_blocks')
+          .update({ last_content_dose_stage: generated.stageAtDose, last_content_dose_at: new Date().toISOString() })
+          .eq('id', block.id);
+      }
+
+      const tokens = await getTokensForUser(supabase, block.user_id);
+      if (tokens.length === 0) continue;
+      await sendPush(tokens, {
+        title: 'Gamechange',
+        body: generated.question,
+        data: { type: 'focus_block_checkin', focusBlockId: block.id, checkinId: inserted.id },
+      });
+      results.focus_block_checkins++;
+    } catch (e) {
+      console.error(`cron-send-notifications: błąd runFocusBlockCheckins dla bloku ${block.id}:`, e);
+    }
+  }
+}
+
+// ------------------------------------------------------------
+// Rytm 7: focus_block_maintenance — Faza 4 Bloku Skupienia. Dla ZAMKNIĘTYCH
+// (status='completed') bloków, rzadkie (co ~45 dni) sprawdzenie czy element
+// nadal jest opanowany. Pytanie stałe (BEZ AI — prosty, przewidywalny tekst,
+// nie wymaga wywołania Anthropic dla czegoś tak prostego).
+// NOWE 31.07.2026 (Krok 5b).
+// ------------------------------------------------------------
+async function runFocusBlockMaintenance(supabase, warsawNow, results) {
+  if (!hourInWindow(warsawNow.hour, FOCUS_BLOCK_MAINTENANCE_WINDOW_HOUR)) return;
+
+  const { data: blocks, error } = await supabase
+    .from('focus_blocks')
+    .select('id, user_id, segment_id, closed_at')
+    .eq('status', 'completed');
+  if (error || !blocks || blocks.length === 0) return;
+
+  for (const block of blocks) {
+    if (!block.closed_at) continue;
+    try {
+      const { data: lastCheckin } = await supabase
+        .from('focus_block_checkins')
+        .select('asked_at')
+        .eq('focus_block_id', block.id)
+        .eq('checkin_type', 'maintenance')
+        .order('asked_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const sinceRef = lastCheckin ? new Date(lastCheckin.asked_at) : new Date(block.closed_at);
+      const daysSince = (Date.now() - sinceRef.getTime()) / (24 * 60 * 60 * 1000);
+      if (daysSince < FOCUS_BLOCK_MAINTENANCE_INTERVAL_DAYS) continue;
+
+      const elementLabel = SEGMENT_DISPLAY_NAME[block.segment_id] || block.segment_id;
+      const questionText = `Czy nadal czujesz się pewnie w elemencie z Twojego zamkniętego Bloku Skupienia (${elementLabel})?`;
+
+      const { data: inserted, error: insertError } = await supabase
+        .from('focus_block_checkins')
+        .insert({ focus_block_id: block.id, checkin_type: 'maintenance', question_text: questionText })
+        .select('id')
+        .single();
+      if (insertError) {
+        console.error('cron-send-notifications: runFocusBlockMaintenance insert error:', insertError);
+        continue;
+      }
+
+      const tokens = await getTokensForUser(supabase, block.user_id);
+      if (tokens.length === 0) continue;
+      await sendPush(tokens, {
+        title: 'Gamechange',
+        body: questionText,
+        data: { type: 'focus_block_maintenance', focusBlockId: block.id, checkinId: inserted.id },
+      });
+      results.focus_block_maintenance++;
+    } catch (e) {
+      console.error(`cron-send-notifications: błąd runFocusBlockMaintenance dla bloku ${block.id}:`, e);
+    }
+  }
+}
+
 module.exports = async (req, res) => {
   const authHeader = req.headers.authorization || '';
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const results = { morning_readiness: 0, post_training: 0, pre_match: 0, weekly_summary: 0, contextual_insight: 0 };
+  const results = {
+    morning_readiness: 0, post_training: 0, pre_match: 0, weekly_summary: 0, contextual_insight: 0,
+    focus_block_checkins: 0, focus_block_maintenance: 0, focus_block_adaptation: 0,
+  };
 
   // DIAGNOSTYKA 29.07.2026 — patrz komentarz przy verifyFirebaseConfig() w
   // send-push.js: bez tego, "sukces" poniżej (wszystkie rytmy = 0, bo
@@ -499,6 +646,9 @@ module.exports = async (req, res) => {
     await runPreMatch(supabase, warsawNow, results);
     await runWeeklySummary(supabase, warsawNow, results);
     await runContextualInsight(supabase, results);
+    await runFocusBlockCheckins(supabase, warsawNow, results);
+    await runFocusBlockMaintenance(supabase, warsawNow, results);
+    await runFocusBlockAdaptation(supabase, results);
 
     console.log('cron-send-notifications zakończony:', { ...results, firebaseConfigOk, firebaseConfigError });
     return res.status(200).json({ ok: true, results, firebaseConfigOk, firebaseConfigError });
