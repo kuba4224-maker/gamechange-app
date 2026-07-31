@@ -34,8 +34,8 @@
 // ============================================================
 
 const { createClient } = require('@supabase/supabase-js');
-const { sendEmail } = require('./email-sender');
-const { parentReportEmail } = require('./email-templates');
+const { sendEmail } = require('../lib/email-sender);
+const { parentReportEmail } = require('../lib/email-templates');
 
 function getAdminClient() {
   const url = process.env.SUPABASE_URL;
