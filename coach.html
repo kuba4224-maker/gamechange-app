@@ -156,6 +156,27 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--i
     <button class="gc-btn" id="claim-submit-btn" onclick="claimTeam()">Połącz z drużyną</button>
     <div id="claim-error" class="gc-error gc-hidden"></div>
     <div id="claim-ok" class="gc-ok gc-hidden"></div>
+
+    <!-- ═══ PROŚBA O ZAŁOŻENIE NOWEJ DRUŻYNY (team_requests) — Krok 0.45,
+         PLAN_INTEGRACJI_SESJA_01_08_2026.md / AUDYT_SPOJNOSCI_CALEGO_PROJEKTU.md
+         sekcja K3. Świadomie NIE tworzy drużyny automatycznie — Kuba nadal
+         weryfikuje ręcznie i sam tworzy wiersz w `teams` (kotwica trial_started_at
+         ustawiana wtedy, nie tutaj). Ten formularz tylko zgłasza chęć. ═══ -->
+    <div style="margin-top:32px; padding-top:24px; border-top:1px solid var(--rule);">
+      <p style="font-size:13px; color:var(--muted); margin-bottom:14px;">
+        Nie masz jeszcze kodu drużyny? Zgłoś prośbę o założenie nowej — Kuba założy ją ręcznie
+        po weryfikacji i wyśle Ci kod e-mailem.
+      </p>
+      <div id="team-request-form">
+        <label class="gc-label">Nazwa klubu / drużyny</label>
+        <input class="gc-input" id="team-request-club-input" type="text" placeholder="np. MKS Parasol">
+        <button class="gc-btn gc-btn-secondary" id="team-request-submit-btn" onclick="requestNewTeam()">Poproś o założenie drużyny</button>
+        <div id="team-request-error" class="gc-error gc-hidden"></div>
+      </div>
+      <div id="team-request-pending" class="gc-ok gc-hidden">
+        Zgłoszenie wysłane — czeka na weryfikację. Gdy drużyna powstanie, dostaniesz kod e-mailem.
+      </div>
+    </div>
   </div>
 
   <!-- ═══ PANEL GŁÓWNY (drużyna już przypisana) ═══ -->
@@ -514,9 +535,17 @@ async function checkTeamClaim() {
       await enterApp();
     } else {
       showView('claim');
+      checkExistingTeamRequest();
     }
   } catch (e) {
+    // Ta sama logika co w gałęzi "brak drużyny" wyżej — bez tego, trener z już
+    // wysłanym zgłoszeniem (team_requests, status='pending') widziałby przy
+    // przejściowym błędzie sieci ponownie pusty formularz zamiast informacji
+    // "zgłoszenie wysłane", z ryzykiem wysłania duplikatu. Drobna poprawka
+    // spójności przy okazji Kroku 0.45 (03.08.2026) — bez zmiany zachowania
+    // poza tym jednym przypadkiem brzegowym.
     showView('claim');
+    checkExistingTeamRequest();
   }
 }
 
@@ -568,6 +597,77 @@ async function claimTeam() {
   } finally {
     btn.disabled = false;
     btn.textContent = 'Połącz z drużyną';
+  }
+}
+
+// ══════════════════════════════════════
+//  PROŚBA O ZAŁOŻENIE NOWEJ DRUŻYNY (team_requests) — Krok 0.45,
+//  PLAN_INTEGRACJI_SESJA_01_08_2026.md. Dziś jedyna droga powstania nowego
+//  wiersza w `teams` dla TEGO (nowego) systemu to ręczne utworzenie przez
+//  Kubę w Supabase po weryfikacji tożsamości trenera — świadomie zachowana
+//  decyzja (patrz AUDYT_SPOJNOSCI_CALEGO_PROJEKTU.md, sekcja K3), nie
+//  zmieniana tutaj. Ten formularz tylko zapisuje zgłoszenie do team_requests
+//  (status='pending') — Kuba widzi je w Supabase Table Editor, ręcznie
+//  tworzy `teams` (z trial_started_at=now() w momencie utworzenia — patrz
+//  K3, "kotwica terminu triala") + generuje kod, oznacza zgłoszenie jako
+//  'approved'. Wymaga wklejonego SQL (tabela team_requests + RLS) — dopóki
+//  Kuba tego nie zrobi, requestNewTeam() poniżej zwróci czytelny błąd
+//  zamiast cichego niepowodzenia (ten sam wzorzec co loadPreMatchSignals()
+//  wyżej w tym pliku).
+// ══════════════════════════════════════
+async function checkExistingTeamRequest() {
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/team_requests?coach_user_id=eq.${currentUser.id}&status=eq.pending&select=id`,
+      { headers: authHeaders() }
+    );
+    if (!res.ok) return; // tabela pewnie jeszcze nie istnieje — formularz zostaje widoczny
+    const rows = await res.json();
+    if (Array.isArray(rows) && rows.length > 0) {
+      document.getElementById('team-request-form').classList.add('gc-hidden');
+      document.getElementById('team-request-pending').classList.remove('gc-hidden');
+    }
+  } catch (e) {
+    // Brak możliwości sprawdzenia nie powinien blokować pokazania formularza.
+  }
+}
+
+async function requestNewTeam() {
+  const errEl = document.getElementById('team-request-error');
+  errEl.classList.add('gc-hidden');
+
+  const club = document.getElementById('team-request-club-input').value.trim();
+  if (!club) {
+    errEl.textContent = 'Podaj nazwę klubu/drużyny.';
+    errEl.classList.remove('gc-hidden');
+    return;
+  }
+
+  const btn = document.getElementById('team-request-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Wysyłam...';
+
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/team_requests`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        coach_user_id: currentUser.id,
+        coach_email: currentUser.email,
+        club_name: club,
+        status: 'pending',
+      }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+
+    document.getElementById('team-request-form').classList.add('gc-hidden');
+    document.getElementById('team-request-pending').classList.remove('gc-hidden');
+  } catch (e) {
+    errEl.textContent = 'Nie udało się wysłać zgłoszenia: ' + e.message;
+    errEl.classList.remove('gc-hidden');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Poproś o założenie drużyny';
   }
 }
 
