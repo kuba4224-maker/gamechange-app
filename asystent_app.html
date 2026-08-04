@@ -405,6 +405,28 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--i
         <input class="gc-input" id="f-profile-birth-year" type="number" min="1950" max="2020" step="1" placeholder="np. 2008">
       </div>
 
+      <!-- ─── Subskrypcja (Pakiet 11/K2, 04.08.2026) — jedyny brakujący element integracji
+           Stripe: bez tego przycisku nikt nie mógł faktycznie zapłacić, mimo że backend
+           (/api/stripe-checkout.js) był już w pełni gotowy. Kontrakt zgodny 1:1 z tym plikiem:
+           POST {userId, pricingTier, parentEmail?} → {ok:true, url} → redirect na Stripe
+           Checkout. pricingTier bierzemy z JUŻ istniejącej kolumny subscriptions.pricing_tier
+           (ustawianej automatycznie przez join_team_with_code przy dołączeniu do drużyny —
+           patrz K3/Pakiet 12), nie zgadujemy jej na nowo po stronie klienta. -->
+      <div class="gc-section-block" id="subscription-block">
+        <div class="gc-label" style="margin-bottom:14px;">Subskrypcja</div>
+        <div id="subscription-status" style="font-size:14px; margin-bottom:14px; color:var(--ink2);">Wczytuję…</div>
+
+        <div id="subscription-parent-email-wrap" class="gc-hidden">
+          <div style="font-size:13px; color:var(--ink2); margin-bottom:10px;">Jesteś (albo możesz być) niepełnoletni — do przejścia na wersję płatną potrzebujemy e-maila rodzica/opiekuna, żeby mógł wyrazić zgodę.</div>
+          <label class="gc-label">E-mail rodzica/opiekuna</label>
+          <input class="gc-input" id="f-subscription-parent-email" type="email" placeholder="np. rodzic@przyklad.pl">
+        </div>
+
+        <div id="subscription-error" class="gc-error gc-hidden"></div>
+
+        <button class="gc-btn" id="subscription-upgrade-btn" onclick="startCheckout()">Przejdź na wersję płatną</button>
+      </div>
+
       <div class="gc-section-block">
         <div class="gc-label" style="margin-bottom:14px;">Pozycja i poziom</div>
 
@@ -706,6 +728,7 @@ let currentEntryType = 'morning';
 const scaleValues = {}; // np. { sleep_quality: 7, rpe: 8 }
 let goalsCache = [];
 let injuryHistoryCache = [];
+let subscriptionCache = null; // Pakiet 11/K2 (04.08.2026) — patrz loadSubscriptionStatus()/startCheckout() niżej.
 
 // Kalendarz (Domena 07) — event_type to CO za aktywność, osobny wymiar
 // od session_type w Dzienniku (tam jest jeszcze 'match'/'other', tu nie —
@@ -2196,6 +2219,99 @@ async function loadProfile() {
     const errEl = document.getElementById('profile-error');
     errEl.textContent = 'Nie udało się wczytać profilu: ' + e.message;
     errEl.classList.remove('gc-hidden');
+  }
+
+  // Pakiet 11/K2 (04.08.2026) — osobny try/catch, świadomie NIE w bloku wyżej: błąd
+  // wczytania statusu subskrypcji nie powinien blokować/chować reszty profilu.
+  await loadSubscriptionStatus();
+}
+
+// Pakiet 11/K2 (04.08.2026) — status subskrypcji + przycisk "Przejdź na wersję płatną".
+// Pełny opis: api/stripe-checkout.js, nagłówek pliku, punkt "CO ŚWIADOMIE NIE JEST TU
+// ZROBIONE" #1 — ten blok jest dokładnie tym brakującym elementem.
+async function loadSubscriptionStatus() {
+  const statusEl = document.getElementById('subscription-status');
+  const btn = document.getElementById('subscription-upgrade-btn');
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/subscriptions?subscriber_user_id=eq.${currentUser.id}&select=status,pricing_tier,current_period_end,team_id`, {
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${currentUser.accessToken}` }
+    });
+    const rows = await res.json();
+    const sub = (Array.isArray(rows) && rows[0]) || null;
+    subscriptionCache = sub;
+
+    if (!sub) {
+      statusEl.textContent = 'Brak informacji o subskrypcji.';
+      btn.classList.remove('gc-hidden');
+      return;
+    }
+
+    const periodEnd = sub.current_period_end
+      ? new Date(sub.current_period_end).toLocaleDateString('pl-PL')
+      : null;
+
+    if (sub.status === 'active') {
+      statusEl.textContent = `Aktywna subskrypcja${periodEnd ? ' — odnowienie ' + periodEnd : ''}.`;
+      btn.classList.add('gc-hidden');
+    } else if (sub.status === 'trialing') {
+      statusEl.textContent = `Okres próbny${periodEnd ? ' — do ' + periodEnd : ''}.`;
+      btn.classList.remove('gc-hidden');
+    } else {
+      // canceled / expired / past_due / dowolny inny status — pokaż przycisk,
+      // niech Stripe/backend rozstrzygnie szczegóły przy próbie płatności.
+      statusEl.textContent = sub.status ? `Status subskrypcji: ${sub.status}.` : 'Subskrypcja nieaktywna.';
+      btn.classList.remove('gc-hidden');
+    }
+  } catch (e) {
+    // Cichy fallback — brak odczytu statusu nie powinien chować przycisku płatności,
+    // to samo z siebie nie powinno się zdarzać (RLS na subscriptions pozwala
+    // zawodnikowi widzieć własny wiersz), ale nie blokujemy płatności na wszelki wypadek.
+    statusEl.textContent = 'Nie udało się wczytać statusu subskrypcji.';
+    btn.classList.remove('gc-hidden');
+  }
+}
+
+async function startCheckout() {
+  const errEl = document.getElementById('subscription-error');
+  const btn = document.getElementById('subscription-upgrade-btn');
+  errEl.classList.add('gc-hidden');
+  btn.disabled = true;
+  btn.textContent = 'Przekierowuję...';
+
+  const VALID_TIERS = ['individual', 'team_basic', 'team_upgraded'];
+  const pricingTier = (subscriptionCache && VALID_TIERS.includes(subscriptionCache.pricing_tier))
+    ? subscriptionCache.pricing_tier
+    : 'individual';
+  const parentEmail = document.getElementById('f-subscription-parent-email').value.trim();
+
+  try {
+    const res = await fetch('/api/stripe-checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: currentUser.id, pricingTier, parentEmail: parentEmail || undefined }),
+    });
+    const data = await res.json();
+
+    if (res.ok && data.ok && data.url) {
+      window.location.href = data.url;
+      return; // celowo bez finally-resetu przycisku — strona i tak zaraz się przeładuje.
+    }
+
+    if (data.error === 'parent_email_required') {
+      document.getElementById('subscription-parent-email-wrap').classList.remove('gc-hidden');
+      errEl.textContent = data.message || 'Potrzebny jest e-mail rodzica/opiekuna.';
+      errEl.classList.remove('gc-hidden');
+    } else {
+      errEl.textContent = 'Nie udało się rozpocząć płatności: ' + (data.error || 'nieznany błąd.');
+      errEl.classList.remove('gc-hidden');
+    }
+    btn.disabled = false;
+    btn.textContent = 'Przejdź na wersję płatną';
+  } catch (e) {
+    errEl.textContent = 'Nie udało się rozpocząć płatności: ' + e.message;
+    errEl.classList.remove('gc-hidden');
+    btn.disabled = false;
+    btn.textContent = 'Przejdź na wersję płatną';
   }
 }
 
