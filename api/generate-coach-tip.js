@@ -35,6 +35,13 @@
 // ============================================================
 
 const { createClient } = require('@supabase/supabase-js');
+// SCALENIE ENDPOINTÓW (04.08.2026, noc) — limit 12 Serverless Functions
+// Vercel Hobby, opcja (b) z claude/INTEGRACJA_STRIPE_K2.md. Dawny osobny
+// plik api/submit-coach-tip-feedback.js przeniesiony BEZ ZMIANY LOGIKI do
+// lib/coach-tip-feedback.js, wołany stąd przez dispatch po `action` w
+// body (patrz handler na końcu pliku). W pełni odwracalne — zero
+// migracji/zmiany danych, patrz komentarz na górze lib/coach-tip-feedback.js.
+const { handleSubmitCoachTipFeedback } = require('../lib/coach-tip-feedback.js');
 
 function getAdminClient() {
   const url = process.env.SUPABASE_URL;
@@ -298,7 +305,7 @@ async function callAnthropic(systemPrompt, userPrompt) {
   if (!apiKey) {
     throw new Error('ANTHROPIC_API_KEY nie skonfigurowany — silnik jest gotowy, brakuje tylko klucza (ten sam, już znany brak co przy Centrum Decyzji zawodnika).');
   }
-  const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5-20250929';
+  const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5';
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -388,6 +395,14 @@ module.exports = async (req, res) => {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  // Dispatch dla scalonego endpointu feedbacku (patrz komentarz przy
+  // require('../lib/coach-tip-feedback.js') na górze pliku) — musi być
+  // PRZED odczytem coachUserId/teamId/unitType niżej, bo to inny kształt
+  // body (coachUserId/tipId/response, nie coachUserId/teamId/unitType).
+  if (req.body && req.body.action === 'submit_feedback') {
+    return handleSubmitCoachTipFeedback(req, res);
+  }
+
   const { coachUserId, teamId, unitType } = req.body || {};
 
   try {
@@ -418,6 +433,14 @@ module.exports._internal = {
   nutritionFramingForSeasonPhase,
   buildCoachSystemPrompt,
   callAnthropic,
+  // Dwie poniższe DOPISANE 04.08.2026 (noc, druga runda) — istniały już w
+  // pliku, ale nie były eksportowane, bo coach-chat.js (jedyny dotychczasowy
+  // konsument tego _internal) ma własne odpowiedniki (buildChatUserPrompt/
+  // checkCoachChatSoftCap) i ich nie potrzebuje. Dopisane WYŁĄCZNIE po to,
+  // żeby dało się je pokryć testem (tests/test-generate-coach-tip.js) —
+  // czysto addytywne, zero zmiany istniejącego zachowania.
+  buildCoachTipUserPrompt,
+  checkCoachTipSoftCap,
 };
 
 // ============================================================
@@ -429,13 +452,19 @@ module.exports._internal = {
 //    odróżnieniu od w pełni policzalnych 5 flag Składu Meczowego).
 // 2. Mapa cieplna / sygnały gotowości drużyny jako wejście silnika
 //    (NARZEDZIE_TRENERA_DECYZJE_PROJEKTOWE.md wymienia to jako możliwe
-//    wejście, "jeśli dane istnieją") — pominięte w V1, bo dokładna
-//    funkcja/zapytanie agregatu drużynowego (heatmapa, TEAM_AGGREGATE_
-//    MIN_SIZE=8 w panel_trenera.html) nie zostało zweryfikowane w tej
-//    sesji na tyle precyzyjnie, żeby bezpiecznie z niego skorzystać bez
-//    ryzyka błędu w nazwie/kształcie — V1.1 kandydat.
+//    wejście, "jeśli dane istnieją") — pominięte w V1. AKTUALIZACJA
+//    04.08.2026: blocker opisany wcześniej w tym punkcie już nie
+//    obowiązuje — TEAM_AGGREGATE_MIN_SIZE=8 zostało potwierdzone jako
+//    istniejące i poprawnie wdrożone w panel_trenera.html (przy okazji
+//    K3/4.3). Wejście mapy cieplnej do tego silnika wciąż NIE jest
+//    zbudowane — to nadal osobna decyzja projektowa (kształt promptu,
+//    kiedy sygnał jest istotny), nie mechaniczna poprawka — ale bez
+//    przeszkody technicznej, która wcześniej to blokowała. V1.1 kandydat.
 // 3. V2: edytowalne przykładowe jednostki (zamiast samych wskazówek) —
 //    wprost odłożone do V2 w dokumencie źródłowym, nie tu.
-// 4. Dokładna nazwa modelu Anthropic (ANTHROPIC_MODEL) — placeholder,
-//    ten sam status co w generate-recommendation.js.
+// 4. Nazwa modelu Anthropic (ANTHROPIC_MODEL) — fallback zaktualizowany
+//    04.08.2026 na 'claude-sonnet-5' (aktualny wg docs.claude.com w tym
+//    dniu). Używany tylko, gdy zmienna środowiskowa ANTHROPIC_MODEL nie
+//    jest ustawiona w Vercel — nazwy modeli zmieniają się z czasem, więc
+//    warto to sprawdzić ponownie, jeśli minie dużo miesięcy bez wdrożenia.
 // ============================================================

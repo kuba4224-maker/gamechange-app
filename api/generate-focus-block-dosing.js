@@ -345,7 +345,10 @@ async function callAnthropic(systemPrompt, userPrompt) {
   if (!apiKey) {
     throw new Error('ANTHROPIC_API_KEY nie skonfigurowany — endpoint jest gotowy, brakuje tylko klucza.');
   }
-  const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5-20250929';
+  const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5'; // fallback zaktualizowany
+  // 04.08.2026 (ten sam placeholder co w generate-coach-tip.js/generate-recommendation.js,
+  // Pakiet 10 — przeoczony tam, poprawiony teraz przy okazji budowania testów dla tego pliku).
+  // Używany tylko, gdy ANTHROPIC_MODEL nie jest ustawiony w Vercel.
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {

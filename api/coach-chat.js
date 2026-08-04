@@ -72,7 +72,7 @@ function buildChatUserPrompt({ questionText, seasonPhase, growthSpurtContext }) 
     lines.push(`Kontekst: drużyna jest dziś w fazie sezonu "${seasonPhase === 'sezon_rozgrywkowy' ? 'Sezon rozgrywkowy' : 'Faza przygotowawcza'}".`);
   }
   if (growthSpurtContext && growthSpurtContext.inGrowthSpurtAgeRange) {
-    lines.push(`Kontekst o zawodniku, którego dotyczy pytanie: jest dziś w typowym wieku szczytowego tempa wzrostu (11-16 lat)${growthSpurtContext.heightGrowthRateElevated ? ', a jego tempo wzrostu wzrostu jest podwyższone (>7,2 cm/rok wg ostatnich pomiarów)' : ''} — jeśli to pasuje do pytania, możesz wspomnieć że tymczasowy spadek koordynacji w tym okresie nie oznacza spadku umiejętności, i że warto uważać z obciążeniem plyometrycznym (reguła 48h między sesjami). Nie wspominaj o tym jeśli pytanie tego nie dotyczy.`);
+    lines.push(`Kontekst o zawodniku, którego dotyczy pytanie: jest dziś w typowym wieku szczytowego tempa wzrostu (11-16 lat)${growthSpurtContext.heightGrowthRateElevated ? ', a jego tempo wzrostu jest podwyższone (>7,2 cm/rok wg ostatnich pomiarów)' : ''} — jeśli to pasuje do pytania, możesz wspomnieć że tymczasowy spadek koordynacji w tym okresie nie oznacza spadku umiejętności, i że warto uważać z obciążeniem plyometrycznym (reguła 48h między sesjami). Nie wspominaj o tym jeśli pytanie tego nie dotyczy.`);
   }
   return lines.join('\n');
 }

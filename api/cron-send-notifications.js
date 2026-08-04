@@ -67,6 +67,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const { sendPush, verifyFirebaseConfig } = require('./send-push');
 const { runFocusBlockAdaptation } = require('../lib/focus-block-adaptation');
+const { stripeRequest } = require('../lib/stripe-client');
 
 function getAdminClient() {
   const url = process.env.SUPABASE_URL;
@@ -107,6 +108,10 @@ const FOCUS_BLOCK_CHECKIN_INTERVAL_DAYS = 14;   // Faza 2a: co ~2 tygodnie
 const FOCUS_BLOCK_CHECKIN_WINDOW_HOUR = 10;     // stałe okno rano
 const FOCUS_BLOCK_MAINTENANCE_INTERVAL_DAYS = 45; // Faza 4: "rzadkie" sprawdzanie, ~1.5 miesiąca
 const FOCUS_BLOCK_MAINTENANCE_WINDOW_HOUR = 10;
+
+// NOWE 04.08.2026 — Komponent C integracji Stripe (K2). Patrz komentarz
+// przy runTrialExpiry() niżej.
+const TRIAL_EXPIRY_WINDOW_HOUR = 4;
 
 // Etykiety segmentów do wstawienia w treść weekly_summary ("z celem
 // [nazwa]") — zweryfikowane wprost z SEGMENT_NAME_TO_ID w
@@ -610,6 +615,162 @@ async function runFocusBlockMaintenance(supabase, warsawNow, results) {
   }
 }
 
+// ------------------------------------------------------------
+// NOWE 04.08.2026 — Komponent C integracji Stripe (K2, AUDYT SPOJNOSCI
+// CALEGO PROJEKTU.md). Trial NIE tworzy żadnego obiektu w Stripe (patrz
+// api/stripe-checkout.js, Komponent A) — więc webhook Stripe nigdy sam nie
+// dowie się, że ktoś po prostu przestał korzystać i nigdy nie kliknął
+// "przejdź na płatną wersję" (nie ma czego nasłuchiwać). Ten rytm to
+// jedyny mechanizm, który to zamyka: sprawdza, czy status='trialing' i
+// current_period_end już minął — jeśli tak, ustawia status='expired' (ten
+// sam skutek dostępowy co anulowanie). Bez tego ktoś z wygasłym trialem
+// zachowałby pełny dostęp bezterminowo, bo nic nigdy formalnie by tego nie
+// zamknęło. Operacja idempotentna (UPDATE po warunku, nie po id) — bezpieczna
+// przy wielokrotnym uruchomieniu w tym samym oknie.
+// ------------------------------------------------------------
+async function runTrialExpiry(supabase, warsawNow, results) {
+  if (!hourInWindow(warsawNow.hour, TRIAL_EXPIRY_WINDOW_HOUR)) return;
+
+  const { data: expired, error } = await supabase
+    .from('subscriptions')
+    .update({ status: 'expired' })
+    .eq('status', 'trialing')
+    .lt('current_period_end', new Date().toISOString())
+    .select('id');
+  if (error) {
+    console.error('cron-send-notifications: runTrialExpiry error:', error);
+    return;
+  }
+  results.trial_expiry = (expired || []).length;
+}
+
+// ------------------------------------------------------------
+// NOWE 04.08.2026 — zgoda rodzica na płatność dla niepełnoletnich (patrz
+// lib/parental-payment-consent.js, api/stripe-checkout.js i
+// KOLEJKA_DECYZJI_I_PROJEKTOWANIA.md sekcja 2.5). Ten rytm zamyka DWA
+// przypadki, oba wymagające tego samego rezultatu po stronie Stripe
+// (anulowanie subskrypcji + próba zwrotu ostatniej opłaty):
+//   (a) status='pending' i termin (expires_at) już minął — rodzic nigdy nie
+//       odpowiedział.
+//   (b) status='declined' — rodzic świadomie kliknął "Nie wyrażam zgody"
+//       (RPC respond_payment_parental_consent w SQL już wtedy ustawiło
+//       subscriptions.status='expired' NATYCHMIAST, ale nie mogło samo
+//       wywołać Stripe REST API z poziomu Postgresa — stąd dokończenie tu).
+// Kolumna `stripe_action_completed_at` (nie `status`) jest tym, co ten rytm
+// sprawdza, żeby uniknąć podwójnego przetworzenia — rozdziela "co widzi
+// zawodnik/rodzic" (status) od "czy Stripe-owa strona sprzątania już się
+// wykonała" (osobny znacznik czasu), zgodnie z tym samym wzorcem
+// idempotentności co reszta tego pliku (UPDATE po warunku, nie po id).
+//
+// ⚠️ Zwrot pieniędzy to jedyna operacja w całym tym projekcie, która
+// realnie rusza czyimiś finansami automatycznie — dlatego świadomie
+// NIGDY nie przerywa się w połowie: anulowanie subskrypcji i próba zwrotu
+// są w osobnych blokach try/catch, a każdy krok zostaje odnotowany w
+// `refund_note` (odczytywalne przez Kubę w Table Editorze), zamiast cicho
+// połykać błąd. Zalecany JEDEN, realny test end-to-end na testowej
+// płatności (Stripe test mode) przed pierwszym prawdziwym niepełnoletnim
+// klientem — patrz DO_ZROBIENIA_PRZEZ_KUBE.md.
+// ------------------------------------------------------------
+async function runParentalConsentExpiry(supabase, results) {
+  const nowIso = new Date().toISOString();
+
+  const { data: timedOut, error: timeoutError } = await supabase
+    .from('payment_parental_consents')
+    .select('id, user_id, stripe_subscription_id, status')
+    .is('stripe_action_completed_at', null)
+    .eq('status', 'pending')
+    .lt('expires_at', nowIso);
+  if (timeoutError) {
+    console.error('cron-send-notifications: runParentalConsentExpiry (timeout fetch) error:', timeoutError);
+    return;
+  }
+
+  // Wygasłe bez odpowiedzi → oznacz jako 'expired' PRZED sprzątaniem w Stripe
+  // (ten sam powód co runTrialExpiry: dostęp ma się skończyć niezależnie od
+  // tego, czy sam Stripe zdąży odpowiedzieć na czas).
+  const timedOutIds = (timedOut || []).map(r => r.id);
+  if (timedOutIds.length > 0) {
+    const { error: markExpiredError } = await supabase
+      .from('payment_parental_consents')
+      .update({ status: 'expired' })
+      .in('id', timedOutIds);
+    if (markExpiredError) {
+      console.error('cron-send-notifications: runParentalConsentExpiry (mark expired) error:', markExpiredError);
+    }
+    const { error: subExpireError } = await supabase
+      .from('subscriptions')
+      .update({ status: 'expired' })
+      .in('subscriber_user_id', timedOut.map(r => r.user_id));
+    if (subExpireError) {
+      console.error('cron-send-notifications: runParentalConsentExpiry (subscriptions expire) error:', subExpireError);
+    }
+  }
+
+  const { data: declined, error: declinedError } = await supabase
+    .from('payment_parental_consents')
+    .select('id, user_id, stripe_subscription_id, status')
+    .is('stripe_action_completed_at', null)
+    .eq('status', 'declined');
+  if (declinedError) {
+    console.error('cron-send-notifications: runParentalConsentExpiry (declined fetch) error:', declinedError);
+  }
+
+  const toProcess = [...(timedOut || []), ...(declined || [])];
+  results.parental_consent_expiry = 0;
+
+  for (const row of toProcess) {
+    let refundNote = '';
+    try {
+      if (row.stripe_subscription_id) {
+        try {
+          await stripeRequest(`subscriptions/${row.stripe_subscription_id}`, {}, 'DELETE');
+        } catch (cancelErr) {
+          refundNote += `Anulowanie subskrypcji nieudane: ${cancelErr.message}. `;
+        }
+
+        // Najprostszy, wystarczająco niezawodny sposób znalezienia "ostatniej
+        // opłaty do zwrotu" bez zagnieżdżonego expand: subskrypcja ma
+        // customer.id (potrzebny osobny odczyt, bo nie trzymamy customer_id
+        // na wierszu payment_parental_consents) — patrz niżej.
+        try {
+          const { data: subRow } = await supabase
+            .from('subscriptions')
+            .select('stripe_customer_id')
+            .eq('stripe_subscription_id', row.stripe_subscription_id)
+            .maybeSingle();
+          const customerId = subRow && subRow.stripe_customer_id;
+          if (customerId) {
+            const charges = await stripeRequest('charges', { customer: customerId, limit: '1' }, 'GET');
+            const latestCharge = charges && charges.data && charges.data[0];
+            if (latestCharge && latestCharge.refunded === false) {
+              await stripeRequest('refunds', { charge: latestCharge.id }, 'POST');
+              refundNote += `Zwrot wykonany automatycznie dla charge ${latestCharge.id}.`;
+            } else if (latestCharge) {
+              refundNote += `Ostatnia opłata (${latestCharge.id}) już wcześniej zwrócona/oznaczona — pominięto.`;
+            } else {
+              refundNote += 'Nie znaleziono żadnej opłaty do zwrotu (możliwe, że trial nigdy nie przeszedł w płatność).';
+            }
+          } else {
+            refundNote += 'Brak stripe_customer_id — zwrot NIE wykonany automatycznie, sprawdź ręcznie w Stripe Dashboard.';
+          }
+        } catch (refundErr) {
+          refundNote += `Próba zwrotu nieudana: ${refundErr.message} — sprawdź ręcznie w Stripe Dashboard.`;
+        }
+      } else {
+        refundNote = 'Brak stripe_subscription_id na tym wierszu — nic nie było do anulowania/zwrotu (płatność mogła nigdy nie dojść do skutku).';
+      }
+
+      await supabase
+        .from('payment_parental_consents')
+        .update({ stripe_action_completed_at: new Date().toISOString(), refund_note: refundNote })
+        .eq('id', row.id);
+      results.parental_consent_expiry++;
+    } catch (e) {
+      console.error(`cron-send-notifications: runParentalConsentExpiry błąd dla wiersza ${row.id}:`, e);
+    }
+  }
+}
+
 module.exports = async (req, res) => {
   const authHeader = req.headers.authorization || '';
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -619,6 +780,7 @@ module.exports = async (req, res) => {
   const results = {
     morning_readiness: 0, post_training: 0, pre_match: 0, weekly_summary: 0, contextual_insight: 0,
     focus_block_checkins: 0, focus_block_maintenance: 0, focus_block_adaptation: 0,
+    trial_expiry: 0, parental_consent_expiry: 0,
   };
 
   // DIAGNOSTYKA 29.07.2026 — patrz komentarz przy verifyFirebaseConfig() w
@@ -649,6 +811,8 @@ module.exports = async (req, res) => {
     await runFocusBlockCheckins(supabase, warsawNow, results);
     await runFocusBlockMaintenance(supabase, warsawNow, results);
     await runFocusBlockAdaptation(supabase, results);
+    await runTrialExpiry(supabase, warsawNow, results);
+    await runParentalConsentExpiry(supabase, results);
 
     console.log('cron-send-notifications zakończony:', { ...results, firebaseConfigOk, firebaseConfigError });
     return res.status(200).json({ ok: true, results, firebaseConfigOk, firebaseConfigError });
@@ -656,4 +820,28 @@ module.exports = async (req, res) => {
     console.error('cron-send-notifications error:', e);
     return res.status(500).json({ ok: false, error: e.message, results, firebaseConfigOk, firebaseConfigError });
   }
+};
+
+// dopisane wyłącznie po to, żeby dało się pokryć testem dziewięć rytmów
+// tego pliku niezależnie od siebie (patrz tests/test-cron-send-notifications.js)
+// — każda funkcja rytmu przyjmuje `warsawNow`/`supabase` jako parametry, więc
+// test może podać syntetyczny czas zamiast czekać na realne okno godzinowe.
+// Czysto addytywne, zero zmiany zachowania handlera powyżej.
+module.exports._internal = {
+  getWarsawNow,
+  toWarsawDateStr,
+  hourInWindow,
+  getTokensForUser,
+  hasLoggedMorningToday,
+  runMorningReadiness,
+  runPostTraining,
+  sendPreMatchForDate,
+  runPreMatch,
+  runWeeklySummary,
+  runContextualInsight,
+  runFocusBlockCheckins,
+  runFocusBlockMaintenance,
+  runTrialExpiry,
+  runParentalConsentExpiry,
+  SEGMENT_DISPLAY_NAME,
 };

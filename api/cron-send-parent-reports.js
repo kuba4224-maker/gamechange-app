@@ -1,6 +1,15 @@
 // ============================================================
 // GAMECHANGE — /api/cron-send-parent-reports.js
 // ============================================================
+// POPRAWKA 03.08.2026 (Cowork, samodzielnie, przy okazji pakietów z
+// KOLEJKA_DECYZJI_I_PROJEKTOWANIA.md sekcja 5): `require('../lib/email-
+// sender')` miał brakujący cudzysłów zamykający (`require('../lib/email-
+// sender);`) — błąd składni, który zawiesiłby TEN plik przy każdym
+// wywołaniu. Nieszkodliwe do tej pory wyłącznie dlatego, że ten cron
+// wciąż czeka na wpis w vercel.json (patrz KOLEJKA_DECYZJI, sekcja 1.4 —
+// nigdy realnie nie wywołany w produkcji). Naprawione tu przy okazji,
+// zero innych zmian w tym pliku.
+//
 // SCHEDULER dla cyklicznego raportu dla rodzica (Domena 16). Ten sam
 // wzorzec co api_cron_settlement.js (Marketplace): zabezpieczone przez
 // CRON_SECRET, Vercel Cron dołącza go automatycznie jako nagłówek
@@ -22,19 +31,23 @@
 //    z "Domena 16, punkt otwarty 2: częstotliwość — do ustalenia") —
 //    zmiana to jedna zmienna środowiskowa w Vercel, zero zmian w kodzie.
 // 2. Strona raportu (czytająca get_parent_report po tokenie z URL) i
-//    strona wypisania się — FRONTEND, jawnie poza zakresem Domeny 16
-//    ("Sama strona raportu — frontend, nie schemat"). PARENT_REPORT_
-//    BASE_URL niżej wskazuje na przyszły adres tej strony — dopóki
-//    strona nie istnieje, link w mailu będzie prowadził do 404, co
-//    NIE blokuje samego uruchomienia crona (kolumny/e-mail działają
-//    niezależnie), ale oznacza, że end-to-end test wymaga najpierw
-//    zbudowania tej strony.
+//    strona wypisania się — DOSTARCZONA 03.08.2026 jako
+//    raport-rodzica.html (patrz RAPORT_RODZICA_STATUS_03_08_2026.md).
+//    PARENT_REPORT_BASE_URL niżej wskazuje na jej adres.
 // 3. Wybór dostawcy e-maili (EMAIL_PROVIDER/EMAIL_API_KEY) — patrz
 //    email_sender.js, decyzja Kuby, ten sam wzorzec co ANTHROPIC_API_KEY.
+// 4. Rejestracja tego crona w vercel.json — ŚWIADOMIE NIE zrobiona.
+//    Backend Domeny 16 (get_parent_report/parent_report_subscriptions/
+//    height_logs) NIE jest potwierdzony jako istniejący na żywej bazie
+//    (patrz RAPORT_RODZICA_STATUS_03_08_2026.md — SQL trzeba zweryfikować
+//    LUB wkleić PRZED włączeniem crona), a opt-in (zawodnik podaje e-mail
+//    rodzica) nie ma jeszcze żadnego UI w żadnej appce — włączenie crona
+//    teraz wysyłałoby raporty do zera odbiorców, ale i tak nie powinno
+//    się dziać automatycznie bez jawnej decyzji Kuby.
 // ============================================================
 
 const { createClient } = require('@supabase/supabase-js');
-const { sendEmail } = require('../lib/email-sender);
+const { sendEmail } = require('../lib/email-sender');
 const { parentReportEmail } = require('../lib/email-templates');
 
 function getAdminClient() {

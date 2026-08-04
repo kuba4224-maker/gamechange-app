@@ -148,4 +148,9 @@ const { createClient } = require('@supabase/supabase-js');
                                               return res.status(500).json({ ok: false, error: e.message, results });
                                             }
                                           };
-                                            
+
+// dopisane wyłącznie po to, żeby dało się pokryć testem funkcję wyboru
+// segmentu (patrz tests/test-cron-onboard-diagnosis.js) — zero zmiany
+// zachowania handlera powyżej.
+module.exports._internal = { pickTopDeficitSegment };
+

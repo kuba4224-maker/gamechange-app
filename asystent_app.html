@@ -121,6 +121,7 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--i
   display: inline-block; margin-top: 10px; margin-bottom: 4px; padding: 10px 18px;
   background: var(--surface); color: var(--ink); border: 1px solid var(--ink);
   font-family: 'Bebas Neue', sans-serif; font-size: 13px; letter-spacing: 0.05em; text-decoration: none;
+  cursor: pointer;
 }
 .gc-rec-specialist-link:hover { background: var(--ink); color: var(--bg); }
 </style>
@@ -138,6 +139,17 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--i
   <div id="view-login">
     <div class="gc-title">Zaloguj się</div>
     <input class="gc-input" id="login-email" type="email" placeholder="Twój email">
+
+    <!-- ═══ K3 (AUDYT_SPOJNOSCI_CALEGO_PROJEKTU.md) — kod drużyny przy zakładaniu
+         konta, nie przy diagnozie. Opcjonalne, widoczne przy KAŻDYM logowaniu (nie
+         tylko pierwszym) — świadomie: prościej niż rozróżniać "nowe konto" od
+         "powrót", a wpisanie kodu przy już istniejącym członkostwie jest bezpiecznie
+         no-op (join_team_with_code niżej zwraca 'already_in_team', nic nie nadpisuje).
+         Realnie używane tylko raz, resztę razy zostaje puste. ═══ -->
+    <label class="gc-label" style="margin-top:16px;">Masz kod drużyny od trenera? (opcjonalnie)</label>
+    <input class="gc-input" id="login-team-code" type="text" placeholder="np. LECHPOZ1234" autocapitalize="characters">
+    <div style="font-size:12px; color:var(--ink2); margin:-6px 0 14px;">Zostaw puste, jeśli nie masz kodu — możesz dołączyć do drużyny później.</div>
+
     <button class="gc-btn" id="login-btn" onclick="handleSendMagicLink()">Wyślij link do logowania</button>
     <div id="login-sent" class="gc-ok gc-hidden">Sprawdź skrzynkę i kliknij w link, żeby się zalogować.</div>
     <div id="login-error" class="gc-error gc-hidden"></div>
@@ -937,6 +949,42 @@ async function handleSignedIn(session) {
     document.getElementById('entry-error').classList.remove('gc-hidden');
   }
 
+  // K3 — dołączenie do drużyny kodem wpisanym na ekranie logowania (patrz
+  // handleSendMagicLink() wyżej). Próba DOKŁADNIE RAZ: kod kasowany z
+  // localStorage niezależnie od wyniku, żeby nie próbować ponownie przy
+  // każdym kolejnym logowaniu tego samego zawodnika. join_team_with_code
+  // (funkcja SQL, SECURITY DEFINER) sama obsługuje "już w drużynie" jako
+  // bezpieczny no-op — patrz claude/INTEGRACJA_K3_ZAWODNIK_SQL.md.
+  const pendingTeamCode = localStorage.getItem('gc_pending_team_code');
+  if (pendingTeamCode) {
+    localStorage.removeItem('gc_pending_team_code');
+    try {
+      const joinRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/join_team_with_code`, {
+        method: 'POST',
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${currentUser.accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ p_team_code: pendingTeamCode })
+      });
+      const joinData = await joinRes.json();
+      if (joinData && joinData.ok) {
+        document.getElementById('entry-ok').textContent =
+          `Dołączono do drużyny${joinData.club_name ? ': ' + joinData.club_name : ''}.`;
+        document.getElementById('entry-ok').classList.remove('gc-hidden');
+      } else if (joinData && joinData.error === 'already_in_team') {
+        document.getElementById('entry-ok').textContent =
+          'Jesteś już przypisany do drużyny — kod nie został ponownie użyty.';
+        document.getElementById('entry-ok').classList.remove('gc-hidden');
+      } else if (joinData && joinData.error === 'invalid_code') {
+        document.getElementById('entry-error').textContent =
+          'Kod drużyny nieprawidłowy — sprawdź go u trenera. Możesz dołączyć do drużyny później (spróbuj ponownie przy kolejnym logowaniu).';
+        document.getElementById('entry-error').classList.remove('gc-hidden');
+      }
+    } catch (e) {
+      // Świadomie ciche niepowodzenie — brak dołączenia do drużyny nie powinien
+      // blokować wejścia do appki. Najczęstsza przyczyna: funkcja SQL
+      // join_team_with_code jeszcze nie wklejona w Supabase.
+    }
+  }
+
   await loadHistory();
   await populateCalendarLinkSelect();
 }
@@ -951,6 +999,17 @@ async function handleSendMagicLink() {
     errEl.textContent = 'Podaj prawidłowy adres email.';
     errEl.classList.remove('gc-hidden');
     return;
+  }
+
+  // K3 — kod drużyny trzeba przechować GDZIEŚ, co przeżyje pełne przeładowanie
+  // strony po kliknięciu linku z maila (signInWithOtp redirectuje, zwykła
+  // zmienna JS by tego nie przetrwała) — localStorage, odczytywane i czyszczone
+  // raz w handleSignedIn() niżej.
+  const teamCode = document.getElementById('login-team-code').value.trim();
+  if (teamCode) {
+    localStorage.setItem('gc_pending_team_code', teamCode);
+  } else {
+    localStorage.removeItem('gc_pending_team_code');
   }
 
   btn.disabled = true;
@@ -1845,6 +1904,45 @@ async function loadRecommendations() {
     : '<div class="gc-empty">Brak historii.</div>';
 }
 
+// ------------------------------------------------------------
+// Most sesji Asystent -> Marketplace (KOLEJKA_DECYZJI_I_PROJEKTOWANIA.md,
+// sekcja 1.1). Dodane 03.08.2026. Zamiast zwykłego <a href> do Marketplace
+// (drugie logowanie na tamtej stronie — dokładnie ten moment konwersji,
+// który miał najwyższy koszt tarcia), wstawiamy najpierw jednorazowy kod
+// wymiany sesji do public.session_bridge_codes (RLS: tylko dla
+// auth.uid()=własny user_id), a specialist_list.html po drugiej stronie
+// wymienia go na prawdziwą sesję (patrz consumeBridgeCodeIfPresent() w
+// tamtym pliku + api/exchange-bridge-code.js w gamechange-marketplace).
+//
+// ŚWIADOMIE odporne na awarię: jeśli zapis kodu się nie uda (sieć, RLS,
+// cokolwiek), i tak otwieramy Marketplace — po prostu bez bridge_code, co
+// oznacza dokładnie dzisiejsze zachowanie (zawodnik loguje się tam sam).
+// Most ma wyłącznie USUWAĆ tarcie, nigdy nie może zablokować dotarcia do
+// specjalisty.
+async function openMarketplaceForCategory(category) {
+  let bridgeCode = null;
+  try {
+    const code = crypto.randomUUID();
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/session_bridge_codes`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${currentUser.accessToken}`,
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify({ code, user_id: currentUser.id }),
+    });
+    if (res.ok) bridgeCode = code;
+  } catch (e) {
+    console.log('openMarketplaceForCategory: nie udało się zapisać kodu mostu, otwieram bez niego —', e);
+  }
+
+  let marketplaceUrl = `${MARKETPLACE_BASE_URL}/specialist_list.html?category=${encodeURIComponent(category)}`;
+  if (bridgeCode) marketplaceUrl += `&bridge_code=${encodeURIComponent(bridgeCode)}`;
+  window.open(marketplaceUrl, '_blank', 'noopener');
+}
+
 function renderRecCard(r) {
   const isReferral = r.recommendation_type === 'specialist_referral';
   // POPRAWKA (pełny audyt całości): trzeci typ rekomendacji, wprowadzony
@@ -1895,8 +1993,12 @@ function renderRecCard(r) {
   // rekomendacji, link pojawi się automatycznie bez zmian w tym pliku.
   if (r.suggested_specialist_category) {
     const categoryLabel = SPECIALIST_CATEGORY_LABELS[r.suggested_specialist_category] || r.suggested_specialist_category;
-    const marketplaceUrl = `${MARKETPLACE_BASE_URL}/specialist_list.html?category=${encodeURIComponent(r.suggested_specialist_category)}`;
-    body += `<a class="gc-rec-specialist-link" href="${marketplaceUrl}" target="_blank" rel="noopener">Znajdź specjalistę: ${categoryLabel} →</a>`;
+    // ZMIANA 03.08.2026 (most sesji Asystent -> Marketplace, KOLEJKA_DECYZJI 1.1): to był
+    // zwykły <a href>, ale otwarcie Marketplace musi teraz PIERWEJ zapisać jednorazowy kod
+    // wymiany sesji (async, patrz openMarketplaceForCategory() niżej) — stąd przycisk +
+    // onclick zamiast zwykłego linku. escapeAttr() na wypadek gdyby category kiedyś
+    // zawierało znak specjalny (dziś to zawsze stały enum z backendu, ale tania ostrożność).
+    body += `<button type="button" class="gc-rec-specialist-link" onclick="openMarketplaceForCategory('${r.suggested_specialist_category}')">Znajdź specjalistę: ${categoryLabel} →</button>`;
   }
 
   const dateLabel = new Date(r.created_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' });

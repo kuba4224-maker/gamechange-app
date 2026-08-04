@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gamechange — Potwierdzenie płatności</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
+<!--
+  potwierdz-platnosc.html — NOWY PLIK (04.08.2026). Zgoda rodzica na płatny
+  abonament niepełnoletniego zawodnika (Kodeks cywilny art. 18, próg 18 lat).
+  Pełny kontekst: KOLEJKA_DECYZJI_I_PROJEKTOWANIA.md, sekcja 2.5;
+  lib/parental-payment-consent.js; INTEGRACJA_ZGODA_RODZICA_PLATNOSC_SQL.md.
+
+  Ten sam wzorzec co raport-rodzica.html: bez logowania, token z e-maila
+  jest jedynym kluczem dostępu, zwykły fetch z kluczem publicznym `anon`
+  (bez @supabase/supabase-js — strona nigdy nie potrzebuje sesji Auth).
+
+  Tryb sterowany parametrami URL:
+    ?token=XXX&action=confirmed   → rodzic klika "Potwierdzam" w e-mailu
+    ?token=XXX&action=declined    → rodzic klika "Nie wyrażam zgody"
+  Oba trafiają w RPC respond_payment_parental_consent — jedna, kontrolowana
+  brama (SECURITY DEFINER), zero szerszego dostępu do tabeli z klienta.
+-->
+<style>
+:root {
+  --bg: #f5f2ec;
+  --ink: #0e0d0b;
+  --ink2: #3a3830;
+  --muted: #9a9488;
+  --rule: #d8d3c8;
+  --accent: #E8432D;
+  --surface: #ffffff;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  min-height: 100vh;
+  font-size: 15px;
+  line-height: 1.6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.gc-card {
+  width: 100%;
+  max-width: 480px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  padding: 36px 32px;
+}
+
+.gc-label {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 13px;
+  letter-spacing: 0.2em;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 18px;
+}
+
+.gc-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 26px;
+  letter-spacing: 0.01em;
+  margin-bottom: 18px;
+}
+
+.gc-intro {
+  font-size: 14px;
+  color: var(--ink2);
+  font-weight: 300;
+  margin-bottom: 16px;
+}
+
+.gc-note {
+  margin-top: 16px;
+  padding: 14px 16px;
+  background: var(--bg);
+  border-left: 3px solid var(--accent);
+  font-size: 13px;
+  color: var(--ink2);
+  font-weight: 300;
+  line-height: 1.6;
+}
+
+.gc-state {
+  text-align: center;
+  padding: 24px 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.gc-hidden { display: none; }
+</style>
+</head>
+<body>
+
+<div class="gc-card">
+  <div class="gc-label">Gamechange</div>
+
+  <div id="gc-loading" class="gc-state">Wczytuję…</div>
+
+  <div id="gc-invalid-link" class="gc-state gc-hidden">
+    Ten link jest nieprawidłowy — brakuje w nim tokenu. Sprawdź, czy skopiowałeś/aś cały adres
+    z e-maila.
+  </div>
+
+  <div id="gc-not-found" class="gc-state gc-hidden">
+    Nie znaleziono tej prośby o zgodę pod tym linkiem — mogła już zostać wcześniej rozstrzygnięta
+    (np. drugim kliknięciem tego samego linku) albo wygasnąć. Jeśli to pomyłka, napisz do nas.
+  </div>
+
+  <div id="gc-confirmed" class="gc-state gc-hidden">
+    <div class="gc-title" style="text-align:left;">Dziękujemy</div>
+    <p class="gc-intro" style="text-align:left;">Potwierdzenie zapisane — płatny abonament zostaje aktywny, nic więcej nie musisz robić.</p>
+  </div>
+
+  <div id="gc-declined" class="gc-state gc-hidden">
+    <div class="gc-title" style="text-align:left;">Zapisano</div>
+    <p class="gc-intro" style="text-align:left;">Dziękujemy za odpowiedź — dostęp do płatnych funkcji zostanie wyłączony, a pobrana opłata zwrócona automatycznie w ciągu kilku dni.</p>
+  </div>
+
+  <div id="gc-error" class="gc-state gc-hidden">
+    Coś poszło nie tak. Spróbuj odświeżyć stronę za chwilę.
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://kqrbztsvepjtggjmmcdx.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_EoYRIZpDhUSdNSJDXWl4Ew_SG8aJABP';
+
+function show(id) {
+  document.getElementById(id).classList.remove('gc-hidden');
+}
+function hide(id) {
+  document.getElementById(id).classList.add('gc-hidden');
+}
+function hideAllStates() {
+  ['gc-loading', 'gc-invalid-link', 'gc-not-found', 'gc-confirmed', 'gc-declined', 'gc-error']
+    .forEach(hide);
+}
+
+async function callRpc(fnName, body) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fnName}`, {
+    method: 'POST',
+    headers: { apikey: SUPABASE_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`RPC ${fnName} zwróciło ${res.status}`);
+  return res.json();
+}
+
+async function init() {
+  hideAllStates();
+  show('gc-loading');
+
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('token');
+  const action = params.get('action');
+
+  if (!token || !['confirmed', 'declined'].includes(action)) {
+    hideAllStates();
+    show('gc-invalid-link');
+    return;
+  }
+
+  try {
+    const result = await callRpc('respond_payment_parental_consent', { p_token: token, p_decision: action });
+    hideAllStates();
+    if (!result || !result.ok) {
+      show('gc-not-found');
+      return;
+    }
+    show(action === 'confirmed' ? 'gc-confirmed' : 'gc-declined');
+  } catch (e) {
+    console.log('potwierdz-platnosc init error:', e);
+    hideAllStates();
+    show('gc-error');
+  }
+}
+
+init();
+</script>
+
+</body>
+</html>

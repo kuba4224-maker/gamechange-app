@@ -68,6 +68,38 @@
 //      ŚWIADOMIE NIE JEST TU ZROBIONE" na końcu pliku.
 // ------------------------------------------------------------
 //
+// POPRAWKA (03.08.2026 wieczór — decyzja Kuby o formacie
+// match_context_answers.response_value, KOLEJKA_DECYZJI_I_PROJEKTOWANIA.md
+// 3.1, POTWIERDZONA 01.08.2026: kody WŁASNE per segment, nie generyczny
+// enum; walidacja formatu na poziomie appki, nie CHECK świadomy segmentu):
+//   Naprawia znalezisko #6 z syntezy Filtra Jakości
+//   (FILTR_JAKOSCI_POLECENIE_NOWA_SESJA.md): "match_context_answers nie
+//   czytane przez silnik rekomendacji — fetchPlayerContext nie odpytuje
+//   tej tabeli". Tryb Mecz sam w sobie już działa end-to-end i zapisuje tę
+//   tabelę (potwierdzone na żywym urządzeniu 29.07.2026, patrz
+//   claude/KONTRAKT_MECZ.md, Krok 5 GATE) — ale silnik rekomendacji nigdy
+//   tych danych nie czytał, więc leżały martwe we własnej tabeli.
+//   1. fetchPlayerContext() dodatkowo pobiera fetchRecentMatchContextAnswers()
+//      (ostatnie 15 odpowiedzi z kaskady meczowej) — wstrzykiwane do
+//      promptu AI w buildUserPrompt() jako surowy, oznaczony kontekst
+//      (ten sam wzorzec co OBSERWACJE TRENERA/RODZICA), z legendą która
+//      grupa kodów jest niekorzystna a która nie.
+//   2. `match_contexts` w fetchPlayerContext() dodatkowo pobiera kolumny
+//      dodane przy przeprojektowaniu Meczu (self_rating, mental_state,
+//      entered_recovery_state, demanding_conditions, position_played_today,
+//      free_note) — istniały w bazie i w danych od 29.07.2026, ale nigdy
+//      nie były odczytywane tutaj, więc `JSON.stringify(recentMatches)` w
+//      promptcie AI był uboższy niż faktyczny stan wiersza.
+//   3. Dodano computeMatchReadinessSignal()/buildMatchReadinessNarrative()
+//      — WYMIAR MECZOWY Gotowości (Funkcja 8), wcześniej świadomie
+//      nie zaimplementowany (patrz POPRAWKA 26.07.2026 wyżej) właśnie z
+//      powodu braku decyzji o formacie response_value. V1, prosta
+//      heurystyka jak reszta progów Gotowości (MATCH_NEGATIVE_OUTCOME_CODES,
+//      zestawione wprost z banku pytań w
+//      TRYB_MECZU_PRZEPROJEKTOWANIE_DECYZJE.md, punkt 10) — do korekty,
+//      jeśli intuicja trenerska mówi inaczej.
+// ------------------------------------------------------------
+//
 // CO ŚWIADOMIE NIE JEST TU ZROBIONE (świadomie odłożone, nie przeoczone
 // — patrz sekcja na końcu pliku "CO ŚWIADOMIE NIE JEST TU ZROBIONE"):
 //   - Detekcja KIEDY wygenerować training_focus (rotacja celu priorytetowego
@@ -75,9 +107,9 @@
 //   - Live-computation Gotowości, wymiar FIZYCZNY i MENTALNY (Funkcja 8) —
 //     ZAIMPLEMENTOWANE 26.07.2026 (patrz computeReadinessSignals() niżej,
 //     zaakceptowane przez Kubę w claude/PRZEGLAD_PROGOW_GOTOWOSCI_I_
-//     HORIZON_WEEKS.md). Świadomie NIE zaimplementowany: wymiar MECZOWY
-//     (nierozstrzygalny samym researchem, czeka na osobną decyzję Kuby
-//     o formacie response_value) oraz wykrywanie wzorca bólu
+//     HORIZON_WEEKS.md). Wymiar MECZOWY — ZAIMPLEMENTOWANY 03.08.2026
+//     (patrz POPRAWKA wyżej i computeMatchReadinessSignal() niżej).
+//     Świadomie NIE zaimplementowane: wykrywanie wzorca bólu
 //     (pain_pattern_match) — osobny, jeszcze nie zaprojektowany mechanizm.
 //   - Automatyczne wyzwolenie eskalacji po 3+ odrzuceniach z rzędu.
 //   - Cron/harmonogram wywołujący ten silnik okresowo dla zawodników z
@@ -617,6 +649,69 @@ function buildReadinessNarrative(signals) {
   return lines;
 }
 
+// ============================================================
+// WYMIAR MECZOWY GOTOWOŚCI (Funkcja 8) — DODANE 03.08.2026, patrz POPRAWKA
+// w nagłówku pliku. Wcześniej świadomie NIE zaimplementowany — blokerem
+// był nierozstrzygnięty format `match_context_answers.response_value`
+// (teraz POTWIERDZONY, KOLEJKA_DECYZJI_I_PROJEKTOWANIA.md 3.1).
+// ============================================================
+//
+// Zestaw kodów odpowiedzi oznaczających NIEKORZYSTNY wynik zdarzenia w
+// meczu, zebrany wprost z banku pytań (TRYB_MECZU_PRZEPROJEKTOWANIE_
+// DECYZJE.md, punkt 10) — jeden kod per segment, ten który w opisie banku
+// wprost odpowiada "sytuacja wystąpiła i wypadła źle" (nigdy
+// `no_occurrence`/`no_recall`/warianty "zadziałało" — te NIE trafiają
+// tutaj). `regeneracja` świadomie pominięta na tej liście: jej sygnał
+// (`entered_fatigued`) już żyje w rdzeniu karty i jest częścią osobnego,
+// istniejącego mechanizmu (patrz TRYB_MECZU_PRZEPROJEKTOWANIE_DECYZJE.md,
+// sekcja Regeneracja) — dublowanie go tutaj liczyłoby ten sam sygnał
+// dwa razy w jednym meczu.
+const MATCH_NEGATIVE_OUTCOME_CODES = new Set([
+  'late_scan_cost',      // percepcja
+  'hesitated',           // decyzja
+  'became_cautious',     // mental
+  'drifted_slow_return', // koncentracja
+  'lost_race',           // moc
+  'significant_drop',    // wytrzymałość
+  'lost_duel',           // fizyczność
+  'broke_down',          // technika fundamentalna
+  'attempted_no_effect', // technika specjalistyczna
+  'above_normal_toll',   // tolerancja obciążeń
+  'symptoms_present',    // odporność
+  'energy_crash',        // odżywianie
+]);
+
+// V1, prosta heurystyka -- LOGICZNIE dobrana wartość startowa, NIE
+// naukowo zbadana liczba (ten sam status co progi A2/B1/C1 wyżej), do
+// korekty jeśli intuicja trenerska mówi inaczej: patrzy WYŁĄCZNIE na
+// NAJNOWSZY zalogowany mecz (matchAnswers wchodzi posortowane malejąco po
+// created_at, patrz fetchRecentMatchContextAnswers) -- starsze mecze nie
+// wpływają na Gotowość DZISIAJ, tylko na trend widoczny gdzie indziej.
+// Próg >=2 niekorzystnych kodów w JEDNYM meczu (nie sam fakt jednego) --
+// pojedynczy niekorzystny wynik to normalna zmienność meczowa, nie sygnał.
+function computeMatchReadinessSignal(matchAnswers) {
+  if (!matchAnswers || !matchAnswers.length) return { active: false };
+  const latestMatchId = matchAnswers[0].match_context_id;
+  if (!latestMatchId) return { active: false };
+  const latestMatchAnswers = matchAnswers.filter((a) => a.match_context_id === latestMatchId);
+  const negativeCount = latestMatchAnswers.filter((a) => MATCH_NEGATIVE_OUTCOME_CODES.has(a.response_value)).length;
+  return {
+    active: negativeCount >= 2,
+    negativeCount,
+    totalAnswered: latestMatchAnswers.length,
+  };
+}
+
+// Ten sam ton "sygnał kontekstowy, nie samodzielny alarm" co reszta
+// buildReadinessNarrative() -- pojedynczy słaby mecz to normalna
+// zmienność, seria takich meczów to co innego, ale rozpoznawanie SERII
+// (nie tylko najnowszego meczu) to świadomie odłożony zakres tej wersji,
+// patrz "CO ŚWIADOMIE NIE JEST TU ZROBIONE" na końcu pliku.
+function buildMatchReadinessNarrative(matchSignal) {
+  if (!matchSignal || !matchSignal.active) return [];
+  return [`SYGNAŁ GOTOWOŚCI (wymiar meczowy): w najnowszym zalogowanym meczu zawodnik zgłosił ${matchSignal.negativeCount} niekorzystnych wyników na pytania segmentowe kaskady (na ${matchSignal.totalAnswered} odpowiedzianych w tym meczu) -- potraktuj to jako dodatkowy kontekst obok pozostałych sygnałów Gotowości, nigdy jako samodzielny alarm ani dowód chronicznego problemu (to jeden mecz, nie seria).`];
+}
+
 // ------------------------------------------------------------
 // KONTEKST ZAWODNIKA — dokładnie te kolumny/tabele co w rzeczywistym
 // schemacie (zweryfikowane przez odczyt SQL, nie z pamięci):
@@ -658,17 +753,40 @@ async function fetchPlayerInsights(supabase, userId) {
   return data || [];
 }
 
+// DODANE 03.08.2026 — patrz POPRAWKA w nagłówku pliku. `match_context_id`
+// wybrane celowo (obok segment_id/response_value/followup_value) mimo że
+// nie trafia bezpośrednio do promptu AI -- computeMatchReadinessSignal()
+// go potrzebuje, żeby zgrupować odpowiedzi z tego SAMEGO meczu (limit=15
+// to zapas na mecze z 2-3 odpowiedziami każdy, nie sam limit meczów).
+const MATCH_ANSWERS_LIMIT = 15;
+
+async function fetchRecentMatchContextAnswers(supabase, userId) {
+  const { data, error } = await supabase
+    .from('match_context_answers')
+    .select('segment_id, response_value, followup_value, selection_source, was_goal_segment, match_context_id, created_at')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(MATCH_ANSWERS_LIMIT);
+  if (error) throw new Error(`fetchRecentMatchContextAnswers: ${error.message}`);
+  return data || [];
+}
+
 async function fetchPlayerContext(supabase, userId) {
-  const [profileRes, recentLogsRes, recentPainRes, recentMatchesRes, diagnosis, insights] = await Promise.all([
+  const [profileRes, recentLogsRes, recentPainRes, recentMatchesRes, diagnosis, insights, matchAnswers] = await Promise.all([
     supabase.from('player_profiles').select('*').eq('user_id', userId).maybeSingle(),
     supabase.from('daily_logs').select('entry_type, session_type, payload, created_at')
       .eq('user_id', userId).order('created_at', { ascending: false }).limit(10),
     supabase.from('pain_entries').select('body_location, side, intensity, excludes_from_training, created_at')
       .eq('user_id', userId).order('created_at', { ascending: false }).limit(10),
-    supabase.from('match_contexts').select('game_type, own_score, opponent_score, role, minutes_played, match_rpe, created_at')
+    // POPRAWKA (03.08.2026): dodane self_rating/mental_state/entered_recovery_state/
+    // demanding_conditions/position_played_today/free_note -- kolumny dodane przy
+    // przeprojektowaniu Meczu (TRYB_MECZU_PRZEPROJEKTOWANIE_DECYZJE.md, punkt 9),
+    // żywe w bazie od 29.07.2026, ale nigdy wcześniej nieodczytywane tutaj.
+    supabase.from('match_contexts').select('game_type, own_score, opponent_score, role, minutes_played, match_rpe, self_rating, mental_state, entered_recovery_state, demanding_conditions, position_played_today, free_note, created_at')
       .eq('user_id', userId).order('created_at', { ascending: false }).limit(3),
     fetchPlayerDiagnosis(supabase, userId),
     fetchPlayerInsights(supabase, userId),
+    fetchRecentMatchContextAnswers(supabase, userId),
   ]);
   if (profileRes.error) throw new Error(`fetchPlayerContext(profile): ${profileRes.error.message}`);
   if (recentLogsRes.error) throw new Error(`fetchPlayerContext(logs): ${recentLogsRes.error.message}`);
@@ -681,6 +799,7 @@ async function fetchPlayerContext(supabase, userId) {
     recentMatches: recentMatchesRes.data || [],
     diagnosis,
     insights,
+    matchAnswers,
   };
 }
 
@@ -768,7 +887,7 @@ ${formatBlock}`;
 // (Funkcja 8) obliczone przez computeReadinessSignals()/buildReadinessNarrative()
 // w generateRecommendation() i przekazane tutaj jako gotowe linie tekstu.
 function buildUserPrompt({ recommendationType, referralReason, context, extra }) {
-  const { profile, recentLogs, recentPain, recentMatches, diagnosis, insights } = context;
+  const { profile, recentLogs, recentPain, recentMatches, diagnosis, insights, matchAnswers } = context;
   const lines = [];
   lines.push(`Typ rekomendacji do wygenerowania: ${recommendationType}${referralReason ? ' / ' + referralReason : ''}.`);
 
@@ -814,13 +933,29 @@ function buildUserPrompt({ recommendationType, referralReason, context, extra })
   if (recentMatches.length) {
     lines.push(`Ostatnie mecze (najnowsze pierwsze, max 3): ${JSON.stringify(recentMatches)}`);
   }
+  // DODANE 03.08.2026 (patrz POPRAWKA w nagłówku pliku) -- naprawia
+  // znalezisko #6 z syntezy Filtra Jakości: match_context_answers nigdy
+  // wcześniej nie było czytane przez silnik. Krótka legenda w tekście
+  // zamiast osobnego bloku systemowego -- to jedyne miejsce, gdzie te
+  // kody są potrzebne AI, więc kontekst zostaje razem z danymi.
+  if (matchAnswers && matchAnswers.length) {
+    const SELECTION_SOURCE_LABELS = { goal: 'cel', deficit: 'deficyt', position: 'pozycja', rotation: 'rotacja' };
+    const matchAnswerLines = matchAnswers.slice(0, 10).map((a) => {
+      const segName = SEG_NAMES[a.segment_id] || a.segment_id;
+      const sourceLabel = SELECTION_SOURCE_LABELS[a.selection_source] || a.selection_source || 'nieznane';
+      let line = `${segName} (pytanie wybrane z powodu: ${sourceLabel}): ${a.response_value}`;
+      if (a.followup_value) line += ` / pogłębienie: ${a.followup_value}`;
+      return line;
+    });
+    lines.push(`ODPOWIEDZI Z PYTAŃ MECZOWYCH (kaskada po meczu, najnowsze pierwsze, max 10 — kod ${Array.from(MATCH_NEGATIVE_OUTCOME_CODES).join('/')} to zawsze NIEKORZYSTNY wynik zdarzenia w meczu, "no_occurrence"/"no_recall" to brak danych a nie problem, reszta kodów to wynik NEUTRALNY lub KORZYSTNY):\n${matchAnswerLines.join('\n')}`);
+  }
   if (extra && extra.readinessLines && extra.readinessLines.length) {
     lines.push(...extra.readinessLines);
   }
   if (extra && extra.painNote) lines.push(extra.painNote);
   if (extra && extra.goalNote) lines.push(extra.goalNote);
 
-  if (!recentLogs.length && !recentMatches.length && !recentPain.length && !(diagnosis && diagnosis.scores)) {
+  if (!recentLogs.length && !recentMatches.length && !recentPain.length && !(matchAnswers && matchAnswers.length) && !(diagnosis && diagnosis.scores)) {
     lines.push('Brak dotychczasowych danych w Dzienniku/kontekście meczowym/ankiecie — jeśli to za mało do konkretnej rekomendacji, napisz to wprost zamiast zgadywać.');
   }
 
@@ -837,9 +972,11 @@ async function callAnthropic(systemPrompt, userPrompt) {
   if (!apiKey) {
     throw new Error('ANTHROPIC_API_KEY nie skonfigurowany — silnik jest gotowy, brakuje tylko klucza (patrz "DO ZROBIENIA PRZEZ KUBĘ" w architekturze).');
   }
-  // Nazwa modelu to placeholder — ZWERYFIKUJ aktualną nazwę modelu Anthropic
-  // przed pierwszym prawdziwym wdrożeniem (dokumentacja: docs.claude.com).
-  const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5-20250929';
+  // Fallback zaktualizowany 04.08.2026 na 'claude-sonnet-5' (aktualny wg
+  // docs.claude.com w tym dniu) — używany tylko, gdy ANTHROPIC_MODEL nie
+  // jest ustawiona w Vercel. Nazwy modeli zmieniają się z czasem, warto
+  // sprawdzić ponownie, jeśli minie dużo miesięcy bez wdrożenia.
+  const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5';
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -947,7 +1084,14 @@ async function generateRecommendation(params, injectedSupabase) {
   const knowledgeBaseContent = await fetchKnowledgeBase(supabase, segmentId);
   const readinessLogs = await fetchReadinessWindowLogs(supabase, userId);
   const readinessSignals = computeReadinessSignals(readinessLogs);
-  const readinessLines = buildReadinessNarrative(readinessSignals);
+  // DODANE 03.08.2026 — wymiar MECZOWY Gotowości, patrz POPRAWKA w
+  // nagłówku pliku. context.matchAnswers już posortowane malejąco po
+  // created_at przez fetchRecentMatchContextAnswers().
+  const matchReadinessSignal = computeMatchReadinessSignal(context.matchAnswers);
+  const readinessLines = [
+    ...buildReadinessNarrative(readinessSignals),
+    ...buildMatchReadinessNarrative(matchReadinessSignal),
+  ];
 
   // --- 3. Ton — tylko training_focus ma tu sens (patrz komentarz wyżej) ---
   let confidenceTone = 'assertive';
@@ -1071,6 +1215,10 @@ module.exports._internal = {
   fetchReadinessWindowLogs,
   computeReadinessSignals,
   buildReadinessNarrative,
+  fetchRecentMatchContextAnswers,
+  computeMatchReadinessSignal,
+  buildMatchReadinessNarrative,
+  MATCH_NEGATIVE_OUTCOME_CODES,
 };
 
 // ============================================================
@@ -1080,10 +1228,16 @@ module.exports._internal = {
 // i match_context_answers wcześniej w tym projekcie):
 //
 // 1. DETEKCJA KIEDY wygenerować training_focus DLA ZAWODNIKA, KTÓRY JUŻ MA
-//    aktywny cel. Funkcja 2 mówi "priorytet rotuje dynamicznie" — ale
-//    reguła "kiedy dokładnie coś się zmieniło na tyle, żeby uzasadnić nowe
-//    wywołanie AI" to osobny algorytm (ważenie RPE/snu/kontekstu meczowego/
-//    kalendarza), nie zbudowany. PIERWSZA rekomendacja (zaraz po ankiecie,
+//    aktywny cel — ZBUDOWANE 01.08.2026 jako osobny moduł
+//    lib/training-focus-rotation.js (Pakiet B/2): rytm co 7 dni
+//    (TRAINING_FOCUS_ROTATION_CADENCE_DAYS) LUB wcześniej przy meczu za
+//    2-6 dni, plus wewnętrzny checkTrainingFocusCadence() jako zabezpieczenie
+//    przed podwójnym wywołaniem tego samego dnia — patrz integracja w
+//    api/cron-send-notifications.js. To NIE jest pełne "ważenie RPE/snu/
+//    kontekstu meczowego" wspomniane niżej — to prostsza, celowo wybrana
+//    heurystyka czasowa, która okazała się wystarczająca. Poniższy opis
+//    zostaje jako historia pierwotnego, szerszego zamysłu, nie aktualny
+//    brak. PIERWSZA rekomendacja (zaraz po ankiecie,
 //    zanim zawodnik ma jeszcze jakikolwiek cel) ma już swój mechanizm —
 //    patrz api_cron_onboard_diagnosis.js — ale to nie zastępuje bieżącej
 //    rotacji dla zawodników z historią.
@@ -1091,22 +1245,37 @@ module.exports._internal = {
 // 2. LIVE-COMPUTATION GOTOWOŚCI (Funkcja 8) — wymiar FIZYCZNY i MENTALNY
 //    ZAIMPLEMENTOWANE 26.07.2026 (computeReadinessSignals() wyżej,
 //    zaakceptowane przez Kubę w claude/PRZEGLAD_PROGOW_GOTOWOSCI_I_
-//    HORIZON_WEEKS.md). Nadal NIE zaimplementowane:
-//    a) Wymiar MECZOWY — nierozstrzygalne samym researchem, czeka na
-//       decyzję Kuby o formacie response_value (Domena 15/11).
-//    b) A3 ACWR — memo aktywnie odradza wdrożenie w V1.
-//    c) WYKRYWANIE WZORCA BÓLU (pain_pattern_match — "ból w tej samej
+//    HORIZON_WEEKS.md). Wymiar MECZOWY — ZAIMPLEMENTOWANY 03.08.2026
+//    (computeMatchReadinessSignal()/buildMatchReadinessNarrative() wyżej,
+//    po decyzji Kuby o formacie response_value, KOLEJKA_DECYZJI_I_
+//    PROJEKTOWANIA.md 3.1). Nadal NIE zaimplementowane:
+//    a) A3 ACWR — memo aktywnie odradza wdrożenie w V1.
+//    b) WYKRYWANIE WZORCA BÓLU (pain_pattern_match — "ból w tej samej
 //       lokalizacji co historyczna kontuzja, powtarzający się"). Sam
 //       mechanizm (ile powtórzeń, jakie okno czasowe) nie jest jeszcze
 //       zaprojektowany. Ten plik zakłada że coś innego już wykryło wzorzec
 //       i podaje relatedBodyLocation/relatedInjuryHistoryId.
+//    c) ROZPOZNAWANIE SERII słabych meczów (nie tylko najnowszego) w
+//       wymiarze meczowym Gotowości — computeMatchReadinessSignal() w V1
+//       patrzy wyłącznie na najnowszy mecz, świadome uproszczenie (patrz
+//       komentarz przy funkcji), do rozbudowy jeśli okaże się za wąskie.
+//    d) "Diagnoza żywa" (living_diagnosis_pulses, rotacyjne pytania
+//       pojedynczego segmentu poza meczem/dziennikiem) — osobny mechanizm
+//       UI, wymaga zmian w mecz.tsx/asystent_app.html/appce mobilnej, poza
+//       zakresem tego pliku i tej sesji (patrz zasada projektu: te ekrany
+//       zmieniają się wyłącznie na świeżą, wyraźną prośbę Kuby).
 //
 // 3. AUTOMATYCZNE WYWOŁANIE ESKALACJI po 3+ odrzuceniach z rzędu.
-//    computeRejectionStreak() istnieje i liczy streak poprawnie, ale
-//    nic jeszcze nie wywołuje go automatycznie po PATCH feedbacku we
-//    froncie (asystent_app.html submitFeedback dziś tylko zapisuje
-//    feedback_response, nic więcej). Osobny krok integracji — albo
-//    wywołanie z frontendu po PATCH, albo trigger/webhook po stronie bazy.
+//    ZBUDOWANE 27.07.2026 (część 3 tamtej sesji) — ten punkt jest
+//    nieaktualny, zostawiony wcześniej bez poprawki (patrz audyt spójności,
+//    znalezisko D5). computeRejectionStreak() jest teraz faktycznie
+//    wywoływane: asystent_app.html submitFeedback() woła
+//    /api/submit-recommendation-feedback (nowy plik) zamiast bezpośredniego
+//    PATCH — ten endpoint zapisuje feedback, liczy streak i przy 3+ z rzędu
+//    ("did_not_make_sense" na training_focus) woła generateRecommendation()
+//    z recommendationType='specialist_referral', referralReason=
+//    'feedback_escalation' in-process. Patrz submit-recommendation-
+//    feedback.js po pełny opis.
 //
 // 4. CRON / HARMONOGRAM wywołujący ten silnik okresowo dla WSZYSTKICH
 //    aktywnych celów (rotacja bieżąca, nie pierwsza rekomendacja) — nie
@@ -1114,6 +1283,6 @@ module.exports._internal = {
 //    powstanie: api_cron_settlement.js + vercel.json z Marketplace
 //    (Vercel Cron, patrz KROK 6 w MARKETPLACE_CHECKLISTA_WDROZENIA.md).
 //
-// 5. Dokładna nazwa modelu Anthropic (ANTHROPIC_MODEL) — placeholder,
-//    zweryfikuj przed pierwszym wdrożeniem.
+// 5. Nazwa modelu Anthropic (ANTHROPIC_MODEL) — fallback zaktualizowany
+//    04.08.2026 na 'claude-sonnet-5', patrz komentarz przy callAnthropic().
 // ============================================================

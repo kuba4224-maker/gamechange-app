@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gamechange — Raport dla rodzica</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
+<!--
+  raport-rodzica.html — Domena 16 ("Raport Rodzica"). Zbudowane 03.08.2026,
+  ostatni brakujący kawałek już opisanego mechanizmu (patrz
+  RAPORT_RODZICA_STATUS_03_08_2026.md dla pełnego kontekstu tej sesji).
+
+  Dwa tryby, sterowane parametrami URL, oba BEZ logowania (rodzic nie ma
+  konta — token z e-maila jest jedynym kluczem dostępu, ten sam wzorzec
+  no-login-token co gdzie indziej w projekcie, np. followups.response_token):
+
+    ?token=XXX                     → widok raportu (get_parent_report)
+    ?token=XXX&action=unsubscribe  → jednoklikowe wypisanie (parent_report_unsubscribe)
+
+  Świadomie: żadnego klienta Supabase Auth (@supabase/supabase-js) — zwykłe
+  REST/RPC z kluczem publicznym `anon`, dokładnie jak specialist_list.html
+  przed dodaniem mostu sesji. Ta strona nigdy nie potrzebuje sesji Auth.
+-->
+<style>
+:root {
+  --bg: #f5f2ec;
+  --ink: #0e0d0b;
+  --ink2: #3a3830;
+  --muted: #9a9488;
+  --rule: #d8d3c8;
+  --accent: #E8432D;
+  --surface: #ffffff;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  min-height: 100vh;
+  font-size: 15px;
+  line-height: 1.6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.gc-card {
+  width: 100%;
+  max-width: 480px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  padding: 36px 32px;
+}
+
+.gc-label {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 13px;
+  letter-spacing: 0.2em;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 18px;
+}
+
+.gc-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 26px;
+  letter-spacing: 0.01em;
+  margin-bottom: 18px;
+}
+
+.gc-intro {
+  font-size: 14px;
+  color: var(--ink2);
+  font-weight: 300;
+  margin-bottom: 24px;
+}
+
+.gc-row {
+  padding: 12px 0;
+  border-bottom: 1px solid #eee;
+  font-size: 14px;
+  color: var(--ink2);
+}
+.gc-row:last-of-type { border-bottom: none; }
+.gc-row strong { color: var(--ink); }
+
+.gc-note {
+  margin-top: 20px;
+  padding: 14px 16px;
+  background: var(--bg);
+  border-left: 3px solid var(--accent);
+  font-size: 13px;
+  color: var(--ink2);
+  font-weight: 300;
+  line-height: 1.6;
+}
+
+.gc-footer-text {
+  margin-top: 28px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.gc-footer-text a { color: var(--muted); }
+
+.gc-state {
+  text-align: center;
+  padding: 24px 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.gc-hidden { display: none; }
+</style>
+</head>
+<body>
+
+<div class="gc-card">
+  <div class="gc-label">Gamechange</div>
+
+  <div id="gc-loading" class="gc-state">Wczytuję…</div>
+
+  <div id="gc-invalid-link" class="gc-state gc-hidden">
+    Ten link jest nieprawidłowy — brakuje w nim tokenu dostępu. Sprawdź, czy skopiowałeś/aś
+    cały adres z e-maila.
+  </div>
+
+  <div id="gc-not-found" class="gc-state gc-hidden">
+    Nie znaleziono raportu pod tym linkiem. Mógł wygasnąć albo zostać wcześniej wypisany —
+    jeśli to pomyłka, skontaktuj się z osobą, która przesłała Ci ten link.
+  </div>
+
+  <div id="gc-unsubscribed" class="gc-state gc-hidden">
+    Gotowe — nie będziesz już dostawać tego raportu. Jeśli to pomyłka, wystarczy poprosić
+    zawodnika o ponowne włączenie raportu w jego koncie Gamechange.
+  </div>
+
+  <div id="gc-report" class="gc-hidden">
+    <div class="gc-title" id="gc-report-title">Raport postępów</div>
+    <p class="gc-intro" id="gc-report-intro"></p>
+
+    <div id="gc-goal-row" class="gc-row"></div>
+    <div class="gc-row">Aktywnych celów: <strong id="gc-active-goals"></strong></div>
+    <div class="gc-row">Sesji treningowych zalogowanych w ostatnich 7 dniach: <strong id="gc-sessions-7d"></strong></div>
+    <div class="gc-row">Meczów w ostatnich 30 dniach: <strong id="gc-matches-30d"></strong></div>
+
+    <div id="gc-growth-age-note" class="gc-note gc-hidden">
+      W tym wieku (11–16 lat) organizm często przechodzi naturalny okres szybszego wzrostu —
+      to normalna faza rozwoju, w której warto zwracać nieco większą uwagę na odpoczynek i
+      stopniowe zwiększanie obciążeń treningowych. System Gamechange bierze to pod uwagę przy
+      doborze wskazówek dla Twojego dziecka.
+    </div>
+
+    <div id="gc-growth-rate-note" class="gc-note gc-hidden">
+      Ostatnie pomiary wzrostu pokazują wyraźnie szybsze tempo wzrastania — to naturalne
+      zjawisko w tym okresie, nie powód do niepokoju, ale dobry moment, żeby razem z dzieckiem
+      zadbać o sen i regenerację.
+    </div>
+
+    <p class="gc-footer-text" id="gc-detail-note"></p>
+    <p class="gc-footer-text">
+      Nie chcesz już dostawać tego raportu?
+      <a href="#" id="gc-unsubscribe-link">Wypisz się jednym kliknięciem</a> — bez logowania.
+    </p>
+  </div>
+
+  <div id="gc-error" class="gc-state gc-hidden">
+    Coś poszło nie tak przy wczytywaniu raportu. Spróbuj odświeżyć stronę za chwilę.
+  </div>
+</div>
+
+<script>
+// ------------------------------------------------------------
+// Świadomie ZWYKŁY fetch z kluczem publicznym `anon`, bez klienta
+// @supabase/supabase-js — ta strona nigdy nie potrzebuje sesji Auth
+// (rodzic nie ma konta), więc nie ma po co ładować całej biblioteki.
+// ------------------------------------------------------------
+const SUPABASE_URL = 'https://kqrbztsvepjtggjmmcdx.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_EoYRIZpDhUSdNSJDXWl4Ew_SG8aJABP';
+
+const SEG_NAMES = {
+  moc: 'Moc',
+  wytrzymalosc: 'Wytrzymałość',
+  fizycznosc: 'Fizyczność',
+  techFund: 'Technika fundamentalna',
+  techSpec: 'Technika specjalistyczna',
+  regeneracja: 'Regeneracja',
+  odpornosc: 'Odporność',
+  odzywianie: 'Odżywienie',
+  tolerancja: 'Tolerancja obciążeń',
+  koncentracja: 'Koncentracja',
+  mental: 'Odwaga w grze',
+  percepcja: 'Percepcja',
+  decyzja: 'Szybkość decyzji',
+};
+
+function show(id) {
+  document.getElementById(id).classList.remove('gc-hidden');
+}
+function hide(id) {
+  document.getElementById(id).classList.add('gc-hidden');
+}
+function hideAllStates() {
+  ['gc-loading', 'gc-invalid-link', 'gc-not-found', 'gc-unsubscribed', 'gc-report', 'gc-error']
+    .forEach(hide);
+}
+
+async function callRpc(fnName, body) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fnName}`, {
+    method: 'POST',
+    headers: { apikey: SUPABASE_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`RPC ${fnName} zwróciło ${res.status}`);
+  return res.json();
+}
+
+function escapeHtml(value) {
+  const div = document.createElement('div');
+  div.textContent = value == null ? '' : String(value);
+  return div.innerHTML;
+}
+
+function renderReport(report, token) {
+  const playerName = report.player_name || 'Twoje dziecko';
+  document.getElementById('gc-report-title').textContent = `Raport postępów — ${playerName}`;
+  document.getElementById('gc-report-intro').textContent =
+    `Krótkie podsumowanie ostatniego okresu pracy ${playerName} w Gamechange — bez szczegółów dziennika, tylko ogólny obraz.`;
+
+  const goal = report.priority_goal;
+  const goalRow = document.getElementById('gc-goal-row');
+  if (goal) {
+    const segLabel = SEG_NAMES[goal.segment_id] || goal.segment_id;
+    goalRow.innerHTML = `Priorytetowy cel tego okresu: <strong>${escapeHtml(segLabel)}</strong>` +
+      (goal.horizon_weeks
+        ? ` (typowy horyzont: ok. ${escapeHtml(goal.horizon_weeks)} tyg. cierpliwości, zanim efekt będzie widoczny).`
+        : '.');
+  } else {
+    goalRow.textContent = 'Brak dziś ustawionego priorytetowego celu.';
+  }
+
+  document.getElementById('gc-active-goals').textContent = report.active_goals_count ?? 0;
+  document.getElementById('gc-sessions-7d').textContent = report.recent_training_sessions_7d ?? 0;
+  document.getElementById('gc-matches-30d').textContent = report.recent_matches_30d ?? 0;
+
+  if (report.growth_spurt_typical_age_range) show('gc-growth-age-note');
+  if (report.height_growth_rate_elevated) show('gc-growth-rate-note');
+
+  document.getElementById('gc-detail-note').textContent =
+    `To zwięzły, ogólny obraz — szczegóły (dziennik, samopoczucie, rozmowy z asystentem AI) widzi wyłącznie ${playerName} w swoim koncie, zgodnie z zasadą, że to Jego/Jej narzędzie do samodzielnej pracy nad formą.`;
+
+  document.getElementById('gc-unsubscribe-link').onclick = (e) => {
+    e.preventDefault();
+    const params = new URLSearchParams(window.location.search);
+    params.set('action', 'unsubscribe');
+    window.location.search = params.toString();
+  };
+
+  show('gc-report');
+}
+
+async function init() {
+  hideAllStates();
+  show('gc-loading');
+
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('token');
+  const action = params.get('action');
+
+  if (!token) {
+    hideAllStates();
+    show('gc-invalid-link');
+    return;
+  }
+
+  try {
+    if (action === 'unsubscribe') {
+      await callRpc('parent_report_unsubscribe', { p_token: token });
+      // Świadomie ten sam, przyjazny komunikat niezależnie od tego, czy
+      // token był realnie aktywny — nie ma powodu ujawniać różnicy
+      // rodzicowi klikającemu link z e-maila, a upraszcza to UI (brak
+      // osobnego stanu "już wcześniej wypisany").
+      hideAllStates();
+      show('gc-unsubscribed');
+      return;
+    }
+
+    const report = await callRpc('get_parent_report', { p_token: token });
+    hideAllStates();
+    if (!report) {
+      show('gc-not-found');
+      return;
+    }
+    renderReport(report, token);
+  } catch (e) {
+    console.log('raport-rodzica init error:', e);
+    hideAllStates();
+    show('gc-error');
+  }
+}
+
+init();
+</script>
+
+</body>
+</html>

@@ -188,6 +188,7 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--i
       <button class="gc-nav-btn" id="nav-assistant" onclick="switchCoachPanel('assistant')">Asystent</button>
       <button class="gc-nav-btn" id="nav-settings" onclick="switchCoachPanel('settings')">Ustawienia</button>
       <button class="gc-nav-btn" id="nav-aggregate" onclick="switchCoachPanel('aggregate')">Agregat drużynowy</button>
+      <button class="gc-nav-btn" id="nav-private" onclick="switchCoachPanel('private')">Zawodnicy prywatni</button>
     </div>
 
     <!-- ─── Skład (roster) ─── -->
@@ -288,6 +289,21 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--i
       <div id="aggregate-hint" class="gc-empty gc-hidden"></div>
       <div id="aggregate-body"></div>
     </div>
+
+    <!-- ─── Zawodnicy prywatni (coach_player_relationships, Kontekst 1 z Funkcji 9 —
+         poza drużyną, W7 z AUDYT SPOJNOSCI CALEGO PROJEKTU.md). Dodane 04.08.2026 —
+         mechanizm w bazie istniał od dawna ("Zastosowane spójnie do obu kontekstów
+         (drużyna i prywatny trener)"), ale panel trenera nie miał do niego ŻADNEGO UI.
+         Zawodnik SAM decyduje, co udostępnia (share_journal/share_goals/
+         share_injury_history/share_focus_blocks) — ten panel tylko czyta, nigdy nie
+         zapisuje flag udostępniania. ─── -->
+    <div id="panel-private" class="gc-hidden">
+      <div class="gc-signals-banner">
+        Zawodnicy, którzy udostępnili Ci dane prywatnie, poza drużyną — to oni decydują na
+        ekranie swojego konta, co dokładnie widzisz.
+      </div>
+      <div id="private-list"></div>
+    </div>
   </div>
 
   <!-- ═══ SZCZEGÓŁY ZAWODNIKA ═══ -->
@@ -309,6 +325,18 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--i
 
     <div class="gc-label" style="margin-top:28px;">Mecze</div>
     <div id="detail-matches"></div>
+
+    <!-- ─── Centrum Decyzji + Blok Skupienia — Pętla rekomendacji trenera
+         (KOLEJKA_DECYZJI_I_PROJEKTOWANIA.md, 3.2). Dodane 04.08.2026 — SQL
+         (INTEGRACJA_PETLA_TRENERA_SQL.md) był już wklejony wcześniej, ale ta
+         część UI nigdy faktycznie nie trafiła do tego pliku mimo wcześniejszego
+         statusu "zrobione" w DO_ZROBIENIA_PRZEZ_KUBE.md — patrz poprawka tam. ─── -->
+    <div class="gc-label" style="margin-top:28px;">Centrum Decyzji — rekomendacje</div>
+    <div id="detail-recommendations"></div>
+    <div id="detail-recommendation-form"></div>
+
+    <div class="gc-label" style="margin-top:28px;">Blok Skupienia — czy zawodnik nad tym pracuje</div>
+    <div id="detail-focus-blocks"></div>
 
     <div class="gc-label" style="margin-top:36px;">Twoje notatki o tym zawodniku</div>
     <div class="gc-section-block">
@@ -398,6 +426,8 @@ const RISK_BADGE_LABELS = {
 let currentUser = null;      // { id, email, accessToken }
 let currentTeam = null;      // wiersz public.teams (id, code, coach_name, coach_email, club_name, coach_user_id, visibility_level, season_phase, created_at)
 let rosterCache = [];        // [{ player_user_id, joined_at, users: { full_name, email } }]
+let privateRosterCache = []; // [{ player_user_id, users: {...}, isPrivate: true, shareFlags: {...cały wiersz coach_player_relationships...} }] — Kontekst 1 (W7)
+let lastRosterSourcePanel = 'roster'; // 'roster' albo 'private' — dokąd wraca "← Wróć do składu" z widoku szczegółów
 let diagnosisByUser = new Map(); // user_id -> { user_id, scores, created_at } (najnowszy wiersz diagnostics per zawodnik)
 let currentPlayer = null;    // aktywny wpis z rosterCache otwarty w widoku szczegółów
 let preMatchSignalsByUser = new Map(); // user_id -> { flags, injury_mode_category, pain_entries, match_minutes_7d, entered_last_match_fatigued } (Domena 21)
@@ -680,7 +710,7 @@ async function enterApp() {
 // ══════════════════════════════════════
 //  NAWIGACJA W PANELU GŁÓWNYM
 // ══════════════════════════════════════
-const COACH_PANELS = ['roster', 'assistant', 'settings', 'aggregate'];
+const COACH_PANELS = ['roster', 'assistant', 'settings', 'aggregate', 'private'];
 function switchCoachPanel(name) {
   COACH_PANELS.forEach(p => {
     document.getElementById('nav-' + p).classList.toggle('active', p === name);
@@ -690,6 +720,7 @@ function switchCoachPanel(name) {
   if (name === 'assistant') loadAssistantPanel();
   if (name === 'settings') loadSettingsPanel();
   if (name === 'aggregate') updateAggregateAvailability();
+  if (name === 'private') loadPrivateRoster();
 }
 
 // ══════════════════════════════════════
@@ -848,7 +879,7 @@ function renderRosterCard(row) {
   }
 
   return `
-    <div class="gc-roster-card" onclick="openPlayerDetail('${row.player_user_id}')">
+    <div class="gc-roster-card" onclick="openPlayerDetailFrom('${row.player_user_id}', 'roster')">
       <div class="gc-roster-name">${escapeHtml(nameLabel)}</div>
       <div class="gc-roster-meta">${escapeHtml(diagLabel)}</div>
       ${renderRiskBadges(row.player_user_id)}
@@ -857,10 +888,94 @@ function renderRosterCard(row) {
 }
 
 // ══════════════════════════════════════
+//  ZAWODNICY PRYWATNI (coach_player_relationships, Kontekst 1 z Funkcji 9) —
+//  W7 z AUDYT SPOJNOSCI CALEGO PROJEKTU.md. Reużywa DOKŁADNIE ten sam widok
+//  szczegółów (view-detail / openPlayerDetail) co skład drużynowy niżej —
+//  wszystkie loadPlayer*Section() czytają tylko po playerId i polegają na
+//  RLS (coach_has_any_access/coach_sees_goals/coach_sees_journal_details/
+//  coach_sees_injury_history), które — potwierdzone wprost w komentarzu
+//  Domeny 08 — już poprawnie obsługują oba konteksty jednocześnie. Świadomie
+//  ZERO duplikacji logiki widoczności po stronie klienta tutaj, tak samo jak
+//  przy drużynie.
+//
+//  DWIE RZECZY DO ZWERYFIKOWANIA NA ŻYWO (patrz DO_ZROBIENIA_PRZEZ_KUBE.md —
+//  Domena 08 SQL nigdy nie trafił do Project Knowledge, więc dokładny
+//  schemat tej tabeli nie był tu w 100% sprawdzalny na żywo, w odróżnieniu
+//  od reszty tego pliku):
+//  1) Embed `users!player_user_id(...)` niżej zakłada standardową nazwę
+//     ograniczenia FK. `coach_player_relationships` ma DWA klucze obce do
+//     `users` (player_user_id i coach_user_id) — jeśli PostgREST zwróci
+//     błąd niejednoznacznej relacji, to znak, że trzeba podać dokładną nazwę
+//     ograniczenia zamiast nazwy kolumny (mała poprawka, potrzebuje treści
+//     błędu).
+//  2) `select=*` (zamiast wymieniania kolumn wprost) świadomie — dokładne
+//     nazwy flag udostępniania (share_journal/share_goals/
+//     share_injury_history/share_focus_blocks) nie zostały tu zweryfikowane
+//     na żywo, tylko wywnioskowane z komentarzy w innych plikach SQL tego
+//     projektu. Literówka w nazwie kolumny w `select=` wywaliłaby całe
+//     zapytanie błędem 400 — `select=*` tego ryzyka nie ma, w najgorszym
+//     razie któraś plakietka po prostu się nie pokaże.
+// ══════════════════════════════════════
+const SHARE_FLAG_LABELS = [
+  ['share_journal', 'Dziennik'],
+  ['share_goals', 'Cele'],
+  ['share_injury_history', 'Historia urazów'],
+  ['share_focus_blocks', 'Blok Skupienia'],
+];
+
+async function loadPrivateRoster() {
+  const listEl = document.getElementById('private-list');
+  listEl.innerHTML = '<div class="gc-empty">Wczytuję...</div>';
+
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/coach_player_relationships?coach_user_id=eq.${currentUser.id}&status=eq.active&select=*,users!player_user_id(full_name,email)`,
+      { headers: authHeaders() }
+    );
+    if (!res.ok) throw new Error(await res.text());
+    const rows = await res.json();
+    privateRosterCache = (Array.isArray(rows) ? rows : []).map(row => ({
+      player_user_id: row.player_user_id,
+      users: row.users || {},
+      isPrivate: true,
+      shareFlags: row,
+    }));
+  } catch (e) {
+    listEl.innerHTML = '<div class="gc-empty">Nie udało się wczytać listy zawodników prywatnych.</div>';
+    privateRosterCache = [];
+    return;
+  }
+
+  listEl.innerHTML = privateRosterCache.length
+    ? privateRosterCache.map(renderPrivateRosterCard).join('')
+    : '<div class="gc-empty">Nikt jeszcze nie udostępnił Ci danych prywatnie (poza drużyną).</div>';
+}
+
+function renderPrivateRosterCard(row) {
+  const u = row.users || {};
+  const name = u.full_name || u.email;
+  const nameLabel = name || 'Zawodnik (brak danych identyfikacyjnych)';
+
+  const activeShares = SHARE_FLAG_LABELS
+    .filter(([key]) => row.shareFlags && row.shareFlags[key])
+    .map(([, label]) => label);
+  const shareLabel = activeShares.length
+    ? 'Udostępnia dodatkowo: ' + activeShares.join(', ')
+    : 'Udostępnia tylko dane podstawowe (diagnoza, ogólna gotowość)';
+
+  return `
+    <div class="gc-roster-card" onclick="openPlayerDetailFrom('${row.player_user_id}', 'private')">
+      <div class="gc-roster-name">${escapeHtml(nameLabel)}</div>
+      <div class="gc-roster-meta">${escapeHtml(shareLabel)}</div>
+    </div>
+  `;
+}
+
+// ══════════════════════════════════════
 //  SZCZEGÓŁY ZAWODNIKA
 // ══════════════════════════════════════
 function clearDetailSections() {
-  ['detail-profile', 'detail-goals', 'detail-journal', 'detail-injuries', 'detail-matches', 'detail-notes-list'].forEach(id => {
+  ['detail-profile', 'detail-goals', 'detail-journal', 'detail-injuries', 'detail-matches', 'detail-recommendations', 'detail-focus-blocks', 'detail-notes-list'].forEach(id => {
     document.getElementById(id).innerHTML = '<div class="gc-empty">Wczytuję...</div>';
   });
   document.getElementById('detail-note-text').value = '';
@@ -868,8 +983,19 @@ function clearDetailSections() {
   document.getElementById('detail-notes-ok').classList.add('gc-hidden');
 }
 
+function openPlayerDetailFrom(playerId, sourcePanel) {
+  lastRosterSourcePanel = sourcePanel; // 'roster' albo 'private' — patrz backToRoster()
+  openPlayerDetail(playerId);
+}
+
 async function openPlayerDetail(playerId) {
-  currentPlayer = rosterCache.find(r => r.player_user_id === playerId) || { player_user_id: playerId, users: {} };
+  // Szuka najpierw w składzie drużynowym, potem w liście prywatnej — ten sam
+  // zawodnik teoretycznie mógłby wystąpić w obu (drużyna + osobna relacja
+  // prywatna), więc kolejność nie ma tu znaczenia dla poprawności, tylko
+  // źródło danych do wyświetlenia nazwy/e-maila w nagłówku.
+  currentPlayer = rosterCache.find(r => r.player_user_id === playerId)
+    || privateRosterCache.find(r => r.player_user_id === playerId)
+    || { player_user_id: playerId, users: {} };
   showView('detail');
 
   const u = currentPlayer.users || {};
@@ -882,6 +1008,8 @@ async function openPlayerDetail(playerId) {
     loadPlayerJournalSection(playerId),
     loadPlayerInjurySection(playerId),
     loadPlayerMatchSection(playerId),
+    loadPlayerRecommendationsSection(playerId),
+    loadPlayerFocusBlocksSection(playerId),
     loadCoachNotesSection(playerId),
   ]);
 }
@@ -889,7 +1017,7 @@ async function openPlayerDetail(playerId) {
 function backToRoster() {
   currentPlayer = null;
   showView('app');
-  switchCoachPanel('roster');
+  switchCoachPanel(lastRosterSourcePanel); // wraca tam, skąd otwarto szczegóły (skład albo lista prywatna)
 }
 
 // Wspólny komunikat dla "sekcja pusta" — zgodnie z jawną instrukcją tego
@@ -1061,6 +1189,297 @@ async function loadPlayerMatchSection(playerId) {
 }
 
 // ══════════════════════════════════════
+//  CENTRUM DECYZJI (decision_recommendations) + BLOK SKUPIENIA (focus_blocks)
+//  — Pętla rekomendacji trenera (KOLEJKA_DECYZJI_I_PROJEKTOWANIA.md, 3.2;
+//  pełny opis: INTEGRACJA_PETLA_TRENERA.md; migracja:
+//  INTEGRACJA_PETLA_TRENERA_SQL.md — zakłada, że ta migracja już jest
+//  wklejona w Supabase). Ta sama logika decyzyjna co
+//  lib/coach-recommendation-loop.js (przetestowana tam jednostkowo,
+//  20/20 asercji) — tu CELOWO powtórzona w czystym JS przeglądarki, ten sam
+//  wzorzec co reszta tego pliku (brak kroku budowania/importu modułów Node).
+//
+//  Dodane 04.08.2026. Naprawia przy okazji W4 z AUDYT SPOJNOSCI CALEGO
+//  PROJEKTU.md: gdy trener wzmacnia training_focus (submitCoachRecommendation,
+//  ścieżka "reinforce"), zapisujemy TEN SAM sygnał RÓWNIEŻ do player_insights
+//  (nie tylko reinforced_by_coach_at/comment na samym wierszu) — żeby kolejna
+//  rotacja training_focus (lib/training-focus-rotation.js, czyta
+//  player_insights przez fetchPlayerInsights) o tym "wiedziała". 'w_punkt'
+//  to interpretacja Claude'a dla tej ścieżki (najbliższa etykieta dla
+//  "trener potwierdza ten sam kierunek") — do korekty, jeśli wolisz inaczej.
+// ══════════════════════════════════════
+const RECOMMENDATION_TYPE_LABELS = {
+  training_focus: 'Priorytet treningowy',
+  specialist_referral: 'Skierowanie do specjalisty',
+  coach_recommendation: 'Od Ciebie',
+  position_fit_signal: 'Sygnał dopasowania pozycji',
+};
+
+const COACH_ASSESSMENT_LABELS_PL = {
+  w_punkt: 'W punkt',
+  blisko: 'Blisko',
+  czesciowo: 'Częściowo',
+  nie_do_konca: 'Nie do końca',
+};
+const COACH_ASSESSMENT_REQUIRES_COMMENT = new Set(['czesciowo', 'nie_do_konca']);
+
+let latestTrainingFocus = null;      // najnowszy wiersz training_focus zawodnika — tu pokazujemy ocenę (Warstwa 3)
+let coachInsightBySegment = new Map(); // segment_id -> ostatnia ocena trenera (player_insights.response_value)
+let pendingAssessmentLabel = new Map(); // rec.id -> wybrana etykieta oceny, czekająca na komentarz
+
+async function loadPlayerRecommendationsSection(playerId) {
+  const el = document.getElementById('detail-recommendations');
+  latestTrainingFocus = null;
+  coachInsightBySegment = new Map();
+  try {
+    const [recRes, insightsRes] = await Promise.all([
+      fetch(`${SUPABASE_URL}/rest/v1/decision_recommendations?user_id=eq.${playerId}&order=created_at.desc&limit=10&select=*`, { headers: authHeaders() }),
+      fetch(`${SUPABASE_URL}/rest/v1/player_insights?user_id=eq.${playerId}&source=eq.coach&order=created_at.desc&select=segment_id,response_value`, { headers: authHeaders() }),
+    ]);
+    const rows = await recRes.json();
+    const insights = await insightsRes.json();
+    if (Array.isArray(insights)) {
+      insights.forEach(i => { if (!coachInsightBySegment.has(i.segment_id)) coachInsightBySegment.set(i.segment_id, i.response_value); });
+    }
+    if (!Array.isArray(rows) || !rows.length) {
+      el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`;
+    } else {
+      latestTrainingFocus = rows.find(r => r.recommendation_type === 'training_focus') || null;
+      el.innerHTML = rows.map(r => renderRecommendationCard(r)).join('');
+    }
+  } catch (e) {
+    el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`;
+  }
+  renderCoachRecommendationForm();
+}
+
+function renderRecommendationCard(r) {
+  const dateLabel = new Date(r.created_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' });
+  const typeLabel = RECOMMENDATION_TYPE_LABELS[r.recommendation_type] || r.recommendation_type;
+  const segLabel = r.segment_id ? (SEG_LABELS[r.segment_id] || r.segment_id) : '';
+  const text = r.recommendation_text || r.weekly_focus_text || '';
+  const isLatestTrainingFocus = !!(latestTrainingFocus && r.id === latestTrainingFocus.id);
+
+  let ratingHtml = '';
+  if (isLatestTrainingFocus) {
+    const currentRating = coachInsightBySegment.get(r.segment_id);
+    ratingHtml = `
+      <div class="gc-feedback-row" style="margin-top:8px;">
+        ${Object.entries(COACH_ASSESSMENT_LABELS_PL).map(([key, label]) => `
+          <button class="gc-feedback-btn${currentRating === key ? ' chosen' : ''}" onclick="submitCoachAssessment('${r.id}', '${r.segment_id}', '${key}')">${escapeHtml(label)}</button>
+        `).join('')}
+      </div>
+      <div id="rec-rating-comment-${r.id}" class="gc-hidden" style="margin-top:8px;">
+        <textarea class="gc-textarea" id="rec-rating-comment-text-${r.id}" placeholder="Krótki komentarz (wymagany dla tej oceny)..."></textarea>
+        <button class="gc-btn" onclick="confirmCoachAssessment('${r.id}', '${r.segment_id}')">Zapisz ocenę</button>
+      </div>
+      <div id="rec-rating-error-${r.id}" class="gc-error gc-hidden"></div>
+      ${currentRating ? `<div class="gc-history-detail" style="margin-top:4px;">Twoja ostatnia ocena: ${escapeHtml(COACH_ASSESSMENT_LABELS_PL[currentRating] || currentRating)}</div>` : ''}
+    `;
+  }
+  const reinforcedHtml = r.reinforced_by_coach_at
+    ? `<div class="gc-history-detail" style="margin-top:4px;">Wzmocnione przez Ciebie ${escapeHtml(new Date(r.reinforced_by_coach_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }))}${r.reinforced_by_coach_comment ? ': ' + escapeHtml(r.reinforced_by_coach_comment) : ''}</div>`
+    : '';
+
+  return `
+    <div class="gc-history-card">
+      <div class="gc-history-top">
+        <span class="gc-history-type">${escapeHtml(typeLabel)}${segLabel ? ' · ' + escapeHtml(segLabel) : ''}</span>
+        <span class="gc-history-date">${dateLabel}</span>
+      </div>
+      ${text ? `<div class="gc-history-detail">${escapeHtml(text)}</div>` : ''}
+      ${reinforcedHtml}
+      ${ratingHtml}
+    </div>
+  `;
+}
+
+function submitCoachAssessment(recId, segmentId, label) {
+  const errEl = document.getElementById(`rec-rating-error-${recId}`);
+  if (errEl) errEl.classList.add('gc-hidden');
+  if (COACH_ASSESSMENT_REQUIRES_COMMENT.has(label)) {
+    pendingAssessmentLabel.set(recId, label);
+    const box = document.getElementById(`rec-rating-comment-${recId}`);
+    if (box) box.classList.remove('gc-hidden');
+    return;
+  }
+  doSubmitCoachAssessment(recId, segmentId, label, null);
+}
+
+function confirmCoachAssessment(recId, segmentId) {
+  const label = pendingAssessmentLabel.get(recId);
+  const textEl = document.getElementById(`rec-rating-comment-text-${recId}`);
+  const comment = ((textEl && textEl.value) || '').trim();
+  const errEl = document.getElementById(`rec-rating-error-${recId}`);
+  if (!comment) {
+    if (errEl) { errEl.textContent = 'Ta ocena wymaga krótkiego komentarza.'; errEl.classList.remove('gc-hidden'); }
+    return;
+  }
+  doSubmitCoachAssessment(recId, segmentId, label, comment);
+}
+
+async function doSubmitCoachAssessment(recId, segmentId, label, comment) {
+  const errEl = document.getElementById(`rec-rating-error-${recId}`);
+  const u = (currentPlayer && currentPlayer.users) || {};
+  if (!u.email) {
+    if (errEl) { errEl.textContent = 'Brak adresu e-mail zawodnika — nie można zapisać oceny.'; errEl.classList.remove('gc-hidden'); }
+    return;
+  }
+  try {
+    const body = {
+      player_email: u.email,
+      user_id: currentPlayer.player_user_id,
+      source: 'coach',
+      segment_id: segmentId,
+      response_value: label,
+      response_comment: comment || null,
+      created_at: new Date().toISOString(),
+    };
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/player_insights`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    pendingAssessmentLabel.delete(recId);
+    await loadPlayerRecommendationsSection(currentPlayer.player_user_id);
+  } catch (e) {
+    if (errEl) { errEl.textContent = 'Nie udało się zapisać oceny: ' + e.message; errEl.classList.remove('gc-hidden'); }
+  }
+}
+
+function renderCoachRecommendationForm() {
+  const el = document.getElementById('detail-recommendation-form');
+  if (!el) return;
+  const options = SEGMENTS_BY_PILLAR.flatMap(([, segs]) => segs)
+    .map(([id, label]) => `<option value="${id}">${escapeHtml(label)}</option>`).join('');
+  el.innerHTML = `
+    <div class="gc-section-block" style="margin-top:8px;">
+      <div class="gc-label">Dodaj własną rekomendację</div>
+      <p style="font-size:12px; color:var(--muted); margin:6px 0 12px;">
+        Jeśli zawodnik ma dziś aktywny priorytet treningowy na wybranym segmencie, Twoja
+        rekomendacja go wzmocni (zawodnik zobaczy dopisek "Twój trener też to potwierdza").
+        W przeciwnym razie powstanie nowa, osobna rekomendacja oznaczona "Od Ciebie".
+      </p>
+      <select class="gc-select" id="coach-rec-segment-select">${options}</select>
+      <textarea class="gc-textarea" id="coach-rec-text" placeholder="Treść rekomendacji..." style="margin-top:8px;"></textarea>
+      <button class="gc-btn" id="coach-rec-submit-btn" onclick="submitCoachRecommendation()">Zapisz rekomendację</button>
+      <div id="coach-rec-error" class="gc-error gc-hidden"></div>
+      <div id="coach-rec-ok" class="gc-ok gc-hidden"></div>
+    </div>
+  `;
+}
+
+async function submitCoachRecommendation() {
+  const errEl = document.getElementById('coach-rec-error');
+  const okEl = document.getElementById('coach-rec-ok');
+  errEl.classList.add('gc-hidden');
+  okEl.classList.add('gc-hidden');
+
+  const segmentId = document.getElementById('coach-rec-segment-select').value;
+  const textEl = document.getElementById('coach-rec-text');
+  const text = textEl.value.trim();
+  if (!text) {
+    errEl.textContent = 'Wpisz treść rekomendacji.';
+    errEl.classList.remove('gc-hidden');
+    return;
+  }
+  const playerId = currentPlayer.player_user_id;
+  const u = (currentPlayer && currentPlayer.users) || {};
+  const btn = document.getElementById('coach-rec-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Zapisuję...';
+  const nowIso = new Date().toISOString();
+
+  try {
+    // Reguła łączenia (KOLEJKA_DECYZJI 3.2, Warstwa 4) — najnowszy training_focus
+    // TEGO zawodnika na TYM segmencie decyduje: wzmocnienie czy nowy wiersz.
+    const existingRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/decision_recommendations?user_id=eq.${playerId}&recommendation_type=eq.training_focus&segment_id=eq.${segmentId}&order=created_at.desc&limit=1&select=id`,
+      { headers: authHeaders() }
+    );
+    const existingRows = await existingRes.json();
+    const existing = Array.isArray(existingRows) && existingRows[0];
+
+    if (existing && existing.id != null) {
+      const patchRes = await fetch(`${SUPABASE_URL}/rest/v1/decision_recommendations?id=eq.${existing.id}`, {
+        method: 'PATCH',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ reinforced_by_coach_at: nowIso, reinforced_by_coach_comment: text }),
+      });
+      if (!patchRes.ok) throw new Error(await patchRes.text());
+
+      // Naprawa W4 — patrz komentarz na górze tej sekcji.
+      if (u.email) {
+        await fetch(`${SUPABASE_URL}/rest/v1/player_insights`, {
+          method: 'POST',
+          headers: { ...authHeaders(), 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+          body: JSON.stringify({
+            player_email: u.email,
+            user_id: playerId,
+            source: 'coach',
+            segment_id: segmentId,
+            response_value: 'w_punkt',
+            response_comment: text,
+            created_at: nowIso,
+          }),
+        });
+      }
+    } else {
+      const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/decision_recommendations`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          user_id: playerId,
+          recommendation_type: 'coach_recommendation',
+          content_source: 'coach',
+          segment_id: segmentId,
+          recommendation_text: text,
+          created_at: nowIso,
+        }),
+      });
+      if (!insertRes.ok) throw new Error(await insertRes.text());
+    }
+
+    textEl.value = '';
+    okEl.textContent = 'Rekomendacja zapisana.';
+    okEl.classList.remove('gc-hidden');
+    await loadPlayerRecommendationsSection(playerId);
+  } catch (e) {
+    errEl.textContent = 'Nie udało się zapisać rekomendacji: ' + e.message;
+    errEl.classList.remove('gc-hidden');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Zapisz rekomendację';
+  }
+}
+
+async function loadPlayerFocusBlocksSection(playerId) {
+  const el = document.getElementById('detail-focus-blocks');
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/focus_blocks?user_id=eq.${playerId}&status=eq.active&order=started_at.desc&select=id,segment_id,started_at`,
+      { headers: authHeaders() }
+    );
+    const rows = await res.json();
+    if (!Array.isArray(rows) || !rows.length) { el.innerHTML = `<div class="gc-empty">Brak aktywnego Bloku Skupienia.</div>`; return; }
+    el.innerHTML = rows.map(b => {
+      const label = SEG_LABELS[b.segment_id] || b.segment_id;
+      const dateLabel = b.started_at ? new Date(b.started_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }) : '';
+      return `
+        <div class="gc-history-card">
+          <div class="gc-history-top">
+            <span class="gc-history-type">${escapeHtml(label)}</span>
+            <span class="gc-history-date">aktywny od ${escapeHtml(dateLabel)}</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`;
+  }
+}
+
+// ══════════════════════════════════════
 //  NOTATKI TRENERA (coach_notes) — tylko dodawanie i przegląd WŁASNYCH
 //  notatek (coach_user_id = auth.uid(), wypełniane tu jawnie przy zapisie).
 // ══════════════════════════════════════
@@ -1138,8 +1557,14 @@ async function addCoachNote() {
   btn.textContent = 'Zapisuję...';
 
   try {
+    // team_code: null dla zawodnika z relacji prywatnej (currentPlayer.isPrivate,
+    // patrz sekcja "Zawodnicy prywatni" wyżej) — nie ma tu żadnej drużyny do
+    // zapisania. ZAKŁADAM, że kolumna team_code jest NULLABLE (skoro to pole
+    // legacy, a nowoczesna ścieżka i tak identyfikuje notatkę przez user_id/
+    // coach_user_id) — nie potwierdzone na żywo. Jeśli NOT NULL, ten zapis
+    // zwróci czytelny błąd w catch niżej (nie cichy brak), do małej poprawki.
     const body = {
-      team_code: currentTeam.code,
+      team_code: (currentPlayer && currentPlayer.isPrivate) ? null : currentTeam.code,
       player_email: u.email,
       user_id: currentPlayer.player_user_id,
       coach_user_id: currentUser.id,
@@ -1237,10 +1662,14 @@ async function submitTipFeedback(response) {
   (response === 'useful' ? usefulBtn : notNowBtn).classList.add('chosen');
 
   try {
-    await fetch('/api/submit-coach-tip-feedback', {
+    // Endpoint scalony z /api/generate-coach-tip (04.08.2026, limit 12
+    // funkcji Vercel Hobby) — `action: 'submit_feedback'` w body kieruje
+    // do handlera przeniesionego z dawnego api/submit-coach-tip-feedback.js,
+    // patrz lib/coach-tip-feedback.js. Reszta payloadu bez zmian.
+    await fetch('/api/generate-coach-tip', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ coachUserId: currentUser.id, tipId: lastGeneratedTipId, response }),
+      body: JSON.stringify({ action: 'submit_feedback', coachUserId: currentUser.id, tipId: lastGeneratedTipId, response }),
     });
   } catch (e) {
     // Lekki feedback — brak potwierdzenia w UI przy błędzie sieci jest
@@ -1528,11 +1957,16 @@ initApp();
      mechanizm, poza zakresem tego panelu). Panel trenera tylko CZYTA
      roster, nigdy nie tworzy kont zawodników.
 
-  4. Prywatny tryb trenera (coach_player_relationships, Domena 08,
-     sekcja 3) — relacja 1:1 poza drużyną, z granularnymi flagami
-     udostępniania. Ten panel obsługuje wyłącznie ścieżkę drużynową
-     (team_memberships) — zawodnicy udostępniający dane prywatnie, bez
-     bycia w żadnej drużynie tego trenera, nie pojawią się tu nigdzie.
+  4. Prywatny tryb trenera (coach_player_relationships, Domena 08, sekcja 3)
+     — ZBUDOWANE 04.08.2026 (W7 z AUDYT SPOJNOSCI CALEGO PROJEKTU.md), nowa
+     zakładka "Zawodnicy prywatni" obok Składu. Świadomie NIE zbudowane przy
+     okazji (patrz punkt 12 niżej dla pełnej listy pozostałych luk):
+     trener BEZ żadnej drużyny (zero teams.coach_user_id) wciąż utyka na
+     ekranie "Połącz konto z drużyną" i nigdy nie dotrze do tej zakładki —
+     dzisiejsza wersja zakłada, że trener ma przynajmniej jedną drużynę.
+     Też: strona ZAWODNIKA (dodawanie kolejnych prywatnych trenerów po
+     e-mailu) wciąż nie istnieje — to `asystent_app.html`, plik objęty stałą
+     zasadą projektu "nie ruszać bez świeżej, wyraźnej prośby Kuby".
 
   5. Widok "trend" dla poziomu widoczności 'extended' bez pełnego
      dostępu do dziennika — Domena 08 wspomina to jako coś, co "backend
@@ -1573,5 +2007,27 @@ initApp();
       coach_tips/coach_chat_exchanges mają politykę SELECT dla trenera)
       NIE jest tu wczytywana przy wejściu w zakładkę — panel pokazuje
       tylko wynik bieżącej sesji, przegląd historii to możliwe rozszerzenie.
+
+  12. Zakładka "Zawodnicy prywatni" (patrz punkt 4) — pozostałe, świadomie
+      NIE zamknięte teraz luki:
+      a) Trener BEZ żadnej drużyny nie ma jak dotrzeć do tej zakładki (patrz
+         punkt 4) — poprawka wymagałaby zmiany routingu checkTeamClaim()/
+         showView(), świadomie odłożona, żeby nie ryzykować regresji na
+         ścieżce drużynowej tuż przed pilotażem. Dziś to teoretyczny
+         przypadek — pilotaż (K1-K3) zakłada trenerów drużynowych.
+      b) Dokładny schemat coach_player_relationships (nazwy kolumn flag
+         udostępniania, nazwa ograniczenia klucza obcego do users) NIE był
+         możliwy do zweryfikowania na żywo w tej sesji (Domena 08 SQL nigdy
+         nie trafił do Project Knowledge) — kod używa `select=*` i nazw
+         kolumn wywnioskowanych z komentarzy w innych plikach tego projektu
+         (INTEGRACJA_PETLA_TRENERA_SQL.md), nie ze sprawdzonego na żywo
+         źródła. Pełne uzasadnienie i zapytanie weryfikacyjne:
+         claude/INTEGRACJA_TRYB_PRYWATNY_TRENERA_SQL.md.
+      c) Ograniczenie unikalności na coach_player_relationships (czy
+         zawodnik może mieć wielu prywatnych trenerów naraz, czy tylko
+         jednego) — wciąż niezweryfikowane, patrz AUDYT SPOJNOSCI CALEGO
+         PROJEKTU.md, sekcja W7. Nie blokuje TEJ zakładki (ona i tak czyta
+         wszystkie relacje danego trenera, niezależnie ile ich zawodnik ma
+         łącznie) — dotyczy tylko przyszłej strony zawodnika.
   ══════════════════════════════════════════════════════════════
 -->
