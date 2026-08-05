@@ -123,13 +123,25 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--i
 .gc-nutrition-card h4 { font-family: 'Bebas Neue', sans-serif; font-size: 14px; letter-spacing: 0.04em; margin: 14px 0 6px; }
 .gc-nutrition-card h4:first-child { margin-top: 0; }
 .gc-nutrition-card p { font-size: 13px; color: var(--ink2); margin-bottom: 4px; }
+
+/* Filar B — Twój rozwój (profil i rozwój trenera). Karta priorytetu
+   wybranego dziś — świadomie ten sam wizualny język co gc-roster-card
+   (wybór, nie ocena — nie ma tu żadnego koloru "dobry/zły"). */
+.gc-roster-card-chosen { border-color: var(--ink); background: #faf8f4; }
 </style>
 </head>
 <body>
 
 <div class="gc-header">
   <div class="gc-header-label">Gamechange — Panel Trenera</div>
-  <a class="gc-logout gc-hidden" id="logout-link" onclick="handleLogout()">Wyloguj</a>
+  <div style="display:flex; gap:20px; align-items:center;">
+    <!-- Filar B — dostępne ZAWSZE po zalogowaniu, niezależnie od tego czy
+         trener ma drużynę (KOLEJKA_DECYZJI_I_PROJEKTOWANIA.md, 4.1f) —
+         dlatego link w nagłówku, widoczny w każdym głównym widoku, nie
+         schowany w nav zależnym od posiadania drużyny (view-app). -->
+    <a class="gc-logout gc-hidden" id="dev-nav-link" onclick="openDevelopmentView()">Twój rozwój</a>
+    <a class="gc-logout gc-hidden" id="logout-link" onclick="handleLogout()">Wyloguj</a>
+  </div>
 </div>
 
 <div class="gc-body">
@@ -176,6 +188,20 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--i
       <div id="team-request-pending" class="gc-ok gc-hidden">
         Zgłoszenie wysłane — czeka na weryfikację. Gdy drużyna powstanie, dostaniesz kod e-mailem.
       </div>
+    </div>
+
+    <!-- ═══ FILAR B — WEJŚCIE BEZ DRUŻYNY. Filar B (Twój rozwój) nie
+         wymaga posiadania drużyny/podopiecznych (KOLEJKA_DECYZJI_I_
+         PROJEKTOWANIA.md, 4.1f: "trener może zacząć w dowolnym momencie,
+         nawet dzień 1, bez warunku posiadania drużyny czy podopiecznych")
+         — trener utknięty na tym ekranie (bez kodu/przed weryfikacją
+         Kuby) wciąż może już teraz z niego skorzystać. ═══ -->
+    <div style="margin-top:32px; padding-top:24px; border-top:1px solid var(--rule);">
+      <p style="font-size:13px; color:var(--muted); margin-bottom:14px;">
+        Nie musisz mieć jeszcze drużyny, żeby zacząć. Twój własny rozwój jako trenera jest
+        dostępny od razu.
+      </p>
+      <button class="gc-btn gc-btn-secondary" onclick="openDevelopmentView()">Przejdź do „Twój rozwój”</button>
     </div>
   </div>
 
@@ -247,6 +273,44 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--i
         <div id="nutrition-copy-ok" class="gc-ok gc-hidden">Skopiowano.</div>
       </div>
 
+      <!-- ─── Zaplanuj sesję drużyny — Pakiet 17, "Zamknięcie pętli: sesja
+           trenera → dziennik zawodnika" (04.08.2026, Sesja 2; przywrócone
+           po utracie UI przy równoległym zapisie coach.html — patrz
+           LOG_SESJI_ROWNOLEGLYCH.md). Tworzy PO JEDNYM wpisie
+           calendar_events dla każdego aktywnego zawodnika drużyny
+           (fan-out po stronie SQL, funkcja create_coach_planned_session) —
+           zero zmian w asystent_app.html (plik zamrożony) potrzeba, żeby
+           zawodnik zobaczył sesję w swoim Dzienniku. Pełny opis:
+           claude/INTEGRACJA_SESJA_DZIENNIK_SQL.md. ─── -->
+      <div class="gc-section-block">
+        <div class="gc-label">Zaplanuj sesję drużyny</div>
+        <p style="font-size:12px; color:var(--muted); margin-bottom:14px;">
+          Tworzy wpis w kalendarzu każdego aktywnego zawodnika drużyny (źródło: trener) — zawodnik
+          zobaczy go w swoim Dzienniku i będzie mógł powiązać z nim swój wpis potreningowy.
+        </p>
+        <label class="gc-label">Typ jednostki</label>
+        <select class="gc-select" id="session-unit-type-select">
+          <option value="silowa">Siłowa</option>
+          <option value="wytrzymalosciowa">Wytrzymałościowa</option>
+          <option value="techniczna">Techniczna</option>
+          <option value="taktyczna">Taktyczna (gierka zadaniowa)</option>
+        </select>
+        <label class="gc-label" style="margin-top:10px;">Data sesji</label>
+        <input class="gc-input" id="session-date-input" type="date">
+        <label class="gc-label" style="margin-top:10px;">Tytuł (opcjonalnie)</label>
+        <input class="gc-input" id="session-title-input" type="text" placeholder="np. Sesja siłowa">
+        <label class="gc-label" style="margin-top:10px;">Pytanie do zawodników (opcjonalnie — dziś zapisane, wyświetlenie zawodnikowi to osobny, świadomie odłożony krok)</label>
+        <textarea class="gc-textarea" id="session-question-input" maxlength="300" placeholder="np. jak czułeś się dziś na treningu?"></textarea>
+        <button class="gc-btn" id="session-create-btn" onclick="createPlannedSession()">Zaplanuj sesję</button>
+        <div id="session-create-error" class="gc-error gc-hidden"></div>
+        <div id="session-create-ok" class="gc-ok gc-hidden"></div>
+      </div>
+
+      <div class="gc-section-block">
+        <div class="gc-label">Zaplanowane sesje — ostatnie</div>
+        <div id="planned-sessions-list"><div class="gc-empty">Wczytuję...</div></div>
+      </div>
+
     </div>
 
     <!-- ─── Ustawienia drużyny ─── -->
@@ -282,12 +346,100 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--i
         (np. nawodnienie i tankowanie wokół częstych meczów w sezonie, regeneracja przy cięższym bloku
         w fazie przygotowawczej).
       </p>
+
+      <!-- ─── Digest sygnałów e-mail (04.08.2026) — lib/coach-digest.js +
+           claude/INTEGRACJA_DIGEST_TRENERA_SQL.md. Brak wiersza w
+           coach_digest_preferences = WŁĄCZONE (checkboxy startują
+           zaznaczone), trener odznacza to, czego NIE chce — ten sam wzorzec
+           co notification_preferences zawodnika. ─── -->
+      <div class="gc-section-block">
+        <label class="gc-label">Digest sygnałów e-mail</label>
+        <p style="font-size:12px; color:var(--muted); margin-bottom:14px;">
+          System wysyła Ci e-mail, gdy zauważy coś w danych Twoich zawodników — tylko dla
+          zaznaczonych kategorii. To nie jest cotygodniowy raport, tylko konkretne zdarzenia.
+        </p>
+
+        <div style="margin-bottom:14px;">
+          <div style="font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px;">Ryzyko / obciążenie</div>
+          <label style="display:block; font-size:14px; margin-bottom:6px;"><input type="checkbox" id="digest-team_overload" style="margin-right:8px;">Przeciążenie drużyny</label>
+          <label style="display:block; font-size:14px; margin-bottom:6px;"><input type="checkbox" id="digest-player_risk_standout" style="margin-right:8px;">Zawodnik wart sprawdzenia</label>
+        </div>
+
+        <div style="margin-bottom:14px;">
+          <div style="font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px;">Zaangażowanie / aktywność</div>
+          <label style="display:block; font-size:14px; margin-bottom:6px;"><input type="checkbox" id="digest-player_went_quiet" style="margin-right:8px;">Zawodnik ucichł</label>
+          <label style="display:block; font-size:14px; margin-bottom:6px;"><input type="checkbox" id="digest-player_never_started" style="margin-right:8px;">Zawodnik jeszcze nie zaczął</label>
+        </div>
+
+        <div style="margin-bottom:14px;">
+          <div style="font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px;">Docenienie / postęp</div>
+          <label style="display:block; font-size:14px; margin-bottom:6px;"><input type="checkbox" id="digest-player_high_consistency" style="margin-right:8px;">Rzadka konsekwencja</label>
+          <label style="display:block; font-size:14px; margin-bottom:6px;"><input type="checkbox" id="digest-focus_block_completed_strong" style="margin-right:8px;">Mocno domknięty Blok Skupienia</label>
+          <label style="display:block; font-size:14px; margin-bottom:6px;"><input type="checkbox" id="digest-goal_achieved" style="margin-right:8px;">Osiągnięty cel</label>
+        </div>
+
+        <button class="gc-btn" id="settings-digest-save-btn" onclick="saveDigestPreferences()">Zapisz</button>
+        <div id="settings-digest-error" class="gc-error gc-hidden"></div>
+        <div id="settings-digest-ok" class="gc-ok gc-hidden"></div>
+      </div>
+
+      <!-- ─── Raporty w wybranych momentach (Pakiet 20, 04.08.2026) —
+           lib/coach-scheduled-reports.js + claude/INTEGRACJA_RAPORTY_
+           KRYTYCZNE_MOMENTY_SQL.md. W ODRÓŻNIENIU od Digestu wyżej: brak
+           wiersza w coach_scheduled_report_preferences = WYŁĄCZONE
+           (opt-in) — checkboxy startują ODZNACZONE, trener sam włącza to,
+           czego chce (nowy typ e-maila, o który nikt jeszcze nie prosił —
+           patrz uzasadnienie w dokumencie projektowym). ─── -->
+      <div class="gc-section-block">
+        <label class="gc-label">Raporty w wybranych momentach</label>
+        <p style="font-size:12px; color:var(--muted); margin-bottom:14px;">
+          W odróżnieniu od Digestu wyżej (który reaguje na zdarzenia), te raporty przychodzą
+          w konkretnym momencie, który sam wybierzesz — niezależnie od tego, czy coś się akurat
+          zmieniło.
+        </p>
+
+        <label style="display:block; font-size:14px; margin-bottom:6px;">
+          <input type="checkbox" id="sched-report-pre_match_team_briefing" style="margin-right:8px;">Przegląd sygnałów ryzyka wieczorem przed meczem drużyny
+        </label>
+        <p style="font-size:12px; color:var(--muted); margin:0 0 14px 26px;">
+          Wysyłany tylko, gdy przynajmniej jeden zawodnik ma zalogowany mecz na jutro w Kalendarzu.
+        </p>
+
+        <label style="display:block; font-size:14px; margin-bottom:6px;">
+          <input type="checkbox" id="sched-report-weekly_team_pulse" style="margin-right:8px;">Cotygodniowy puls drużyny
+        </label>
+        <div style="margin:0 0 14px 26px; display:flex; align-items:center; gap:8px;">
+          <span style="font-size:13px; color:var(--muted);">Dzień tygodnia:</span>
+          <select class="gc-select" id="sched-report-weekly-day-select" style="width:auto;">
+            <option value="MON">Poniedziałek</option>
+            <option value="TUE">Wtorek</option>
+            <option value="WED">Środa</option>
+            <option value="THU">Czwartek</option>
+            <option value="FRI">Piątek</option>
+            <option value="SAT">Sobota</option>
+            <option value="SUN">Niedziela</option>
+          </select>
+        </div>
+
+        <button class="gc-btn" id="settings-sched-report-save-btn" onclick="saveScheduledReportPreferences()">Zapisz</button>
+        <div id="settings-sched-report-error" class="gc-error gc-hidden"></div>
+        <div id="settings-sched-report-ok" class="gc-ok gc-hidden"></div>
+      </div>
     </div>
 
     <!-- ─── Agregat drużynowy (heatmapa) ─── -->
     <div id="panel-aggregate" class="gc-hidden">
       <div id="aggregate-hint" class="gc-empty gc-hidden"></div>
       <div id="aggregate-body"></div>
+
+      <!-- ─── Zasugeruj cel grupowo — Pakiet 18, "Cele sugerowane przez
+           trenera" (04.08.2026, Sesja 1; przywrócone po utracie UI przy
+           równoległym zapisie coach.html — patrz LOG_SESJI_ROWNOLEGLYCH.md).
+           Niezależne od progu prywatności TEAM_AGGREGATE_MIN_SIZE (heatmapa
+           wyżej) — to ręczny wybór zawodników po imieniu, nie zbiorcza
+           statystyka, więc renderuje się zawsze, patrz
+           renderGroupGoalSuggestPanel(). ─── -->
+      <div id="aggregate-goal-suggest"></div>
     </div>
 
     <!-- ─── Zawodnicy prywatni (coach_player_relationships, Kontekst 1 z Funkcji 9 —
@@ -316,6 +468,11 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--i
 
     <div class="gc-label" style="margin-top:28px;">Cele</div>
     <div id="detail-goals"></div>
+    <!-- ─── Zasugeruj cel — Pakiet 18 (patrz nagłówek sekcji JS "ZASUGERUJ
+         CEL" niżej w tym pliku). Renderowany przez renderGoalSuggestForm(),
+         wołany na końcu loadPlayerGoalsSection() — ten sam wzorzec co
+         detail-recommendation-form / renderCoachRecommendationForm(). ─── -->
+    <div id="detail-goal-suggest-form"></div>
 
     <div class="gc-label" style="margin-top:28px;">Dziennik — ostatnie wpisy</div>
     <div id="detail-journal"></div>
@@ -338,6 +495,16 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--i
     <div class="gc-label" style="margin-top:28px;">Blok Skupienia — czy zawodnik nad tym pracuje</div>
     <div id="detail-focus-blocks"></div>
 
+    <!-- ─── Biblioteka wątków trenerskich — Pakiet 16 (04.08.2026). Detekcja
+         automatyczna wątków 1-7 (dla tego zawodnika) + wątek 8 (drużynowy,
+         odżywianie, jeśli aktywny) — lib/coach-thread-library.js, tekst z
+         THREAD_LIBRARY w api/generate-coach-tip.js. Zawsze tonacja "warto
+         rozważyć", nigdy "na pewno dlatego" — ta sama sytuacja może mieć
+         dwa różne, równie uprawnione wyjaśnienia; system tylko sygnalizuje,
+         nie decyduje które. ─── -->
+    <div class="gc-label" style="margin-top:28px;">Warto rozważyć</div>
+    <div id="detail-thread-signals"></div>
+
     <div class="gc-label" style="margin-top:36px;">Twoje notatki o tym zawodniku</div>
     <div class="gc-section-block">
       <p style="font-size:12px; color:var(--muted); margin-bottom:12px;">
@@ -350,6 +517,50 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--i
       <div id="detail-notes-ok" class="gc-ok gc-hidden"></div>
     </div>
     <div id="detail-notes-list" style="margin-top:14px;"></div>
+  </div>
+
+  <!-- ═══ FILAR B — TWÓJ ROZWÓJ (profil i rozwój SAMEGO trenera, osobny
+       produkt obok Filaru A — wsparcie w pracy z zawodnikami). Dostępne
+       ZAWSZE, niezależnie od tego czy trener ma drużynę/podopiecznych
+       (KOLEJKA_DECYZJI_I_PROJEKTOWANIA.md, 4.1f) — dlatego to OSOBNY,
+       top-level widok (jak view-claim/view-app), nie podpanel view-app —
+       trener bez drużyny (wciąż w view-claim) też musi się tu dostać.
+       Framing: WYBÓR PRIORYTETU, nigdy ocena kompetencji
+       (NARZEDZIE_TRENERA_DECYZJE_PROJEKTOWE.md, sekcja Filar B). ═══ -->
+  <div id="view-development" class="gc-hidden">
+    <div class="gc-back-link" onclick="closeDevelopmentView()">← Wróć</div>
+    <div class="gc-title">Twój rozwój</div>
+
+    <div class="gc-section-block">
+      <div class="gc-label">Gdzie czujesz się dziś najbardziej przytłoczony?</div>
+      <p style="font-size:12px; color:var(--muted); margin-bottom:14px;">
+        To nie jest ocena Twoich kompetencji — wybierasz priorytet, nad którym system pomoże Ci
+        dziś popracować. Możesz zmienić wybór w dowolnym momencie.
+      </p>
+      <div id="priority-segment-list"></div>
+      <div id="priority-error" class="gc-error gc-hidden"></div>
+    </div>
+
+    <div id="priority-guidance-block" class="gc-hidden">
+      <div class="gc-label" style="margin-top:8px;">Twój aktualny priorytet</div>
+      <div class="gc-tip-card" id="priority-guidance-card"></div>
+    </div>
+
+    <!-- Runda Opinii — widoczna WYŁĄCZNIE jeśli trener ma drużynę (kod
+         drużyny to jedyny kanał dystrybucji). Odpowiedź zawodnika nie ma
+         dziś UI, patrz lib/coach-feedback-round.js "UWAGA — BRAK UI
+         ZAWODNIKA" — ten panel tylko inicjuje rundę i pokazuje wynik. -->
+    <div id="feedback-round-block" class="gc-hidden" style="margin-top:28px;">
+      <div class="gc-label">Runda Opinii — głos zawodników</div>
+      <p style="font-size:12px; color:var(--muted); margin-bottom:14px;">
+        Krótka, anonimowa runda pytań o odczuwalny efekt Twojej pracy — nie ocena wprost. Wynik
+        widzisz WYŁĄCZNIE Ty, nikt inny (nie klub, nie rodzice). Dystrybucja przez kod Twojej
+        drużyny, który zawodnicy już znają.
+      </p>
+      <button class="gc-btn" id="feedback-round-start-btn" onclick="startFeedbackRoundUI(false)">Zbierz opinie zespołu</button>
+      <div id="feedback-round-error" class="gc-error gc-hidden"></div>
+      <div id="feedback-round-result"></div>
+    </div>
   </div>
 
 </div>
@@ -457,6 +668,7 @@ async function initApp() {
       currentUser = null;
       currentTeam = null;
       document.getElementById('logout-link').classList.add('gc-hidden');
+      document.getElementById('dev-nav-link').classList.add('gc-hidden');
       showView('login');
     }
   });
@@ -465,6 +677,7 @@ async function initApp() {
 async function handleSignedIn(session) {
   currentUser = { id: session.user.id, email: session.user.email, accessToken: session.access_token };
   document.getElementById('logout-link').classList.remove('gc-hidden');
+  document.getElementById('dev-nav-link').classList.remove('gc-hidden'); // Filar B — zawsze dostępne po zalogowaniu
 
   // public.users powstaje automatycznie triggerem on_auth_user_created
   // (Domena 01) w tej samej transakcji co wiersz auth.users. Krótki retry
@@ -544,7 +757,7 @@ function handleLogout() {
 // ══════════════════════════════════════
 //  NAWIGACJA MIĘDZY WIDOKAMI GŁÓWNYMI
 // ══════════════════════════════════════
-const VIEWS = ['login', 'claim', 'app', 'detail'];
+const VIEWS = ['login', 'claim', 'app', 'detail', 'development'];
 function showView(name) {
   VIEWS.forEach(v => document.getElementById('view-' + v).classList.toggle('gc-hidden', v !== name));
 }
@@ -826,7 +1039,15 @@ async function loadPreMatchSignals() {
     });
     if (!res.ok) throw new Error(await res.text());
     const data = await res.json();
-    (data && data.results || []).forEach(row => {
+    // NAPRAWA 05.08.2026 (ZADANIE 2) — get_pre_match_signals to funkcja
+    // SQL `SETOF record`, potwierdzona live (proretset=true,
+    // prorettype='record') jako surowa tablica przez PostgREST, NIE obiekt
+    // z kluczem `results`. `data.results` był więc prawdopodobnie zawsze
+    // `undefined`, a plakietki ryzyka nigdy się nie renderowały. Obsłużone
+    // teraz defensywnie dla OBU kształtów — ten sam wzorzec co
+    // `fetchPreMatchSignalsForTeam` w lib/coach-scheduled-reports.js.
+    const rows = Array.isArray(data) ? data : ((data && data.results) || []);
+    rows.forEach(row => {
       preMatchSignalsByUser.set(row.player_user_id, row);
     });
   } catch (e) {
@@ -975,7 +1196,7 @@ function renderPrivateRosterCard(row) {
 //  SZCZEGÓŁY ZAWODNIKA
 // ══════════════════════════════════════
 function clearDetailSections() {
-  ['detail-profile', 'detail-goals', 'detail-journal', 'detail-injuries', 'detail-matches', 'detail-recommendations', 'detail-focus-blocks', 'detail-notes-list'].forEach(id => {
+  ['detail-profile', 'detail-goals', 'detail-journal', 'detail-injuries', 'detail-matches', 'detail-recommendations', 'detail-focus-blocks', 'detail-thread-signals', 'detail-notes-list'].forEach(id => {
     document.getElementById(id).innerHTML = '<div class="gc-empty">Wczytuję...</div>';
   });
   document.getElementById('detail-note-text').value = '';
@@ -1010,6 +1231,7 @@ async function openPlayerDetail(playerId) {
     loadPlayerMatchSection(playerId),
     loadPlayerRecommendationsSection(playerId),
     loadPlayerFocusBlocksSection(playerId),
+    loadPlayerThreadSignalsSection(playerId),
     loadCoachNotesSection(playerId),
   ]);
 }
@@ -1065,19 +1287,258 @@ async function loadPlayerGoalsSection(playerId) {
 
     el.innerHTML = rows.map(g => {
       const label = SEG_LABELS[g.segment_id] || g.segment_id;
-      let statusLabel = g.status === 'completed' ? 'Ukończony' : g.status === 'abandoned' ? 'Porzucony' : (g.is_priority ? 'Priorytetowy, aktywny' : 'Aktywny');
+      // Kolejność sprawdzania celowo taka sama jak describeGoalStatusForCoach()
+      // w lib/coach-goal-suggestions.js — 'suggested' sprawdzany PRZED resztą
+      // (naprawa luki: wcześniej brak tej gałęzi mylnie etykietował oczekującą
+      // sugestię trenera jako "Aktywny").
+      let statusLabel = g.status === 'suggested' ? 'Oczekuje na decyzję zawodnika'
+        : g.status === 'completed' ? 'Ukończony'
+        : g.status === 'abandoned' ? 'Porzucony'
+        : (g.is_priority ? 'Priorytetowy, aktywny' : 'Aktywny');
       const meta = [statusLabel];
       if (g.horizon_weeks) meta.push(`horyzont: ${g.horizon_weeks} tyg.`);
+      const noteText = g.refinement_note || (g.suggestion_note ? `Notatka trenera: ${g.suggestion_note}` : '');
       return `
         <div class="gc-goal-card">
           <div class="gc-goal-top"><span class="gc-goal-segment">${escapeHtml(label)}</span></div>
-          ${g.refinement_note ? `<div class="gc-history-detail" style="margin-bottom:6px;">${escapeHtml(g.refinement_note)}</div>` : ''}
+          ${noteText ? `<div class="gc-history-detail" style="margin-bottom:6px;">${escapeHtml(noteText)}</div>` : ''}
           <div class="gc-goal-meta">${meta.join(' · ')}</div>
         </div>
       `;
     }).join('');
   } catch (e) {
     el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`;
+  } finally {
+    renderGoalSuggestForm();
+  }
+}
+
+// ══════════════════════════════════════
+//  ZASUGERUJ CEL — Pakiet 18, "Cele sugerowane przez trenera" (04.08.2026,
+//  Sesja 1; przywrócone 04.08.2026 po utracie tej sekcji UI przy równoległym
+//  zapisie coach.html przez inną sesję — patrz LOG_SESJI_ROWNOLEGLYCH.md,
+//  wpis "Pakiet 19"). Logika CELOWO duplikuje
+//  lib/coach-goal-suggestions.js (plik statyczny bez bundlera, nie może
+//  importować modułów Node — ten sam wzorzec co reszta tego pliku, patrz
+//  nagłówek tamtego modułu). Nowy wiersz na ISTNIEJĄCEJ tabeli public.goals
+//  (origin='coach_suggested', status='suggested') — zapis bezpośrednio przez
+//  REST + RLS (goals_coach_insert_suggestion), zero nowego pliku w api/
+//  (folder zostaje na 12/12). Sugestia NIGDY nie przerywa aktywnego celu
+//  zawodnika — to osobny wiersz, zawodnik akceptuje ją sam (poza zakresem
+//  tej sesji, plik zawodnika zamrożony). Pełny opis:
+//  claude/INTEGRACJA_CELE_SUGEROWANE_TRENERA.md, migracja:
+//  claude/INTEGRACJA_CELE_SUGEROWANE_TRENERA_SQL.md.
+// ══════════════════════════════════════
+function segmentSelectOptionsHtml() {
+  return SEGMENTS_BY_PILLAR.flatMap(([, segs]) => segs)
+    .map(([id, label]) => `<option value="${id}">${escapeHtml(label)}</option>`).join('');
+}
+
+function renderGoalSuggestForm() {
+  const el = document.getElementById('detail-goal-suggest-form');
+  if (!el) return;
+  el.innerHTML = `
+    <div class="gc-section-block" style="margin-top:8px;">
+      <div class="gc-label">Zasugeruj cel</div>
+      <p style="font-size:12px; color:var(--muted); margin:6px 0 12px;">
+        Sugestia nie przerywa aktywnego celu zawodnika — to osobna propozycja, którą zawodnik sam
+        zaakceptuje albo odrzuci na swoim koncie.
+      </p>
+      <select class="gc-select" id="goal-suggest-segment-select">${segmentSelectOptionsHtml()}</select>
+      <textarea class="gc-textarea" id="goal-suggest-note-input" maxlength="500" style="margin-top:8px;" placeholder="Notatka dla zawodnika (opcjonalnie)..."></textarea>
+      <button class="gc-btn" id="goal-suggest-submit-btn" onclick="suggestGoalForCurrentPlayer()">Zasugeruj cel</button>
+      <div id="goal-suggest-error" class="gc-error gc-hidden"></div>
+      <div id="goal-suggest-ok" class="gc-ok gc-hidden"></div>
+    </div>
+  `;
+}
+
+async function suggestGoalForCurrentPlayer() {
+  const errEl = document.getElementById('goal-suggest-error');
+  const okEl = document.getElementById('goal-suggest-ok');
+  errEl.classList.add('gc-hidden');
+  okEl.classList.add('gc-hidden');
+
+  if (!currentPlayer) return;
+  const playerId = currentPlayer.player_user_id;
+  const segmentId = document.getElementById('goal-suggest-segment-select').value;
+  const note = document.getElementById('goal-suggest-note-input').value.trim();
+
+  if (note.length > 500) {
+    errEl.textContent = 'Notatka jest za długa (maks. 500 znaków).';
+    errEl.classList.remove('gc-hidden');
+    return;
+  }
+
+  const btn = document.getElementById('goal-suggest-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Wysyłam...';
+
+  try {
+    // Sprawdzenie PRZED wysłaniem — czytelny komunikat zamiast surowego 409
+    // z bazy (idx_goals_one_pending_suggestion_per_segment pilnuje tego
+    // samego twardo na poziomie bazy — to tylko wcześniejsza, przyjaźniejsza
+    // warstwa, ten sam wzorzec co isPendingSuggestionConflict()).
+    const existingRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/goals?user_id=eq.${playerId}&segment_id=eq.${segmentId}&status=eq.suggested&select=id`,
+      { headers: authHeaders() }
+    );
+    const existingRows = await existingRes.json();
+    if (Array.isArray(existingRows) && existingRows.length > 0) {
+      errEl.textContent = 'Ten zawodnik ma już oczekującą sugestię na tym segmencie.';
+      errEl.classList.remove('gc-hidden');
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/goals`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify([{
+        user_id: playerId,
+        segment_id: segmentId,
+        origin: 'coach_suggested',
+        status: 'suggested',
+        is_priority: false,
+        suggested_by_coach_user_id: currentUser.id,
+        suggested_at: nowIso,
+        suggestion_note: note || null,
+        suggestion_group_id: null,
+        created_at: nowIso,
+      }]),
+    });
+    if (!res.ok) throw new Error(await res.text());
+
+    document.getElementById('goal-suggest-note-input').value = '';
+    okEl.textContent = 'Cel zasugerowany — zawodnik zobaczy propozycję na swoim koncie.';
+    okEl.classList.remove('gc-hidden');
+    await loadPlayerGoalsSection(playerId);
+  } catch (e) {
+    errEl.textContent = 'Nie udało się zasugerować celu: ' + e.message;
+    errEl.classList.remove('gc-hidden');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Zasugeruj cel';
+  }
+}
+
+// Panel grupowy w Agregacie drużynowym — renderowany przez
+// updateAggregateAvailability() (niezależnie od TEAM_AGGREGATE_MIN_SIZE,
+// patrz komentarz tam). rosterCache jest już załadowany przez loadRoster()
+// zanim trener w ogóle może przełączyć się na zakładkę Agregat.
+function renderGroupGoalSuggestPanel() {
+  const el = document.getElementById('aggregate-goal-suggest');
+  if (!el) return;
+  const playersHtml = rosterCache.length
+    ? rosterCache.map(r => {
+        const u = r.users || {};
+        const name = escapeHtml(u.full_name || u.email || 'Zawodnik');
+        return `<label style="display:block; font-size:14px; margin-bottom:6px;"><input type="checkbox" class="group-goal-suggest-checkbox" value="${r.player_user_id}" style="margin-right:8px;">${name}</label>`;
+      }).join('')
+    : '<div class="gc-empty">Brak aktywnych zawodników.</div>';
+
+  el.innerHTML = `
+    <div class="gc-section-block">
+      <div class="gc-label">Zasugeruj cel grupowo</div>
+      <p style="font-size:12px; color:var(--muted); margin-bottom:14px;">
+        Wybierz zawodników i segment — każdy zaznaczony zawodnik dostanie osobną sugestię celu na
+        swoim koncie. Zawodnicy z już oczekującą sugestią na tym segmencie zostaną pominięci.
+      </p>
+      <div id="group-goal-suggest-players">${playersHtml}</div>
+      <label class="gc-label" style="margin-top:10px;">Segment</label>
+      <select class="gc-select" id="group-goal-suggest-segment-select">${segmentSelectOptionsHtml()}</select>
+      <textarea class="gc-textarea" id="group-goal-suggest-note-input" maxlength="500" style="margin-top:8px;" placeholder="Notatka dla zawodników (opcjonalnie)..."></textarea>
+      <button class="gc-btn" id="group-goal-suggest-submit-btn" onclick="suggestGoalForGroup()">Zasugeruj cel grupie</button>
+      <div id="group-goal-suggest-error" class="gc-error gc-hidden"></div>
+      <div id="group-goal-suggest-ok" class="gc-ok gc-hidden"></div>
+    </div>
+  `;
+}
+
+async function suggestGoalForGroup() {
+  const errEl = document.getElementById('group-goal-suggest-error');
+  const okEl = document.getElementById('group-goal-suggest-ok');
+  errEl.classList.add('gc-hidden');
+  okEl.classList.add('gc-hidden');
+
+  const checked = Array.from(document.querySelectorAll('.group-goal-suggest-checkbox:checked')).map(cb => cb.value);
+  const segmentId = document.getElementById('group-goal-suggest-segment-select').value;
+  const note = document.getElementById('group-goal-suggest-note-input').value.trim();
+
+  if (!checked.length) {
+    errEl.textContent = 'Wybierz co najmniej jednego zawodnika.';
+    errEl.classList.remove('gc-hidden');
+    return;
+  }
+  if (note.length > 500) {
+    errEl.textContent = 'Notatka jest za długa (maks. 500 znaków).';
+    errEl.classList.remove('gc-hidden');
+    return;
+  }
+
+  const btn = document.getElementById('group-goal-suggest-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Wysyłam...';
+
+  try {
+    // Zbiorczy INSERT to jedna transakcja PostgREST — jeśli KTÓRYKOLWIEK
+    // wiersz trafi w unique index częściowy, odrzucona zostaje CAŁA paczka
+    // (patrz komentarz przy summarizeGroupSuggestionResult() w
+    // lib/coach-goal-suggestions.js). Dlatego najpierw sprawdzamy, kto już
+    // ma oczekującą sugestię, i budujemy INSERT tylko dla reszty.
+    const existingRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/goals?user_id=in.(${checked.join(',')})&segment_id=eq.${segmentId}&status=eq.suggested&select=user_id`,
+      { headers: authHeaders() }
+    );
+    const existingRows = await existingRes.json();
+    const alreadyPending = new Set((Array.isArray(existingRows) ? existingRows : []).map(r => r.user_id));
+    const toInsert = checked.filter(id => !alreadyPending.has(id));
+
+    if (!toInsert.length) {
+      errEl.textContent = 'Wszyscy zaznaczeni zawodnicy mają już oczekującą sugestię na tym segmencie.';
+      errEl.classList.remove('gc-hidden');
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    // suggestion_group_id ustawiany TYLKO gdy faktycznie wysyłamy do więcej
+    // niż jednego zawodnika naraz — ten sam warunek co buildGoalSuggestionRows()
+    // w lib/coach-goal-suggestions.js, liczony na toInsert (po odfiltrowaniu
+    // pominiętych), nie na pierwotnym zaznaczeniu.
+    const groupId = toInsert.length > 1 ? crypto.randomUUID() : null;
+    const rows = toInsert.map(playerId => ({
+      user_id: playerId,
+      segment_id: segmentId,
+      origin: 'coach_suggested',
+      status: 'suggested',
+      is_priority: false,
+      suggested_by_coach_user_id: currentUser.id,
+      suggested_at: nowIso,
+      suggestion_note: note || null,
+      suggestion_group_id: groupId,
+      created_at: nowIso,
+    }));
+
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/goals`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify(rows),
+    });
+    if (!res.ok) throw new Error(await res.text());
+
+    const skippedCount = checked.length - toInsert.length;
+    okEl.textContent = skippedCount > 0
+      ? `Wysłano sugestię ${toInsert.length} zawodnikom. Pominięto ${skippedCount} (już mieli oczekującą sugestię na tym segmencie).`
+      : `Wysłano sugestię ${toInsert.length} zawodnikom.`;
+    okEl.classList.remove('gc-hidden');
+    document.getElementById('group-goal-suggest-note-input').value = '';
+    document.querySelectorAll('.group-goal-suggest-checkbox:checked').forEach(cb => { cb.checked = false; });
+  } catch (e) {
+    errEl.textContent = 'Nie udało się wysłać sugestii: ' + e.message;
+    errEl.classList.remove('gc-hidden');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Zasugeruj cel grupie';
   }
 }
 
@@ -1479,6 +1940,39 @@ async function loadPlayerFocusBlocksSection(playerId) {
   }
 }
 
+// Biblioteka wątków trenerskich — Pakiet 16 (04.08.2026). Woła
+// /api/generate-coach-tip z action:'detect_coach_threads' (scalone do
+// istniejącego dyspozytora, limit 12 funkcji Vercel Hobby — patrz
+// submitTipFeedback wyżej dla tego samego wzorca). playerThreads = wątki
+// 1-7 wykryte dla TEGO zawodnika; teamThreads = wątek 8 (drużynowy,
+// odżywianie) — dorzucony tutaj też, żeby trener widział go z poziomu
+// szczegółów zawodnika, nie tylko w notatce żywieniowej w zakładce
+// Asystent. Błąd sieci/detekcji świadomie NIEBLOKUJĄCY dla reszty widoku
+// szczegółów (ten sam wzorzec co pozostałe sekcje detail-*).
+async function loadPlayerThreadSignalsSection(playerId) {
+  const el = document.getElementById('detail-thread-signals');
+  try {
+    const res = await fetch('/api/generate-coach-tip', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'detect_coach_threads', coachUserId: currentUser.id, teamId: currentTeam.id, playerUserId: playerId }),
+    });
+    const data = await res.json();
+    if (!data.ok) { el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`; return; }
+
+    const all = [...(data.playerThreads || []), ...(data.teamThreads || [])];
+    if (!all.length) { el.innerHTML = `<div class="gc-empty">Brak dodatkowych sygnałów w tej chwili.</div>`; return; }
+
+    el.innerHTML = all.map(t => `
+      <div class="gc-tip-card" style="margin-bottom:10px;">
+        <div class="gc-tip-text">${escapeHtml(t.tipText || '')}</div>
+      </div>
+    `).join('');
+  } catch (e) {
+    el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`;
+  }
+}
+
 // ══════════════════════════════════════
 //  NOTATKI TRENERA (coach_notes) — tylko dodawanie i przegląd WŁASNYCH
 //  notatek (coach_user_id = auth.uid(), wypełniane tu jawnie przy zapisie).
@@ -1603,6 +2097,7 @@ function loadAssistantPanel() {
   document.getElementById('chat-error').classList.add('gc-hidden');
   document.getElementById('chat-history').innerHTML = '';
   renderNutritionCard();
+  loadPlannedSessions();
 }
 
 async function generateCoachTip() {
@@ -1777,11 +2272,291 @@ async function copyNutritionCard() {
 }
 
 // ══════════════════════════════════════
+//  ZAPLANUJ SESJĘ DRUŻYNY — Pakiet 17, "Zamknięcie pętli: sesja trenera →
+//  dziennik zawodnika" (04.08.2026, Sesja 2; przywrócone 04.08.2026 po
+//  utracie tej sekcji UI przy równoległym zapisie coach.html przez inną
+//  sesję — patrz LOG_SESJI_ROWNOLEGLYCH.md, wpis "Pakiet 19"). Logika
+//  walidacji CELOWO duplikuje lib/coach-session-bridge.js (plik statyczny
+//  bez bundlera — ten sam wzorzec co reszta tego pliku, patrz nagłówek
+//  tamtego modułu). Backend: cztery funkcje RPC SECURITY DEFINER
+//  (create_coach_planned_session/set_coach_session_question/
+//  cancel_coach_planned_session/get_coach_session_summary), wołane
+//  bezpośrednio z tego pliku — zero nowego pliku w api/ (folder zostaje
+//  na 12/12). Pełny opis: claude/INTEGRACJA_SESJA_DZIENNIK_SQL.md.
+// ══════════════════════════════════════
+const SESSION_UNIT_TYPE_LABELS = {
+  silowa: 'Siłowa',
+  wytrzymalosciowa: 'Wytrzymałościowa',
+  techniczna: 'Techniczna',
+  taktyczna: 'Taktyczna',
+};
+const MAX_COACH_SESSION_QUESTION_LENGTH = 300;
+let plannedSessionsCache = [];
+
+// Format YYYY-MM-DD — sprawdza ZARÓWNO kształt stringa, JAK I że to realna
+// data kalendarzowa (np. odrzuca "2026-02-30"), ten sam wzorzec co
+// isValidSessionDateStr() w lib/coach-session-bridge.js.
+function isValidSessionDateStr(dateStr) {
+  if (typeof dateStr !== 'string') return false;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  if (!m) return false;
+  const [, y, mo, d] = m;
+  const parsed = new Date(`${dateStr}T00:00:00Z`);
+  if (isNaN(parsed.getTime())) return false;
+  return (
+    parsed.getUTCFullYear() === Number(y) &&
+    parsed.getUTCMonth() + 1 === Number(mo) &&
+    parsed.getUTCDate() === Number(d)
+  );
+}
+
+async function createPlannedSession() {
+  const errEl = document.getElementById('session-create-error');
+  const okEl = document.getElementById('session-create-ok');
+  errEl.classList.add('gc-hidden');
+  okEl.classList.add('gc-hidden');
+
+  const unitType = document.getElementById('session-unit-type-select').value;
+  const sessionDate = document.getElementById('session-date-input').value;
+  const title = document.getElementById('session-title-input').value.trim();
+  const coachQuestion = document.getElementById('session-question-input').value.trim();
+
+  if (!isValidSessionDateStr(sessionDate)) {
+    errEl.textContent = 'Podaj prawidłową datę sesji.';
+    errEl.classList.remove('gc-hidden');
+    return;
+  }
+  if (coachQuestion.length > MAX_COACH_SESSION_QUESTION_LENGTH) {
+    errEl.textContent = `Pytanie może mieć maksymalnie ${MAX_COACH_SESSION_QUESTION_LENGTH} znaków.`;
+    errEl.classList.remove('gc-hidden');
+    return;
+  }
+
+  const btn = document.getElementById('session-create-btn');
+  btn.disabled = true;
+  btn.textContent = 'Planuję...';
+
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/create_coach_planned_session`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        p_team_id: currentTeam.id,
+        p_unit_type: unitType,
+        p_session_date: sessionDate,
+        p_title: title || null,
+        p_coach_question: coachQuestion || null,
+      }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+
+    document.getElementById('session-title-input').value = '';
+    document.getElementById('session-question-input').value = '';
+    okEl.textContent = 'Sesja zaplanowana — pojawiła się w kalendarzu każdego aktywnego zawodnika drużyny.';
+    okEl.classList.remove('gc-hidden');
+    await loadPlannedSessions();
+  } catch (e) {
+    errEl.textContent = 'Nie udało się zaplanować sesji: ' + e.message;
+    errEl.classList.remove('gc-hidden');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Zaplanuj sesję';
+  }
+}
+
+async function loadPlannedSessions() {
+  const listEl = document.getElementById('planned-sessions-list');
+  if (!listEl || !currentTeam) return;
+  listEl.innerHTML = '<div class="gc-empty">Wczytuję...</div>';
+  try {
+    // RLS coach_planned_sessions_select_own (coach_user_id = auth.uid())
+    // ogranicza to i tak wyłącznie do własnych sesji — filtr team_id tu to
+    // dodatkowa precyzja, nie bramka bezpieczeństwa.
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/coach_planned_sessions?team_id=eq.${currentTeam.id}&order=session_date.desc&limit=10&select=*`,
+      { headers: authHeaders() }
+    );
+    const rows = await res.json();
+    plannedSessionsCache = Array.isArray(rows) ? rows : [];
+  } catch (e) {
+    listEl.innerHTML = '<div class="gc-empty">Nie udało się wczytać zaplanowanych sesji.</div>';
+    plannedSessionsCache = [];
+    return;
+  }
+
+  if (!plannedSessionsCache.length) {
+    listEl.innerHTML = '<div class="gc-empty">Brak jeszcze zaplanowanych sesji.</div>';
+    return;
+  }
+
+  listEl.innerHTML = plannedSessionsCache.map(renderPlannedSessionCard).join('');
+}
+
+function renderPlannedSessionCard(s) {
+  const dateLabel = new Date(s.session_date + 'T00:00:00').toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', year: 'numeric' });
+  const unitLabel = SESSION_UNIT_TYPE_LABELS[s.unit_type] || s.unit_type;
+  const statusLabel = s.status === 'cancelled' ? 'Odwołana' : 'Zaplanowana';
+  const cancelBtn = s.status === 'scheduled'
+    ? `<button class="gc-feedback-btn" id="session-cancel-btn-${s.id}" onclick="requestCancelSession('${s.id}')">Odwołaj sesję</button>`
+    : '';
+  return `
+    <div class="gc-history-card" id="session-card-${s.id}">
+      <div class="gc-history-top">
+        <span class="gc-history-type">${escapeHtml(s.title || unitLabel)}</span>
+        <span class="gc-history-date">${dateLabel}</span>
+      </div>
+      <div class="gc-history-detail">${escapeHtml(unitLabel)} · ${statusLabel}</div>
+      ${s.coach_question ? `<div class="gc-history-detail">Pytanie: ${escapeHtml(s.coach_question)}</div>` : ''}
+      <div class="gc-btn-row" style="margin-top:10px;">
+        <button class="gc-btn gc-btn-secondary" onclick="toggleSessionQuestionEditor('${s.id}')">Pytanie do zawodników</button>
+        <button class="gc-btn gc-btn-secondary" onclick="checkSessionQuality('${s.id}')">Sprawdź jakość</button>
+        ${cancelBtn}
+      </div>
+      <div id="session-question-editor-${s.id}" class="gc-hidden" style="margin-top:10px;">
+        <textarea class="gc-textarea" id="session-question-edit-input-${s.id}" maxlength="300">${escapeHtml(s.coach_question || '')}</textarea>
+        <button class="gc-btn" onclick="saveSessionQuestion('${s.id}')">Zapisz pytanie</button>
+      </div>
+      <div id="session-summary-${s.id}" style="margin-top:10px;"></div>
+      <div id="session-error-${s.id}" class="gc-error gc-hidden" style="margin-top:8px;"></div>
+      <div id="session-ok-${s.id}" class="gc-ok gc-hidden" style="margin-top:8px;"></div>
+    </div>
+  `;
+}
+
+function toggleSessionQuestionEditor(sessionId) {
+  const el = document.getElementById(`session-question-editor-${sessionId}`);
+  if (el) el.classList.toggle('gc-hidden');
+}
+
+async function saveSessionQuestion(sessionId) {
+  const errEl = document.getElementById(`session-error-${sessionId}`);
+  const okEl = document.getElementById(`session-ok-${sessionId}`);
+  errEl.classList.add('gc-hidden');
+  okEl.classList.add('gc-hidden');
+
+  const text = document.getElementById(`session-question-edit-input-${sessionId}`).value.trim();
+  if (text.length > MAX_COACH_SESSION_QUESTION_LENGTH) {
+    errEl.textContent = `Pytanie może mieć maksymalnie ${MAX_COACH_SESSION_QUESTION_LENGTH} znaków.`;
+    errEl.classList.remove('gc-hidden');
+    return;
+  }
+
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/set_coach_session_question`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_session_id: sessionId, p_coach_question: text || null }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    okEl.textContent = 'Pytanie zapisane.';
+    okEl.classList.remove('gc-hidden');
+    await loadPlannedSessions();
+  } catch (e) {
+    errEl.textContent = 'Nie udało się zapisać pytania: ' + e.message;
+    errEl.classList.remove('gc-hidden');
+  }
+}
+
+async function checkSessionQuality(sessionId) {
+  const summaryEl = document.getElementById(`session-summary-${sessionId}`);
+  const errEl = document.getElementById(`session-error-${sessionId}`);
+  errEl.classList.add('gc-hidden');
+  summaryEl.innerHTML = '<div class="gc-empty">Sprawdzam...</div>';
+
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_coach_session_summary`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_session_id: sessionId }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const summary = await res.json();
+    summaryEl.innerHTML = renderSessionSummaryHtml(summary);
+  } catch (e) {
+    summaryEl.innerHTML = '';
+    errEl.textContent = 'Nie udało się sprawdzić jakości sesji: ' + e.message;
+    errEl.classList.remove('gc-hidden');
+  }
+}
+
+// Gating widoczności (tier) decyduje WYŁĄCZNIE backend
+// (get_coach_session_summary wg teams.visibility_level) — ta funkcja tylko
+// RENDERUJE to, co już przyszło, nigdy nie decyduje co pokazać (ten sam
+// standard co reszta pliku, patrz visibilityTierForSummary() w
+// lib/coach-session-bridge.js).
+function renderSessionSummaryHtml(summary) {
+  if (!summary) return '';
+  if (summary.tier === 'named') {
+    const rows = (summary.players || []).map(p => {
+      const status = p.logged
+        ? `RPE: ${p.rpe != null ? p.rpe : '—'}/10 · zmęczenie: ${p.postFatigue != null ? p.postFatigue : '—'}/10`
+        : 'nie zalogował(a)';
+      return `<div class="gc-history-detail">${escapeHtml(p.fullName || 'Zawodnik')} — ${status}</div>`;
+    }).join('');
+    return `<div class="gc-goal-meta" style="margin-bottom:6px;">Przypisano: ${summary.assignedCount} · zalogowano: ${(summary.players || []).filter(p => p.logged).length}</div>${rows}`;
+  }
+  if (summary.tier === 'aggregate') {
+    if (summary.insufficientForAggregate) {
+      return `<div class="gc-goal-meta">Przypisano: ${summary.assignedCount} · zalogowano: ${summary.loggedCount} — za mało wpisów na zbiorczą średnią.</div>`;
+    }
+    return `<div class="gc-goal-meta">Przypisano: ${summary.assignedCount} · zalogowano: ${summary.loggedCount} · śr. RPE: ${summary.avgRpe != null ? summary.avgRpe : '—'}/10 · śr. zmęczenie: ${summary.avgPostFatigue != null ? summary.avgPostFatigue : '—'}/10</div>`;
+  }
+  return `<div class="gc-goal-meta">Przypisano: ${summary.assignedCount} · zalogowano: ${summary.loggedCount}</div>`;
+}
+
+// Podwójne kliknięcie zamiast natywnego confirm() — ten sam standard co
+// reszta tego pliku (brak natywnych dialogów przeglądarki, patrz standing
+// rule w LOG_SESJI_ROWNOLEGLYCH.md / PLAN_ORKIESTRACJI_WIELOSESYJNEJ.md).
+// Pierwsze kliknięcie zmienia etykietę i czeka 4s na drugie; brak drugiego
+// kliknięcia w tym oknie cofa przycisk do stanu wyjściowego bez żadnego efektu.
+async function requestCancelSession(sessionId) {
+  const btn = document.getElementById(`session-cancel-btn-${sessionId}`);
+  if (!btn) return;
+
+  if (btn.dataset.confirming !== 'true') {
+    btn.dataset.confirming = 'true';
+    btn.textContent = 'Na pewno? Kliknij ponownie';
+    btn.dataset.resetTimer = setTimeout(() => {
+      if (btn.dataset.confirming === 'true') {
+        btn.dataset.confirming = 'false';
+        btn.textContent = 'Odwołaj sesję';
+      }
+    }, 4000);
+    return;
+  }
+
+  clearTimeout(Number(btn.dataset.resetTimer));
+  btn.disabled = true;
+  btn.textContent = 'Odwołuję...';
+
+  const errEl = document.getElementById(`session-error-${sessionId}`);
+  errEl.classList.add('gc-hidden');
+
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/cancel_coach_planned_session`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_session_id: sessionId }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    await loadPlannedSessions();
+  } catch (e) {
+    errEl.textContent = 'Nie udało się odwołać sesji: ' + e.message;
+    errEl.classList.remove('gc-hidden');
+    btn.disabled = false;
+    btn.dataset.confirming = 'false';
+    btn.textContent = 'Odwołaj sesję';
+  }
+}
+
+// ══════════════════════════════════════
 //  USTAWIENIA DRUŻYNY (visibility_level, season_phase)
 // ══════════════════════════════════════
 function loadSettingsPanel() {
   document.getElementById('settings-visibility-select').value = currentTeam.visibility_level || 'basic';
   document.getElementById('settings-season-phase-select').value = currentTeam.season_phase || 'przygotowawcza';
+  loadDigestPreferences();
+  loadScheduledReportPreferences();
 }
 
 async function saveVisibility() {
@@ -1857,6 +2632,162 @@ async function saveSeasonPhase() {
 }
 
 // ══════════════════════════════════════
+//  DIGEST SYGNAŁÓW E-MAIL (04.08.2026) — coach_digest_preferences, jeden
+//  wiersz per (coach_user_id, signal_type). Brak wiersza = WŁĄCZONE (ten
+//  sam wzorzec co notification_preferences zawodnika) — checkboxy startują
+//  zaznaczone, chyba że backend mówi wprost enabled=false. Upsert przez
+//  ?on_conflict, ten sam duch co saveVisibility()/saveSeasonPhase() wyżej,
+//  ale POST zamiast PATCH (7 wierszy naraz, nie 1 kolumna na istniejącym
+//  wierszu teams). Pełny opis: claude/INTEGRACJA_DIGEST_TRENERA_SQL.md.
+// ══════════════════════════════════════
+const DIGEST_SIGNAL_TYPES = [
+  'team_overload', 'player_risk_standout', 'player_went_quiet', 'player_never_started',
+  'player_high_consistency', 'focus_block_completed_strong', 'goal_achieved',
+];
+
+async function loadDigestPreferences() {
+  DIGEST_SIGNAL_TYPES.forEach((t) => {
+    const el = document.getElementById(`digest-${t}`);
+    if (el) el.checked = true; // domyślnie włączone, dopóki backend nie powie inaczej
+  });
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/coach_digest_preferences?coach_user_id=eq.${currentUser.id}&select=signal_type,enabled`,
+      { headers: authHeaders() }
+    );
+    if (!res.ok) return; // cicha degradacja -- zostaje bezpieczny domyślny stan (wszystko włączone)
+    const rows = await res.json();
+    (rows || []).forEach((row) => {
+      const el = document.getElementById(`digest-${row.signal_type}`);
+      if (el) el.checked = row.enabled !== false;
+    });
+  } catch (e) {
+    console.error('loadDigestPreferences error:', e);
+  }
+}
+
+async function saveDigestPreferences() {
+  const errEl = document.getElementById('settings-digest-error');
+  const okEl = document.getElementById('settings-digest-ok');
+  errEl.classList.add('gc-hidden');
+  okEl.classList.add('gc-hidden');
+
+  const btn = document.getElementById('settings-digest-save-btn');
+  btn.disabled = true;
+  btn.textContent = 'Zapisuję...';
+
+  try {
+    const nowIso = new Date().toISOString();
+    const payload = DIGEST_SIGNAL_TYPES.map((t) => {
+      const el = document.getElementById(`digest-${t}`);
+      return {
+        coach_user_id: currentUser.id,
+        signal_type: t,
+        enabled: !!(el && el.checked),
+        updated_at: nowIso,
+      };
+    });
+
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/coach_digest_preferences?on_conflict=coach_user_id,signal_type`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(await res.text());
+
+    okEl.textContent = 'Zapisano ustawienia Digestu.';
+    okEl.classList.remove('gc-hidden');
+  } catch (e) {
+    errEl.textContent = 'Nie udało się zapisać: ' + e.message;
+    errEl.classList.remove('gc-hidden');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Zapisz';
+  }
+}
+
+// ══════════════════════════════════════
+//  RAPORTY W WYBRANYCH MOMENTACH (Pakiet 20, 04.08.2026) —
+//  coach_scheduled_report_preferences, jeden wiersz per (coach_user_id,
+//  report_type). W ODRÓŻNIENIU od DIGEST_SIGNAL_TYPES wyżej: BRAK WIERSZA
+//  = WYŁĄCZONE (opt-in) — checkboxy startują ODZNACZONE, dopóki backend
+//  nie powie inaczej. Upsert przez ?on_conflict, ten sam wzorzec co
+//  saveDigestPreferences() wyżej. Pełny opis:
+//  claude/INTEGRACJA_RAPORTY_KRYTYCZNE_MOMENTY.md /
+//  claude/INTEGRACJA_RAPORTY_KRYTYCZNE_MOMENTY_SQL.md.
+// ══════════════════════════════════════
+const SCHEDULED_REPORT_TYPES = ['pre_match_team_briefing', 'weekly_team_pulse'];
+
+async function loadScheduledReportPreferences() {
+  SCHEDULED_REPORT_TYPES.forEach((t) => {
+    const el = document.getElementById(`sched-report-${t}`);
+    if (el) el.checked = false; // opt-in: domyślnie WYŁĄCZONE, dopóki backend nie powie inaczej
+  });
+  const daySelect = document.getElementById('sched-report-weekly-day-select');
+  if (daySelect) daySelect.value = 'MON';
+
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/coach_scheduled_report_preferences?coach_user_id=eq.${currentUser.id}&select=report_type,enabled,weekly_day_of_week`,
+      { headers: authHeaders() }
+    );
+    if (!res.ok) return; // cicha degradacja -- zostaje bezpieczny domyślny stan (wszystko wyłączone)
+    const rows = await res.json();
+    (rows || []).forEach((row) => {
+      const el = document.getElementById(`sched-report-${row.report_type}`);
+      if (el) el.checked = row.enabled !== false;
+      if (row.report_type === 'weekly_team_pulse' && row.weekly_day_of_week && daySelect) {
+        daySelect.value = row.weekly_day_of_week;
+      }
+    });
+  } catch (e) {
+    console.error('loadScheduledReportPreferences error:', e);
+  }
+}
+
+async function saveScheduledReportPreferences() {
+  const errEl = document.getElementById('settings-sched-report-error');
+  const okEl = document.getElementById('settings-sched-report-ok');
+  errEl.classList.add('gc-hidden');
+  okEl.classList.add('gc-hidden');
+
+  const btn = document.getElementById('settings-sched-report-save-btn');
+  btn.disabled = true;
+  btn.textContent = 'Zapisuję...';
+
+  try {
+    const nowIso = new Date().toISOString();
+    const dayCode = document.getElementById('sched-report-weekly-day-select').value;
+    const payload = SCHEDULED_REPORT_TYPES.map((t) => {
+      const el = document.getElementById(`sched-report-${t}`);
+      return {
+        coach_user_id: currentUser.id,
+        report_type: t,
+        enabled: !!(el && el.checked),
+        weekly_day_of_week: t === 'weekly_team_pulse' ? dayCode : null,
+        updated_at: nowIso,
+      };
+    });
+
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/coach_scheduled_report_preferences?on_conflict=coach_user_id,report_type`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(await res.text());
+
+    okEl.textContent = 'Zapisano ustawienia raportów.';
+    okEl.classList.remove('gc-hidden');
+  } catch (e) {
+    errEl.textContent = 'Nie udało się zapisać: ' + e.message;
+    errEl.classList.remove('gc-hidden');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Zapisz';
+  }
+}
+
+// ══════════════════════════════════════
 //  AGREGAT DRUŻYNOWY (heatmapa) — liczony w JS z najnowszych diagnostics.scores
 //  każdego widocznego zawodnika (rosterCache/diagnosisByUser już wczytane
 //  przez loadRoster()). Pokazywany TYLKO przy ≥8 aktywnych zawodnikach.
@@ -1865,6 +2796,11 @@ function updateAggregateAvailability() {
   const hintEl = document.getElementById('aggregate-hint');
   const bodyEl = document.getElementById('aggregate-body');
   const count = rosterCache.length;
+
+  // Niezależne od progu prywatności poniżej (heatmapa) — wybór zawodników
+  // po imieniu do sugestii celu nie jest zbiorczą statystyką, więc nie
+  // podlega TEAM_AGGREGATE_MIN_SIZE. Patrz nagłówek sekcji "ZASUGERUJ CEL".
+  renderGroupGoalSuggestPanel();
 
   if (count < TEAM_AGGREGATE_MIN_SIZE) {
     hintEl.classList.remove('gc-hidden');
@@ -1930,6 +2866,275 @@ function renderAggregate() {
       per segment — świadome uproszczenie, patrz plik SQL Domeny 18).
     </div>
   `;
+}
+
+// ══════════════════════════════════════
+//  FILAR B — TWÓJ ROZWÓJ (profil i rozwój SAMEGO trenera). Dodane
+//  04.08.2026 — pierwsza sesja kodująca Filar B, zero kodu istniało
+//  wcześniej. Woła /api/generate-coach-tip z nowymi akcjami
+//  (coach_own_priority_guidance / start_feedback_round /
+//  get_feedback_round_results) — ten sam scalony endpoint co reszta
+//  Filaru A, dispatch po `action` w body (patrz lib/coach-development.js,
+//  lib/coach-feedback-round.js).
+//
+//  Duplikat listy 6 segmentów z lib/coach-development.js — świadoma
+//  duplikacja (plik statyczny, bez bundlera, nie może importować modułu
+//  Node) — ten sam status co SEG_NAMES/THREAD_LIBRARY wyżej w tym pliku.
+// ══════════════════════════════════════
+const COACH_DEVELOPMENT_SEGMENTS = [
+  { key: 'planowanie_sesji', label: 'Planowanie sesji i mikrocykli', feelingPrompt: 'Układanie sensownych sesji i mikrocykli zabiera mi za dużo energii i czasu.' },
+  { key: 'obciazenie_druzyny', label: 'Zarządzanie obciążeniem drużyny', feelingPrompt: 'Trudno mi rozłożyć obciążenie całej drużyny tak, żeby nikogo nie przeciążyć ani nie odciążyć za bardzo.' },
+  { key: 'komunikacja', label: 'Komunikacja z zawodnikami i rodzicami', feelingPrompt: 'Komunikacja z zawodnikami i rodzicami kosztuje mnie najwięcej energii ze wszystkiego.' },
+  { key: 'mecz_na_zywo', label: 'Zarządzanie meczem na żywo', feelingPrompt: 'W trakcie samego meczu czuję się najbardziej zagubiony — decyzje, zmiany, presja czasu.' },
+  { key: 'indywidualizacja', label: 'Indywidualizacja pracy z konkretnym zawodnikiem', feelingPrompt: 'Najtrudniej mi dopasować pracę do konkretnego zawodnika, zamiast traktować całą drużynę tak samo.' },
+  { key: 'wlasny_rozwoj', label: 'Poczucie własnego rozwoju jako trenera', feelingPrompt: 'Najbardziej brakuje mi poczucia, że sam się rozwijam i idę do przodu jako trener.' },
+];
+
+let coachPriorityCache = null; // najnowszy wiersz coach_priority_selections (albo null) — najnowszy JEST aktywnym priorytetem z definicji
+
+function openDevelopmentView() {
+  showView('development');
+  loadDevelopmentView();
+}
+
+// Wraca tam, skąd trener wszedł: do drużyny (jeśli ma) albo do ekranu
+// "Połącz z drużyną" (jeśli nie ma) — Filar B jest dostępny z obu miejsc
+// (patrz link w nagłówku i przycisk w view-claim), więc "Wróć" musi
+// rozpoznać właściwy powrót zamiast zakładać jeden na sztywno.
+function closeDevelopmentView() {
+  if (currentTeam) {
+    showView('app');
+    switchCoachPanel('roster');
+  } else {
+    showView('claim');
+  }
+}
+
+async function loadDevelopmentView() {
+  document.getElementById('priority-error').classList.add('gc-hidden');
+  document.getElementById('feedback-round-error').classList.add('gc-hidden');
+  renderPrioritySegments();
+  await loadCurrentPriority();
+
+  const feedbackBlock = document.getElementById('feedback-round-block');
+  if (currentTeam) {
+    feedbackBlock.classList.remove('gc-hidden');
+    loadFeedbackRoundSection();
+  } else {
+    feedbackBlock.classList.add('gc-hidden');
+  }
+}
+
+function renderPrioritySegments() {
+  const listEl = document.getElementById('priority-segment-list');
+  listEl.innerHTML = COACH_DEVELOPMENT_SEGMENTS.map(seg => {
+    const isCurrent = coachPriorityCache && coachPriorityCache.segment_key === seg.key;
+    return `
+      <div class="gc-roster-card${isCurrent ? ' gc-roster-card-chosen' : ''}" onclick="chooseCoachPriority('${seg.key}')">
+        <div class="gc-roster-name">${escapeHtml(seg.label)}${isCurrent ? ' — dzisiejszy priorytet' : ''}</div>
+        <div class="gc-roster-meta">${escapeHtml(seg.feelingPrompt)}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function loadCurrentPriority() {
+  try {
+    // RLS: coach_priority_selections_select_own (auth.uid()=coach_user_id)
+    // — odczyt bezpośredni przez REST, ten sam wzorzec co teams/goals gdzie
+    // indziej w tym pliku. Zapis NATOMIAST idzie wyłącznie przez backend
+    // (action: 'coach_own_priority_guidance'), bo wymaga wywołania AI.
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/coach_priority_selections?coach_user_id=eq.${currentUser.id}&order=selected_at.desc&limit=1&select=*`,
+      { headers: authHeaders() }
+    );
+    const rows = await res.json();
+    coachPriorityCache = Array.isArray(rows) && rows[0] ? rows[0] : null;
+  } catch (e) {
+    coachPriorityCache = null;
+  }
+  renderPrioritySegments();
+  renderPriorityGuidance();
+}
+
+function renderPriorityGuidance() {
+  const blockEl = document.getElementById('priority-guidance-block');
+  const cardEl = document.getElementById('priority-guidance-card');
+  if (!coachPriorityCache) {
+    blockEl.classList.add('gc-hidden');
+    return;
+  }
+  const seg = COACH_DEVELOPMENT_SEGMENTS.find(s => s.key === coachPriorityCache.segment_key);
+  blockEl.classList.remove('gc-hidden');
+  cardEl.innerHTML = `
+    <div class="gc-tip-label">${escapeHtml(seg ? seg.label : coachPriorityCache.segment_key)}</div>
+    <div class="gc-tip-text">${coachPriorityCache.guidance_text ? escapeHtml(coachPriorityCache.guidance_text) : 'Generuję treść...'}</div>
+  `;
+}
+
+async function chooseCoachPriority(segmentKey) {
+  const errEl = document.getElementById('priority-error');
+  errEl.classList.add('gc-hidden');
+
+  const seg = COACH_DEVELOPMENT_SEGMENTS.find(s => s.key === segmentKey);
+  document.getElementById('priority-guidance-block').classList.remove('gc-hidden');
+  document.getElementById('priority-guidance-card').innerHTML = `
+    <div class="gc-tip-label">${escapeHtml(seg ? seg.label : segmentKey)}</div>
+    <div class="gc-tip-text">Generuję treść rozwojową...</div>
+  `;
+
+  try {
+    const res = await fetch('/api/generate-coach-tip', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'coach_own_priority_guidance', coachUserId: currentUser.id, segmentKey }),
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      errEl.textContent = data.reason || data.error || 'Nie udało się ustawić priorytetu.';
+      errEl.classList.remove('gc-hidden');
+      return;
+    }
+    coachPriorityCache = data.selection;
+    renderPrioritySegments();
+    renderPriorityGuidance();
+  } catch (e) {
+    // ANTHROPIC_API_KEY może jeszcze nie być skonfigurowany w Vercel (ten
+    // sam, już znany brak co przy Centrum Decyzji zawodnika i Filarze A).
+    errEl.textContent = 'Nie udało się ustawić priorytetu: ' + e.message;
+    errEl.classList.remove('gc-hidden');
+  }
+}
+
+// ══════════════════════════════════════
+//  RUNDA OPINII (Filar B) — widoczna tylko gdy trener ma drużynę (kod
+//  drużyny to jedyny kanał dystrybucji, patrz NARZEDZIE_TRENERA_DECYZJE_
+//  PROJEKTOWE.md). Odpowiedź zawodnika NIE ma dziś UI (patrz lib/coach-
+//  feedback-round.js, "UWAGA — BRAK UI ZAWODNIKA") — ten panel tylko
+//  inicjuje rundę i pokazuje zagregowany wynik, gated na 5+ odpowiedzi.
+// ══════════════════════════════════════
+async function loadFeedbackRoundSection() {
+  const resultEl = document.getElementById('feedback-round-result');
+  resultEl.innerHTML = '<div class="gc-empty">Wczytuję...</div>';
+  const startBtn = document.getElementById('feedback-round-start-btn');
+  startBtn.disabled = false;
+  startBtn.textContent = 'Zbierz opinie zespołu';
+  startBtn.onclick = () => startFeedbackRoundUI(false);
+
+  try {
+    const res = await fetch('/api/generate-coach-tip', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'get_feedback_round_results', coachUserId: currentUser.id, teamId: currentTeam.id }),
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      resultEl.innerHTML = '';
+      document.getElementById('feedback-round-error').textContent = data.reason || data.error || 'Nie udało się wczytać wyników.';
+      document.getElementById('feedback-round-error').classList.remove('gc-hidden');
+      return;
+    }
+    renderFeedbackRoundResult(data);
+  } catch (e) {
+    resultEl.innerHTML = '<div class="gc-empty">Nie udało się wczytać wyników rundy.</div>';
+  }
+}
+
+function renderFeedbackRoundResult(data) {
+  const resultEl = document.getElementById('feedback-round-result');
+  const startBtn = document.getElementById('feedback-round-start-btn');
+
+  if (!data.hasRound) {
+    resultEl.innerHTML = '';
+    return;
+  }
+
+  if (!data.unlocked) {
+    startBtn.textContent = 'Runda już trwa';
+    startBtn.disabled = true;
+    resultEl.innerHTML = `
+      <div class="gc-empty">
+        Runda w toku — ${data.responseCount} z ${data.threshold} potrzebnych odpowiedzi.
+        Wynik pojawi się dopiero przy co najmniej ${data.threshold} odpowiedziach (ochrona anonimowości
+        przy małych drużynach).
+      </div>
+    `;
+    return;
+  }
+
+  startBtn.disabled = false;
+  startBtn.textContent = 'Rozpocznij nową rundę';
+  startBtn.onclick = () => startFeedbackRoundUI(true);
+
+  const rows = data.perQuestion.map(q => {
+    const trendEntry = data.trend && data.trend.find(t => t.questionKey === q.questionKey);
+    let trendLabel = '';
+    if (trendEntry && trendEntry.delta !== null && trendEntry.delta !== undefined) {
+      const arrow = trendEntry.delta > 0 ? '▲' : (trendEntry.delta < 0 ? '▼' : '→');
+      trendLabel = ` <span style="color:var(--muted);">(${arrow} ${trendEntry.delta > 0 ? '+' : ''}${trendEntry.delta} pkt proc. vs. poprzednia runda)</span>`;
+    }
+    return `
+      <div class="gc-bar-row">
+        <div class="gc-bar-label"><span>${escapeHtml(q.text)}</span><span>${q.positiveRate}%${trendLabel}</span></div>
+        <div class="gc-bar-track"><div class="gc-bar-fill" style="width:${q.positiveRate}%;"></div></div>
+      </div>
+    `;
+  }).join('');
+
+  resultEl.innerHTML = `
+    <p style="font-size:12px; color:var(--muted); margin:14px 0 10px;">
+      Na podstawie ${data.responseCount} odpowiedzi. Trend względem Twojej własnej poprzedniej rundy
+      (nigdy porównanie do innych trenerów). Widoczne wyłącznie dla Ciebie.
+    </p>
+    ${rows}
+  `;
+}
+
+async function startFeedbackRoundUI(forceNew) {
+  const errEl = document.getElementById('feedback-round-error');
+  errEl.classList.add('gc-hidden');
+  const btn = document.getElementById('feedback-round-start-btn');
+  btn.disabled = true;
+  btn.textContent = 'Uruchamiam...';
+
+  try {
+    const res = await fetch('/api/generate-coach-tip', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'start_feedback_round', coachUserId: currentUser.id, teamId: currentTeam.id, forceNew: !!forceNew }),
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      errEl.textContent = data.reason || data.error || 'Nie udało się rozpocząć rundy.';
+      errEl.classList.remove('gc-hidden');
+      btn.disabled = false;
+      btn.textContent = 'Zbierz opinie zespołu';
+      return;
+    }
+    // Link do opinia-trenera.html (nowy, publiczny, bez logowania plik —
+    // patrz nagłówek tamtego pliku) z gotowym kodem drużyny w ?code=, żeby
+    // trener mógł go po prostu skopiować/wkleić zawodnikom (np. na
+    // wspólnym czacie drużyny), zamiast tłumaczyć krok po kroku gdzie
+    // wpisać sam kod. Kod sam w sobie zostaje pokazany osobno jako
+    // zapasowa metoda (ten sam wzorzec co dziś w reszcie coach.html —
+    // kod zawsze widoczny wprost, nie tylko zaszyty w linku).
+    const teamCode = data.teamCode || currentTeam.code || '';
+    const feedbackLink = `${window.location.origin}/opinia-trenera.html?code=${encodeURIComponent(teamCode)}`;
+    document.getElementById('feedback-round-result').innerHTML = `
+      <div class="gc-ok">
+        Runda ${data.reused ? 'już trwała' : 'rozpoczęta'}. Wyślij zawodnikom ten link (albo podaj kod
+        drużyny, jeśli wolisz):
+        <br><strong style="word-break:break-all;">${escapeHtml(feedbackLink)}</strong>
+        <br>Kod drużyny: <strong>${escapeHtml(teamCode)}</strong>.
+      </div>
+    `;
+    await loadFeedbackRoundSection();
+  } catch (e) {
+    errEl.textContent = 'Nie udało się rozpocząć rundy: ' + e.message;
+    errEl.classList.remove('gc-hidden');
+    btn.disabled = false;
+    btn.textContent = 'Zbierz opinie zespołu';
+  }
 }
 
 initApp();
@@ -2007,6 +3212,25 @@ initApp();
       coach_tips/coach_chat_exchanges mają politykę SELECT dla trenera)
       NIE jest tu wczytywana przy wejściu w zakładkę — panel pokazuje
       tylko wynik bieżącej sesji, przegląd historii to możliwe rozszerzenie.
+
+  13. FILAR B — TWÓJ ROZWÓJ (04.08.2026, noc — pierwsza sesja kodująca,
+      zero kodu istniało wcześniej). Zbudowane: wybór/zmiana priorytetu
+      (6 segmentów) + treść AI, Runda Opinii (start + wynik gated 5+
+      odpowiedzi). Świadomie NIE zbudowane w tej sesji:
+      a) UI zawodnika do odpowiadania na Rundę Opinii — wymagałoby
+         dotknięcia asystent_app.html (ZAMROŻONY plik) albo appki mobilnej.
+         Backend (submitFeedbackResponse, action: 'submit_feedback_response')
+         jest gotowy i przetestowany, czeka na świeżą zgodę Kuby.
+      b) Paywall/limit produktowy (trial 14 dni, 39 zł/mies., zwolnienie
+         przy ≥10 płacących podopiecznych prywatnych) — KOLEJKA_DECYZJI_
+         I_PROJEKTOWANIA.md, 4.1e/4.1f. Filar B jest dziś w pełni darmowy/
+         bez blokady dostępu — świadoma decyzja, nie przeoczenie, żeby
+         funkcja była użyteczna i testowalna zanim płatności zostaną spięte.
+      c) Osobny obiekt Stripe Price (STRIPE_PRICE_COACH_FILAR_B) — wymaga
+         zalogowanej przeglądarki Kuby, robione zawsze osobno na żywo.
+      d) Zamykanie Rundy Opinii po czasie (automatyczny termin) — dziś
+         runda zostaje 'active' aż trener rozpocznie nową.
+      Pełna specyfikacja: claude/INTEGRACJA_FILAR_B_PROFIL_TRENERA_SQL.md.
 
   12. Zakładka "Zawodnicy prywatni" (patrz punkt 4) — pozostałe, świadomie
       NIE zamknięte teraz luki:

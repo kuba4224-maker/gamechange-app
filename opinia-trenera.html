@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gamechange — Opinia o trenerze</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
+<!--
+  opinia-trenera.html — NOWY PLIK (04.08.2026, noc, druga runda tej samej
+  sesji). Filar B — "Runda Opinii" (NARZEDZIE_TRENERA_DECYZJE_PROJEKTOWE.md,
+  sekcja "FILAR B — PROFIL I ROZWÓJ TRENERA"). Publiczny, anonimowy formularz
+  dla ZAWODNIKÓW — jedyny sposób, jak dziś odpowiedzieć na Rundę Opinii bez
+  dotykania ZAMROŻONEGO asystent_app.html (ani appki mobilnej).
+
+  Ten sam wzorzec no-login co raport-rodzica.html/potwierdz-platnosc.html:
+  strona NIE loguje nikogo, NIE zakłada konta Gamechange. W odróżnieniu od
+  tamtych dwóch stron ta NIE woła Supabase REST/RPC bezpośrednio z kluczem
+  `anon` — woła istniejący, już przetestowany endpoint
+  `/api/generate-coach-tip` (action: 'submit_feedback_response'), bo cała
+  logika anonimizacji/dedup/walidacji (lib/coach-feedback-round.js) już tam
+  jest i nie ma powodu duplikować jej drugi raz w SQL. Ten endpoint jest
+  świadomie zaprojektowany do wołania wprost z przeglądarki, bez żadnego
+  nagłówka autoryzacji (patrz komentarz "HTTP HANDLER" w
+  api/generate-coach-tip.js) — dokładnie to, czego potrzebuje ta strona.
+
+  Tryb sterowany parametrem URL:
+    ?code=XXX   → kod DRUŻYNY (teams.code), TEN SAM kod, którym zawodnik
+                  dołącza do drużyny w asystent_app.html (K3) — zero nowej
+                  infrastruktury dystrybucyjnej, zgodnie ze zleceniem.
+                  Trener dostaje ten kod do przekazania zawodnikom z
+                  przycisku "Zbierz opinie zespołu" w coach.html.
+
+  ANONIMOWOŚĆ TECHNICZNA (nie tylko przez RLS — patrz też nagłówek
+  lib/coach-feedback-round.js i INTEGRACJA_FILAR_B_PROFIL_TRENERA_SQL.md):
+  ta strona NIGDY nie pyta o imię/e-mail/żadną tożsamość. Jedyny "identyfikator"
+  wysyłany do backendu to `responderToken` — losowy UUID wygenerowany W
+  PRZEGLĄDARCE (crypto.randomUUID()) i zapisany w localStorage WYŁĄCZNIE po
+  to, żeby to samo urządzenie nie wysłało dwóch odpowiedzi do tej samej
+  rundy (dedup). Token nigdy nie jest połączony z żadnym kontem Gamechange —
+  backend go tylko haszuje (sha256, razem z round_id) i NIGDY nie przechowuje
+  go ani hasha w formie możliwej do odczytania przez trenera (patrz
+  coach_feedback_responses w INTEGRACJA_FILAR_B_PROFIL_TRENERA_SQL.md: zero
+  polityk RLS, dostęp wyłącznie przez zagregowaną funkcję, próg 5+ odpowiedzi).
+-->
+<style>
+:root {
+  --bg: #f5f2ec;
+  --ink: #0e0d0b;
+  --ink2: #3a3830;
+  --muted: #9a9488;
+  --rule: #d8d3c8;
+  --accent: #E8432D;
+  --surface: #ffffff;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  min-height: 100vh;
+  font-size: 15px;
+  line-height: 1.6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.gc-card {
+  width: 100%;
+  max-width: 520px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  padding: 36px 32px;
+}
+
+.gc-label {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 13px;
+  letter-spacing: 0.2em;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 18px;
+}
+
+.gc-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 26px;
+  letter-spacing: 0.01em;
+  margin-bottom: 18px;
+}
+
+.gc-intro {
+  font-size: 14px;
+  color: var(--ink2);
+  font-weight: 300;
+  margin-bottom: 24px;
+}
+
+.gc-note {
+  margin-bottom: 24px;
+  padding: 14px 16px;
+  background: var(--bg);
+  border-left: 3px solid var(--accent);
+  font-size: 13px;
+  color: var(--ink2);
+  font-weight: 300;
+  line-height: 1.6;
+}
+
+.gc-question {
+  margin-bottom: 22px;
+}
+.gc-question-text {
+  font-size: 14px;
+  color: var(--ink);
+  font-weight: 500;
+  margin-bottom: 10px;
+}
+.gc-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.gc-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--ink2);
+  transition: border-color 0.15s, background 0.15s;
+}
+.gc-option:hover { border-color: var(--accent); }
+.gc-option.gc-option-selected {
+  border-color: var(--accent);
+  background: #fdf1ee;
+  color: var(--ink);
+}
+.gc-option input { accent-color: var(--accent); }
+
+.gc-btn {
+  width: 100%;
+  margin-top: 8px;
+  padding: 14px 18px;
+  background: var(--ink);
+  color: #fff;
+  border: none;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+}
+.gc-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.gc-btn:not(:disabled):hover { background: var(--accent); }
+
+.gc-error {
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: #fdecea;
+  border-left: 3px solid #c0392b;
+  font-size: 13px;
+  color: #922b21;
+  font-weight: 300;
+}
+
+.gc-footer-text {
+  margin-top: 20px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.gc-state {
+  text-align: center;
+  padding: 24px 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.gc-hidden { display: none; }
+</style>
+</head>
+<body>
+
+<div class="gc-card">
+  <div class="gc-label">Gamechange</div>
+
+  <div id="gc-loading" class="gc-state">Wczytuję…</div>
+
+  <div id="gc-invalid-link" class="gc-state gc-hidden">
+    Ten link jest nieprawidłowy — brakuje w nim kodu drużyny. Poproś trenera o poprawny link albo
+    kod.
+  </div>
+
+  <div id="gc-no-round" class="gc-state gc-hidden">
+    Ta drużyna nie ma dziś aktywnej Rundy Opinii. Jeśli trener właśnie o nią poprosił, upewnij się,
+    że wpisany kod jest poprawny, albo zapytaj go, czy na pewno kliknął „Zbierz opinie zespołu”.
+  </div>
+
+  <div id="gc-already-done" class="gc-state gc-hidden">
+    Już odpowiedziałeś/aś w tej rundzie z tego urządzenia — dziękujemy, druga odpowiedź nie jest
+    potrzebna.
+  </div>
+
+  <div id="gc-thanks" class="gc-state gc-hidden">
+    <div class="gc-title" style="text-align:left;">Dziękujemy</div>
+    <p class="gc-intro" style="text-align:left;">
+      Twoja odpowiedź została zapisana anonimowo. Trener zobaczy wyłącznie zbiorczy wynik całej
+      drużyny — nigdy pojedyncze odpowiedzi — i dopiero gdy odpowie co najmniej kilku zawodników.
+    </p>
+  </div>
+
+  <div id="gc-form" class="gc-hidden">
+    <div class="gc-title">Opinia o trenerze</div>
+    <p class="gc-intro">
+      Kilka krótkich pytań o to, jak na co dzień wygląda praca z trenerem. To nie jest ocena w
+      stylu szkolnej oceny — chodzi o Twoje szczere, anonimowe odczucie.
+    </p>
+    <div class="gc-note">
+      Odpowiadasz w pełni anonimowo. Nie podajesz imienia ani żadnych danych. Trener zobaczy
+      wyłącznie łączny wynik całej drużyny (i dopiero gdy odpowie co najmniej kilku zawodników) —
+      nigdy Twoją pojedynczą odpowiedź.
+    </div>
+
+    <div id="gc-questions"></div>
+
+    <button class="gc-btn" id="gc-submit-btn" disabled>Wyślij odpowiedzi</button>
+    <div id="gc-form-error" class="gc-error gc-hidden"></div>
+
+    <p class="gc-footer-text">Runda dla drużyny o kodzie: <strong id="gc-team-code-label"></strong></p>
+  </div>
+
+  <div id="gc-error" class="gc-state gc-hidden">
+    Coś poszło nie tak. Spróbuj odświeżyć stronę za chwilę.
+  </div>
+</div>
+
+<script>
+// ------------------------------------------------------------
+// Świadomie ŻADNEGO klienta @supabase/supabase-js i ŻADNEGO bezpośredniego
+// zapytania do Supabase z tej strony — cała logika (znalezienie drużyny po
+// kodzie, znalezienie aktywnej rundy, hash, dedup, insert) już istnieje i
+// jest przetestowana w lib/coach-feedback-round.js, wołana tu przez istniejący,
+// publicznie dostępny endpoint Vercel. Patrz komentarz w nagłówku pliku.
+// ------------------------------------------------------------
+
+// Duplikat FEEDBACK_ROUND_QUESTIONS z lib/coach-feedback-round.js — plik
+// statyczny, bez bundlera, nie może zaimportować modułu Node. Ten sam status
+// co inne udokumentowane duplikacje w projekcie (COACH_DEVELOPMENT_SEGMENTS
+// w coach.html, SEG_NAMES w kilku plikach itd.) — zmiana pytania w jednym
+// pliku wymaga ręcznej zmiany też tutaj.
+const FEEDBACK_ROUND_QUESTIONS = [
+  {
+    key: 'po_meczu_wiem_co_poprawic',
+    text: 'Czy po meczu wiesz dokładnie, co masz poprawić na następny raz?',
+    options: [
+      { value: 'tak_konkretnie', label: 'Tak, konkretnie wiem' },
+      { value: 'czesciowo', label: 'Częściowo, ogólny kierunek' },
+      { value: 'rzadko', label: 'Rzadko, zwykle się domyślam' },
+      { value: 'nie_wiem', label: 'Nie wiem / trudno powiedzieć' },
+    ],
+  },
+  {
+    key: 'trener_zauwaza_moj_postep',
+    text: 'Czy czujesz, że trener zauważa Twój indywidualny postęp, nie tylko wynik całej drużyny?',
+    options: [
+      { value: 'tak_czesto', label: 'Tak, często to czuję' },
+      { value: 'czasami', label: 'Czasami' },
+      { value: 'rzadko', label: 'Rzadko' },
+      { value: 'nie_wiem', label: 'Nie wiem / trudno powiedzieć' },
+    ],
+  },
+  {
+    key: 'rozumiem_decyzje_o_mojej_roli',
+    text: 'Czy rozumiesz, dlaczego trener podejmuje decyzje o Twojej roli w meczu (gra/zmiana/pozycja)?',
+    options: [
+      { value: 'tak_rozumiem', label: 'Tak, zwykle rozumiem dlaczego' },
+      { value: 'czesciowo', label: 'Częściowo' },
+      { value: 'rzadko', label: 'Rzadko rozumiem' },
+      { value: 'nie_wiem', label: 'Nie wiem / trudno powiedzieć' },
+    ],
+  },
+  {
+    key: 'czuje_ze_sie_rozwijam',
+    text: 'Czy czujesz, że w tym sezonie rozwijasz się jako piłkarz/piłkarka pod okiem tego trenera?',
+    options: [
+      { value: 'tak_wyraznie', label: 'Tak, wyraźnie się rozwijam' },
+      { value: 'troche', label: 'Trochę' },
+      { value: 'niewiele', label: 'Niewiele' },
+      { value: 'nie_wiem', label: 'Nie wiem / trudno powiedzieć' },
+    ],
+  },
+  {
+    key: 'latwo_podejsc_z_pytaniem',
+    text: 'Czy łatwo Ci podejść do trenera z pytaniem albo wątpliwością, kiedy jej potrzebujesz?',
+    options: [
+      { value: 'tak_latwo', label: 'Tak, łatwo' },
+      { value: 'czasami', label: 'Czasami' },
+      { value: 'rzadko', label: 'Rzadko' },
+      { value: 'nie_wiem', label: 'Nie wiem / trudno powiedzieć' },
+    ],
+  },
+];
+
+function show(id) {
+  document.getElementById(id).classList.remove('gc-hidden');
+}
+function hide(id) {
+  document.getElementById(id).classList.add('gc-hidden');
+}
+function hideAllStates() {
+  ['gc-loading', 'gc-invalid-link', 'gc-no-round', 'gc-already-done', 'gc-thanks', 'gc-form', 'gc-error']
+    .forEach(hide);
+}
+
+function escapeHtml(value) {
+  const div = document.createElement('div');
+  div.textContent = value == null ? '' : String(value);
+  return div.innerHTML;
+}
+
+// Token losowy, wygenerowany W PRZEGLĄDARCE, WYŁĄCZNIE do dedupu "to samo
+// urządzenie" w ramach jednej rundy — patrz "ANONIMOWOŚĆ TECHNICZNA" w
+// nagłówku pliku. Trwały w localStorage (przetrwa odświeżenie strony), ale
+// nigdy nie jest połączony z żadnym kontem Gamechange.
+function getOrCreateResponderToken() {
+  const STORAGE_KEY = 'gc_opinia_trenera_responder_token';
+  let token = null;
+  try {
+    token = localStorage.getItem(STORAGE_KEY);
+  } catch (e) {
+    token = null; // localStorage może być zablokowany (np. tryb prywatny) — działamy dalej bez trwałości
+  }
+  if (!token) {
+    token = (window.crypto && window.crypto.randomUUID)
+      ? window.crypto.randomUUID()
+      : `fallback-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    try { localStorage.setItem(STORAGE_KEY, token); } catch (e) { /* patrz wyżej */ }
+  }
+  return token;
+}
+
+const answers = {};
+
+function renderQuestions() {
+  const container = document.getElementById('gc-questions');
+  container.innerHTML = FEEDBACK_ROUND_QUESTIONS.map((q, qi) => `
+    <div class="gc-question">
+      <div class="gc-question-text">${qi + 1}. ${escapeHtml(q.text)}</div>
+      <div class="gc-options">
+        ${q.options.map((o, oi) => `
+          <label class="gc-option" id="opt-${q.key}-${oi}">
+            <input type="radio" name="q-${q.key}" value="${escapeHtml(o.value)}"
+              onchange="selectAnswer('${q.key}', '${o.value}')">
+            ${escapeHtml(o.label)}
+          </label>
+        `).join('')}
+      </div>
+    </div>
+  `).join('');
+}
+
+function selectAnswer(questionKey, value) {
+  answers[questionKey] = value;
+  const question = FEEDBACK_ROUND_QUESTIONS.find((q) => q.key === questionKey);
+  question.options.forEach((o, oi) => {
+    document.getElementById(`opt-${questionKey}-${oi}`).classList.toggle(
+      'gc-option-selected', o.value === value
+    );
+  });
+  updateSubmitEnabled();
+}
+
+function updateSubmitEnabled() {
+  const allAnswered = FEEDBACK_ROUND_QUESTIONS.every((q) => !!answers[q.key]);
+  document.getElementById('gc-submit-btn').disabled = !allAnswered;
+}
+
+async function submitAnswers(teamCode) {
+  const btn = document.getElementById('gc-submit-btn');
+  const errEl = document.getElementById('gc-form-error');
+  errEl.classList.add('gc-hidden');
+  btn.disabled = true;
+  btn.textContent = 'Wysyłam...';
+
+  try {
+    const res = await fetch('/api/generate-coach-tip', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'submit_feedback_response',
+        teamCode,
+        playerUserId: getOrCreateResponderToken(),
+        answers,
+      }),
+    });
+    const data = await res.json();
+
+    if (!data.ok) {
+      if (data.reason && data.reason.includes('Już odpowiedziałeś')) {
+        hideAllStates();
+        show('gc-already-done');
+        return;
+      }
+      if (data.reason && data.reason.includes('aktywnej Rundy Opinii')) {
+        hideAllStates();
+        show('gc-no-round');
+        return;
+      }
+      errEl.textContent = data.reason || data.error || 'Nie udało się wysłać odpowiedzi.';
+      errEl.classList.remove('gc-hidden');
+      btn.disabled = false;
+      btn.textContent = 'Wyślij odpowiedzi';
+      return;
+    }
+
+    hideAllStates();
+    show('gc-thanks');
+  } catch (e) {
+    errEl.textContent = 'Nie udało się wysłać odpowiedzi — sprawdź połączenie z internetem i spróbuj ponownie.';
+    errEl.classList.remove('gc-hidden');
+    btn.disabled = false;
+    btn.textContent = 'Wyślij odpowiedzi';
+  }
+}
+
+function init() {
+  hideAllStates();
+  show('gc-loading');
+
+  const params = new URLSearchParams(window.location.search);
+  const teamCode = (params.get('code') || '').trim();
+
+  if (!teamCode) {
+    hideAllStates();
+    show('gc-invalid-link');
+    return;
+  }
+
+  hideAllStates();
+  document.getElementById('gc-team-code-label').textContent = teamCode;
+  renderQuestions();
+  document.getElementById('gc-submit-btn').onclick = () => submitAnswers(teamCode);
+  updateSubmitEnabled();
+  show('gc-form');
+}
+
+init();
+</script>
+
+</body>
+</html>
+
+<!--
+  ══════════════════════════════════════════════════════════════
+  CO ŚWIADOMIE NIE JEST TU ZROBIONE
+
+  1. Rozpoznanie "nieprawidłowy kod drużyny" vs "poprawny kod, ale brak
+     aktywnej rundy" jako DWA różne komunikaty — backend
+     (submitFeedbackResponse w lib/coach-feedback-round.js) zwraca różne
+     `reason` dla obu ("Nie znaleziono drużyny o takim kodzie" vs "Ta
+     drużyna nie ma dziś aktywnej Rundy Opinii"), ale ta strona rozpoznaje
+     tu wprost tylko drugi przypadek (najbardziej prawdopodobny w
+     praktyce — zawodnik zwykle ma poprawny kod drużyny, bo już nim
+     dołączył). Pierwszy przypadek i tak trafia do czytelnego komunikatu
+     błędu (gc-form-error), tylko nie do dedykowanego stanu — wystarczające
+     na V1, do rozbudowy jeśli w praktyce okaże się mylące.
+  2. Walidacja formatu kodu drużyny PRZED wysłaniem (np. długość/wzorzec) —
+     świadomie pominięta, backend i tak w pełni waliduje; strona po prostu
+     pokaże czytelny błąd zamiast fałszywej pewności co do formatu, którego
+     nigdzie indziej w projekcie nie ma jawnie zdefiniowanego.
+  3. Wskaźnik postępu ("pytanie 2 z 5") — świadomie pominięty, formularz
+     jest krótki (5 pytań, mieści się na jednym ekranie na telefonie),
+     dodatkowy UI nie wydawał się wart złożoności na V1.
+  ══════════════════════════════════════════════════════════════
+-->

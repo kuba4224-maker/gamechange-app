@@ -68,6 +68,19 @@ const { createClient } = require('@supabase/supabase-js');
 const { sendPush, verifyFirebaseConfig } = require('./send-push');
 const { runFocusBlockAdaptation } = require('../lib/focus-block-adaptation');
 const { stripeRequest } = require('../lib/stripe-client');
+const { runCoachDigestCheck } = require('../lib/coach-digest');
+// NAPRAWA 04.08.2026 (znalezisko z sesji Pakietu 19, patrz
+// claude/DO_ZROBIENIA_PRZEZ_KUBE.md, Pakiet 19) — te dwie funkcje miały gotowy,
+// przetestowany kod (Pakiety 1/2) od 03.08.2026, ale NIGDY nie były zaimportowane
+// ani wołane w tym dyspozytorze — przypomnienia o powrocie i rotacja
+// training_focus najpewniej nigdy faktycznie nie wystrzeliły na produkcji.
+const { runRetentionCheck } = require('../lib/retention-check');
+const { runTrainingFocusRotation } = require('../lib/training-focus-rotation');
+// NOWE 05.08.2026 — Pakiet 20 ("Raporty w wybranych momentach"). ODTWORZONE:
+// ten require + wywołanie w dyspozytorze niżej zniknęły z dysku razem z
+// lib/coach-scheduled-reports.js samym — patrz nagłówek tamtego pliku po
+// pełne wyjaśnienie (ZADANIE 3, weryfikacja Pakietu 20).
+const { runCoachScheduledReportsCheck } = require('../lib/coach-scheduled-reports');
 
 function getAdminClient() {
   const url = process.env.SUPABASE_URL;
@@ -780,7 +793,9 @@ module.exports = async (req, res) => {
   const results = {
     morning_readiness: 0, post_training: 0, pre_match: 0, weekly_summary: 0, contextual_insight: 0,
     focus_block_checkins: 0, focus_block_maintenance: 0, focus_block_adaptation: 0,
-    trial_expiry: 0, parental_consent_expiry: 0,
+    trial_expiry: 0, parental_consent_expiry: 0, coach_digest: 0,
+    retention_check: 0, training_focus_rotation: 0,
+    coach_scheduled_reports: 0,
   };
 
   // DIAGNOSTYKA 29.07.2026 — patrz komentarz przy verifyFirebaseConfig() w
@@ -813,6 +828,10 @@ module.exports = async (req, res) => {
     await runFocusBlockAdaptation(supabase, results);
     await runTrialExpiry(supabase, warsawNow, results);
     await runParentalConsentExpiry(supabase, results);
+    await runCoachDigestCheck(supabase, results);
+    await runRetentionCheck(supabase, results);
+    await runTrainingFocusRotation(supabase, warsawNow, results);
+    await runCoachScheduledReportsCheck(supabase, warsawNow, results);
 
     console.log('cron-send-notifications zakończony:', { ...results, firebaseConfigOk, firebaseConfigError });
     return res.status(200).json({ ok: true, results, firebaseConfigOk, firebaseConfigError });
@@ -843,5 +862,9 @@ module.exports._internal = {
   runFocusBlockMaintenance,
   runTrialExpiry,
   runParentalConsentExpiry,
+  runCoachDigestCheck,
+  runRetentionCheck,
+  runTrainingFocusRotation,
+  runCoachScheduledReportsCheck,
   SEGMENT_DISPLAY_NAME,
 };

@@ -42,6 +42,29 @@ const { createClient } = require('@supabase/supabase-js');
 // body (patrz handler na końcu pliku). W pełni odwracalne — zero
 // migracji/zmiany danych, patrz komentarz na górze lib/coach-tip-feedback.js.
 const { handleSubmitCoachTipFeedback } = require('../lib/coach-tip-feedback.js');
+// FILAR B — PROFIL I ROZWÓJ TRENERA (04.08.2026, noc) — ten sam powód i ta
+// sama technika co linia wyżej (limit 12/12 w api/, dispatch po `action`).
+// Cała logika Filaru B (priorytet+treść AI, Runda Opinii) żyje w NOWYCH
+// plikach lib/ — patrz claude/INTEGRACJA_FILAR_B_PROFIL_TRENERA_SQL.md.
+const { setCoachPriorityAndGenerateGuidance } = require('../lib/coach-development.js');
+const {
+  startFeedbackRound,
+  submitFeedbackResponse,
+  getFeedbackRoundResults,
+} = require('../lib/coach-feedback-round.js');
+// PAKIET 16 (04.08.2026) — DETEKCJA AUTOMATYCZNA wątków 1-8 biblioteki
+// (patrz THREAD_LIBRARY niżej — dotąd WYŁĄCZNIE treść referencyjna dla AI,
+// bez deterministycznej detekcji per zawodnik/drużyna, patrz dawny punkt 1
+// w "CO ŚWIADOMIE NIE JEST TU ZROBIONE" na końcu pliku, teraz zamknięty).
+// Cała logika detekcji (progi, zapytania do tabel) żyje w
+// lib/coach-thread-library.js — ten plik WYŁĄCZNIE mapuje wynik detekcji
+// (id + active) na tekst `situation` z THREAD_LIBRARY poniżej, bo TUTAJ ta
+// tablica już istnieje (unika cyklu require, patrz nagłówek
+// lib/coach-thread-library.js).
+const {
+  detectPlayerThreadSignals,
+  detectTeamThreadSignals,
+} = require('../lib/coach-thread-library.js');
 
 function getAdminClient() {
   const url = process.env.SUPABASE_URL;
@@ -168,6 +191,29 @@ function buildThreadLibraryBlock() {
     `${t.id}. Sygnały: ${t.signals}. Sytuacja którą koryguje: ${t.situation}.`);
   return 'BIBLIOTEKA WĄTKÓW TRENERSKICH (materiał referencyjny — wspomnij o wątku WYŁĄCZNIE jeśli jego sygnały faktycznie pasują do danych podanych niżej w tej wiadomości, nigdy na wyrost): każda pozycja to WZORZEC do rozważenia, nie reguła diagnostyczna — ta sama sytuacja bywa dwoma różnymi, słusznymi wnioskami naraz. Formułuj zawsze jako "warto rozważyć", nigdy "na pewno dlatego".\n'
     + lines.join('\n');
+}
+
+// ------------------------------------------------------------
+// PAKIET 16 — mapuje wynik DETERMINISTYCZNEJ detekcji z
+// lib/coach-thread-library.js (id + active + detail) na tekst gotowy do
+// pokazania trenerowi, wyłącznie dla wątków faktycznie active:true, w
+// tonie "warto rozważyć" (nigdy "na pewno dlatego", zgodnie z zasadą
+// wspólną biblioteki, ten sam wzorzec co treść wstrzykiwana do promptu AI
+// przez buildThreadLibraryBlock wyżej — tu jednak treść jest STATYCZNA,
+// bez wywołania AI, bo sama detekcja jest już w pełni deterministyczna).
+// ------------------------------------------------------------
+function attachThreadLibraryText(detectedThreads) {
+  return (detectedThreads || [])
+    .filter((t) => t.active)
+    .map((t) => {
+      const def = THREAD_LIBRARY.find((lib) => lib.id === t.id);
+      return {
+        id: t.id,
+        signals: def ? def.signals : null,
+        tipText: def ? `Warto rozważyć: ${def.situation}.` : null,
+        detail: t.detail,
+      };
+    });
 }
 
 // ------------------------------------------------------------
@@ -358,7 +404,23 @@ async function generateCoachTip(params, injectedSupabase) {
   const segmentIds = [...UNIT_TYPE_TO_SEGMENTS[unitType], 'odzywianie'];
   const kbBySegment = await fetchKnowledgeBaseForSegments(supabase, segmentIds);
   const knowledgeBlock = buildKnowledgeBlock(segmentIds.filter((s) => s !== 'odzywianie'), kbBySegment);
-  const nutritionBlock = `${nutritionFramingForSeasonPhase(seasonPhase)}${kbBySegment.odzywianie ? `\nBaza wiedzy ODŻYWIENIE:\n${kbBySegment.odzywianie}` : ''}`;
+
+  // PAKIET 16 — sygnał wątku 8 (odżywianie jako częsty wspólny deficyt
+  // drużyny) dorzucony jako dodatkowy kontekst do notatki żywieniowej, gdy
+  // aktywny — świadomie NIEBLOKUJĄCE: błąd detekcji (np. brak diagnoz w
+  // drużynie jeszcze) nie może wywrócić generowania podpowiedzi V1.
+  let teamNutritionSignalNote = '';
+  try {
+    const teamThreads = await detectTeamThreadSignals(supabase, teamId);
+    const thread8 = teamThreads.find((t) => t.id === 8);
+    if (thread8 && thread8.active) {
+      teamNutritionSignalNote = ' SYGNAŁ DODATKOWY (wątek 8 biblioteki): odżywianie jest dziś częstym wspólnym deficytem na mapie cieplnej całej tej drużyny — warto rozważyć wykorzystanie gotowej karty "Protokół meczowy odżywiania i nawodnienia" dla całej grupy naraz, nie tylko indywidualnie.';
+    }
+  } catch (e) {
+    console.error('generateCoachTip: detectTeamThreadSignals nie powiodło się (pomijam sygnał wątku 8):', e);
+  }
+
+  const nutritionBlock = `${nutritionFramingForSeasonPhase(seasonPhase)}${teamNutritionSignalNote}${kbBySegment.odzywianie ? `\nBaza wiedzy ODŻYWIENIE:\n${kbBySegment.odzywianie}` : ''}`;
 
   const systemPrompt = buildCoachSystemPrompt({ knowledgeBlock, nutritionBlock, includeThreadLibrary: true });
   const userPrompt = buildCoachTipUserPrompt({ seasonPhase, unitType });
@@ -403,6 +465,100 @@ module.exports = async (req, res) => {
     return handleSubmitCoachTipFeedback(req, res);
   }
 
+  // ────────────────────────────────────────────────────────────
+  // FILAR B — PROFIL I ROZWÓJ TRENERA (04.08.2026, noc). Cztery nowe akcje
+  // dopisane do TEGO SAMEGO dispatchera (folder api/ jest DOKŁADNIE na
+  // limicie 12/12 plików Vercel Hobby — ta sama technika co
+  // action:'submit_feedback' wyżej). Każda akcja ma inny kształt body,
+  // stąd osobne bloki zamiast jednego wspólnego odczytu. Pełna specyfikacja:
+  // claude/INTEGRACJA_FILAR_B_PROFIL_TRENERA_SQL.md.
+  // ────────────────────────────────────────────────────────────
+  const action = req.body && req.body.action;
+
+  if (action === 'coach_own_priority_guidance') {
+    try {
+      const { coachUserId, segmentKey } = req.body || {};
+      const result = await setCoachPriorityAndGenerateGuidance({ coachUserId, segmentKey });
+      return res.status(result.ok ? 201 : 200).json(result);
+    } catch (e) {
+      console.error('coach_own_priority_guidance error:', e);
+      return res.status(500).json({ ok: false, error: e.message });
+    }
+  }
+
+  if (action === 'start_feedback_round') {
+    try {
+      const { coachUserId, teamId, forceNew } = req.body || {};
+      const result = await startFeedbackRound({ coachUserId, teamId, forceNew });
+      return res.status(result.ok ? 201 : 200).json(result);
+    } catch (e) {
+      console.error('start_feedback_round error:', e);
+      return res.status(500).json({ ok: false, error: e.message });
+    }
+  }
+
+  // Wołane przez zawodnika, nie trenera — świadomie bez żadnego dzisiejszego
+  // wywołującego UI (patrz "UWAGA — BRAK UI ZAWODNIKA" w lib/coach-feedback-
+  // round.js). Endpoint jest gotowy i przetestowany, czeka na przyszłe UI.
+  if (action === 'submit_feedback_response') {
+    try {
+      const { teamCode, playerUserId, answers } = req.body || {};
+      const result = await submitFeedbackResponse({ teamCode, playerUserId, answers });
+      return res.status(result.ok ? 201 : 200).json(result);
+    } catch (e) {
+      console.error('submit_feedback_response error:', e);
+      return res.status(500).json({ ok: false, error: e.message });
+    }
+  }
+
+  if (action === 'get_feedback_round_results') {
+    try {
+      const { coachUserId, teamId } = req.body || {};
+      const result = await getFeedbackRoundResults({ coachUserId, teamId });
+      return res.status(200).json(result);
+    } catch (e) {
+      console.error('get_feedback_round_results error:', e);
+      return res.status(500).json({ ok: false, error: e.message });
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────
+  // PAKIET 16 (04.08.2026) — biblioteka wątków trenerskich, detekcja
+  // automatyczna. `playerUserId` opcjonalny: bez niego zwraca WYŁĄCZNIE
+  // wątek 8 (drużynowy); z nim dorzuca też wątki 1-7 dla tego zawodnika.
+  // Trust boundary: ten sam wzorzec co reszta dispatchera — autoryzacja
+  // przez fetchAndAuthorizeTeam (drużyna musi należeć do tego trenera),
+  // BEZ osobnej weryfikacji, że playerUserId faktycznie jest w tej
+  // drużynie/relacji prywatnej — świadomie ten sam, już zaakceptowany
+  // kompromis co przy resolveGrowthSpurtContext w coach-chat.js (patrz
+  // komentarz tam): to WYŁĄCZNIE czyta dane, nigdy nie zapisuje/nie
+  // ujawnia niczego poza tym co trener i tak widzi w widoku szczegółów
+  // zawodnika, gdy ma do niego dostęp przez UI.
+  // ────────────────────────────────────────────────────────────
+  if (action === 'detect_coach_threads') {
+    try {
+      const { coachUserId, teamId, playerUserId } = req.body || {};
+      const supabase = getAdminClient();
+      const { authorized } = await fetchAndAuthorizeTeam(supabase, teamId, coachUserId);
+      if (!authorized) {
+        return res.status(200).json({ ok: false, blocked: true, reason: 'Brak uprawnień: podana drużyna nie należy do tego trenera.' });
+      }
+      const teamThreadsRaw = await detectTeamThreadSignals(supabase, teamId);
+      let playerThreadsRaw = [];
+      if (playerUserId) {
+        playerThreadsRaw = await detectPlayerThreadSignals(supabase, playerUserId);
+      }
+      return res.status(200).json({
+        ok: true,
+        playerThreads: attachThreadLibraryText(playerThreadsRaw),
+        teamThreads: attachThreadLibraryText(teamThreadsRaw),
+      });
+    } catch (e) {
+      console.error('detect_coach_threads error:', e);
+      return res.status(500).json({ ok: false, error: e.message });
+    }
+  }
+
   const { coachUserId, teamId, unitType } = req.body || {};
 
   try {
@@ -426,6 +582,7 @@ module.exports._internal = {
   SEG_NAMES,
   THREAD_LIBRARY,
   buildThreadLibraryBlock,
+  attachThreadLibraryText,
   resolveGrowthSpurtContext,
   fetchAndAuthorizeTeam,
   fetchKnowledgeBaseForSegments,
@@ -446,20 +603,32 @@ module.exports._internal = {
 // ============================================================
 // CO ŚWIADOMIE NIE JEST TU ZROBIONE
 //
-// 1. Automatyczna detekcja wątków 1-8 biblioteki (patrz uzasadnienie przy
-//    THREAD_LIBRARY wyżej) — wymaga od Kuby konkretnych progów liczbowych
-//    dla każdego wątku, których dokument źródłowy nie podaje (w
-//    odróżnieniu od w pełni policzalnych 5 flag Składu Meczowego).
+// 1. Automatyczna detekcja wątków 1-8 biblioteki — ZAIMPLEMENTOWANA
+//    04.08.2026 (Pakiet 16, patrz lib/coach-thread-library.js +
+//    attachThreadLibraryText wyżej + akcja 'detect_coach_threads' w
+//    handlerze). Progi liczbowe użyte tam to logicznie dobrane wartości
+//    startowe (dokument źródłowy nie podaje liczb, w odróżnieniu od w
+//    pełni policzalnych 5 flag Składu Meczowego) — do korekty bez migracji,
+//    patrz zastrzeżenie w nagłówku tamtego pliku i DO_ZROBIENIA_PRZEZ_
+//    KUBE.md, Pakiet 16.
 // 2. Mapa cieplna / sygnały gotowości drużyny jako wejście silnika
 //    (NARZEDZIE_TRENERA_DECYZJE_PROJEKTOWE.md wymienia to jako możliwe
 //    wejście, "jeśli dane istnieją") — pominięte w V1. AKTUALIZACJA
 //    04.08.2026: blocker opisany wcześniej w tym punkcie już nie
 //    obowiązuje — TEAM_AGGREGATE_MIN_SIZE=8 zostało potwierdzone jako
 //    istniejące i poprawnie wdrożone w panel_trenera.html (przy okazji
-//    K3/4.3). Wejście mapy cieplnej do tego silnika wciąż NIE jest
-//    zbudowane — to nadal osobna decyzja projektowa (kształt promptu,
-//    kiedy sygnał jest istotny), nie mechaniczna poprawka — ale bez
-//    przeszkody technicznej, która wcześniej to blokowała. V1.1 kandydat.
+//    K3/4.3). KOLEJNA AKTUALIZACJA 04.08.2026 (Pakiet 16): częściowe
+//    wejście mapy cieplnej JEST już zbudowane dla jednego konkretnego
+//    przypadku — wątek 8 biblioteki (detectTeamThreadSignals w
+//    lib/coach-thread-library.js, ten sam próg TEAM_AGGREGATE_MIN_SIZE=8,
+//    świadomie zduplikowany) wykrywa odżywianie jako częsty wspólny
+//    deficyt drużyny i dokleja o tym zdanie do nutritionBlock w
+//    generateCoachTip (patrz teamNutritionSignalNote wyżej). To NIE jest
+//    ogólny mechanizm "mapa cieplna → dowolny segment → dowolna
+//    podpowiedź" — to jeden, wąski, ręcznie zaprojektowany przypadek dla
+//    odżywiania. Ogólne wejście mapy cieplnej dla pozostałych segmentów
+//    to wciąż osobna decyzja projektowa, nie zrobiona tutaj. V1.1
+//    kandydat dla reszty segmentów.
 // 3. V2: edytowalne przykładowe jednostki (zamiast samych wskazówek) —
 //    wprost odłożone do V2 w dokumencie źródłowym, nie tu.
 // 4. Nazwa modelu Anthropic (ANTHROPIC_MODEL) — fallback zaktualizowany

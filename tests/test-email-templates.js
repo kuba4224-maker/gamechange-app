@@ -25,6 +25,11 @@
 // kodem pliku), więc to najprostszy plik testowy w tym folderze.
 //
 // Uruchomienie: node tests/test-email-templates.js
+//
+// DOPISANE 05.08.2026 (ODTWORZENIE Pakietu 20, ZADANIE 3) — sekcja 5,
+// preMatchTeamBriefingEmail/weeklyTeamPulseEmail. Patrz nagłówek
+// lib/coach-scheduled-reports.js po pełne wyjaśnienie, dlaczego to
+// odtworzenie, nie oryginalna treść.
 // ============================================================
 
 const assert = require('assert');
@@ -33,6 +38,8 @@ const {
   recommendationNotificationEmail,
   retentionReminderEmail,
   parentalPaymentConsentEmail,
+  preMatchTeamBriefingEmail,
+  weeklyTeamPulseEmail,
 } = require('../lib/email-templates.js');
 
 let passed = 0;
@@ -265,6 +272,101 @@ scenario('XSS w confirmUrl -> uciecznięty w atrybucie href (ochrona przed wyrwa
   const zlosliwyUrl = '"><script>alert(1)</script>';
   const r = parentalPaymentConsentEmail({ playerName: 'X', pricingTier: 'individual', confirmUrl: zlosliwyUrl, declineUrl: 'https://d' });
   assert.ok(!r.html.includes('"><script>alert(1)</script>'), 'URL nie powinien pozwolić wyrwać się z atrybutu href');
+});
+
+console.log('\n5. preMatchTeamBriefingEmail (Pakiet 20)');
+
+scenario('brak zawodników na ryzyku -> temat i treść bez alarmu', () => {
+  const r = preMatchTeamBriefingEmail({ teamName: 'Orły', checkedCount: 5, riskCount: 0, riskPlayerNames: [] });
+  assert.match(r.subject, /skład bez sygnałów ryzyka/);
+  assert.match(r.html, /Żaden z <strong>5<\/strong> sprawdzonych zawodników/);
+  assert.match(r.text, /Żaden z 5 sprawdzonych zawodników/);
+});
+
+scenario('zawodnicy na ryzyku -> temat i treść wymieniają liczbę i imiona', () => {
+  const r = preMatchTeamBriefingEmail({ teamName: 'Orły', checkedCount: 5, riskCount: 2, riskPlayerNames: ['Ala', 'Bartek'] });
+  assert.match(r.subject, /2 zawodników wartych sprawdzenia/);
+  assert.match(r.html, /Ala, Bartek/);
+  assert.match(r.text, /2 z 5 sprawdzonych zawodników pokazuje dziś aktywny sygnał ryzyka: Ala, Bartek/);
+});
+
+scenario('dokładnie 1 zawodnik na ryzyku -> liczba pojedyncza "zawodnik wart"', () => {
+  const r = preMatchTeamBriefingEmail({ teamName: 'Orły', checkedCount: 3, riskCount: 1, riskPlayerNames: ['Cela'] });
+  assert.match(r.subject, /1 zawodnik wart sprawdzenia/);
+});
+
+scenario('brak teamName -> domyślnie "Twoja drużyna"', () => {
+  const r = preMatchTeamBriefingEmail({ checkedCount: 1, riskCount: 0, riskPlayerNames: [] });
+  assert.match(r.html, /Twoja drużyna/);
+});
+
+scenario('link prowadzi do coach.html (Skład Meczowy)', () => {
+  const r = preMatchTeamBriefingEmail({ teamName: 'Orły', checkedCount: 1, riskCount: 0, riskPlayerNames: [] });
+  assert.match(r.html, /href="https:\/\/gamechange-app\.vercel\.app\/coach\.html"/);
+});
+
+scenario('XSS w riskPlayerNames -> uciecznięty w html', () => {
+  const r = preMatchTeamBriefingEmail({ teamName: 'Orły', checkedCount: 1, riskCount: 1, riskPlayerNames: [XSS_PAYLOAD] });
+  assert.ok(!r.html.includes(XSS_PAYLOAD));
+  assert.ok(r.html.includes(XSS_ESCAPED));
+});
+
+scenario('XSS w teamName -> uciecznięty w html', () => {
+  const r = preMatchTeamBriefingEmail({ teamName: XSS_PAYLOAD, checkedCount: 1, riskCount: 0, riskPlayerNames: [] });
+  assert.ok(!r.html.includes(XSS_PAYLOAD));
+  assert.ok(r.html.includes(XSS_ESCAPED));
+});
+
+scenario('stopka odsyła do sekcji "Raporty w wybranych momentach" w Ustawieniach', () => {
+  const r = preMatchTeamBriefingEmail({ teamName: 'Orły', checkedCount: 1, riskCount: 0, riskPlayerNames: [] });
+  assert.match(r.html, /Raporty w wybranych momentach/);
+});
+
+console.log('\n6. weeklyTeamPulseEmail (Pakiet 20)');
+
+scenario('procent aktywności policzony poprawnie w html i text', () => {
+  const r = weeklyTeamPulseEmail({ teamName: 'Orły', rosterCount: 10, activePlayersCount: 4, activeFocusBlocksCount: 2 });
+  assert.match(r.html, /<strong>4 z 10<\/strong> zawodników/);
+  assert.match(r.html, /\(40%\)/);
+  assert.match(r.text, /4 z 10 zawodników \(40%\)/);
+});
+
+scenario('dzielenie przez zero (pusty roster) -> 0%, nie NaN, nie wywala', () => {
+  const r = weeklyTeamPulseEmail({ teamName: 'Orły', rosterCount: 0, activePlayersCount: 0, activeFocusBlocksCount: 0 });
+  assert.ok(!r.html.includes('NaN'));
+  assert.match(r.html, /0%/);
+});
+
+scenario('1 aktywny Blok Skupienia -> liczba pojedyncza', () => {
+  const r = weeklyTeamPulseEmail({ teamName: 'Orły', rosterCount: 5, activePlayersCount: 5, activeFocusBlocksCount: 1 });
+  assert.match(r.html, /1<\/strong> aktywny Blok Skupienia/);
+  assert.match(r.text, /1 aktywny Blok Skupienia/);
+});
+
+scenario('0 aktywnych Bloków Skupienia -> liczba mnoga "aktywnych"', () => {
+  const r = weeklyTeamPulseEmail({ teamName: 'Orły', rosterCount: 5, activePlayersCount: 5, activeFocusBlocksCount: 0 });
+  assert.match(r.html, /aktywnych Bloków Skupienia/);
+});
+
+scenario('brak teamName -> domyślnie "Twoja drużyna"', () => {
+  const r = weeklyTeamPulseEmail({ rosterCount: 1, activePlayersCount: 1, activeFocusBlocksCount: 0 });
+  assert.match(r.html, /Twoja drużyna/);
+});
+
+scenario('temat zawsze ten sam wzorzec, niezależny od liczb', () => {
+  const r = weeklyTeamPulseEmail({ teamName: 'Orły', rosterCount: 5, activePlayersCount: 0, activeFocusBlocksCount: 0 });
+  assert.strictEqual(r.subject, 'Cotygodniowy puls drużyny — Orły');
+});
+
+scenario('XSS w teamName -> uciecznięty w html', () => {
+  const r = weeklyTeamPulseEmail({ teamName: XSS_PAYLOAD, rosterCount: 1, activePlayersCount: 1, activeFocusBlocksCount: 0 });
+  assert.ok(!r.html.includes(XSS_PAYLOAD));
+  assert.ok(r.html.includes(XSS_ESCAPED));
+});
+
+scenario('stopka odsyła do sekcji "Raporty w wybranych momentach" w Ustawieniach', () => {
+  const r = weeklyTeamPulseEmail({ teamName: 'Orły', rosterCount: 1, activePlayersCount: 1, activeFocusBlocksCount: 0 });
+  assert.match(r.html, /Raporty w wybranych momentach/);
 });
 
 console.log(failed === 0 ? `\nWSZYSTKIE TESTY PRZESZŁY (${passed}).` : `\n${failed} TEST(ÓW) NIE PRZESZŁO (${passed} ok).`);

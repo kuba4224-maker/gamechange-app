@@ -29,7 +29,21 @@ const {
   buildThreadLibraryBlock,
   resolveGrowthSpurtContext,
   callAnthropic,
+  THREAD_LIBRARY,
 } = require('./generate-coach-tip')._internal;
+
+// PAKIET 16 (04.08.2026) — parytet kanałów: wątki 1-7 biblioteki (detekcja
+// automatyczna, patrz lib/coach-thread-library.js) mają teraz działać w OBU
+// kanałach Filaru A, nie tylko w Drodze 1 (proaktywne podpowiedzi,
+// generate-coach-tip.js). Wątek 8 (drużynowy) świadomie POMINIĘTY tutaj —
+// Droga 2 to pytanie o KONKRETNEGO zawodnika (aboutPlayerUserId), wątek 8
+// jest z natury drużynowy i nie pasuje do tego kontekstu; jest już pokryty
+// w Drodze 1 (nutritionBlock w generate-coach-tip.js) i w statycznej karcie
+// "Protokół meczowy" w coach.html — dublowanie go tutaj nie dodałoby
+// wartości. Wątek 9 (skok wzrostowy) NIE jest zwracany przez
+// detectPlayerThreadSignals (żyje osobno, patrz resolveGrowthSpurtContext
+// wyżej) — zero ryzyka duplikatu tej samej wzmianki w promptcie.
+const { detectPlayerThreadSignals } = require('../lib/coach-thread-library.js');
 
 const COACH_CHAT_SOFT_DAILY_CAP = 50; // Siatka bezpieczeństwa inżynierska —
 // NIE produktowy limit "hojnego darmowego limitu pytań tygodniowo"
@@ -65,7 +79,7 @@ FORMAT ODPOWIEDZI: zwróć WYŁĄCZNIE poprawny JSON (bez markdown, bez bloków 
 {"answer_text": "odpowiedź na pytanie trenera, LUB jeśli is_medical_redirect=true — pusty string", "is_medical_redirect": true lub false, "redirect_note": "krótka notatka kierująca do Marketplace, tylko gdy is_medical_redirect=true, inaczej null"}`;
 }
 
-function buildChatUserPrompt({ questionText, seasonPhase, growthSpurtContext }) {
+function buildChatUserPrompt({ questionText, seasonPhase, growthSpurtContext, playerThreadSituations }) {
   const lines = [];
   lines.push(`Pytanie trenera: ${questionText}`);
   if (seasonPhase) {
@@ -73,6 +87,18 @@ function buildChatUserPrompt({ questionText, seasonPhase, growthSpurtContext }) 
   }
   if (growthSpurtContext && growthSpurtContext.inGrowthSpurtAgeRange) {
     lines.push(`Kontekst o zawodniku, którego dotyczy pytanie: jest dziś w typowym wieku szczytowego tempa wzrostu (11-16 lat)${growthSpurtContext.heightGrowthRateElevated ? ', a jego tempo wzrostu jest podwyższone (>7,2 cm/rok wg ostatnich pomiarów)' : ''} — jeśli to pasuje do pytania, możesz wspomnieć że tymczasowy spadek koordynacji w tym okresie nie oznacza spadku umiejętności, i że warto uważać z obciążeniem plyometrycznym (reguła 48h między sesjami). Nie wspominaj o tym jeśli pytanie tego nie dotyczy.`);
+  }
+  // PAKIET 16 — dodatkowe sygnały biblioteki wątków (1-7) wykryte dla
+  // zawodnika, którego dotyczy pytanie (jeśli aboutPlayerUserId podane).
+  // Świadomie osobne zdanie na wątek, ta sama tonacja "warto rozważyć" co w
+  // THREAD_LIBRARY — model dostaje je jako KONTEKST, nie jako gotową
+  // odpowiedź, i ma wspomnieć o nich TYLKO jeśli pasują do pytania trenera
+  // (ta sama instrukcja co przy kontekście skoku wzrostowego wyżej).
+  if (playerThreadSituations && playerThreadSituations.length) {
+    lines.push(`Dodatkowe sygnały wykryte dla zawodnika, którego dotyczy pytanie (wspomnij TYLKO jeśli pasują do pytania trenera, zawsze w tonacji "warto rozważyć", nigdy "na pewno dlatego"):`);
+    playerThreadSituations.forEach((situation) => {
+      lines.push(`- Warto rozważyć: ${situation}.`);
+    });
   }
   return lines.join('\n');
 }
@@ -101,8 +127,28 @@ async function runCoachChat(params, injectedSupabase) {
   // ujawnia niczego poza wiekowym zakresem/tempem wzrostu, i tak samo
   // dostępne trenerowi wprost we wpisach Profilu gdyby miał tam dostęp).
   let growthSpurtContext = null;
+  // PAKIET 16 — wątki 1-7 biblioteki dla tego samego zawodnika, ten sam
+  // brak weryfikacji przynależności do drużyny co przy growthSpurtContext
+  // wyżej (patrz komentarz), i ten sam powód: WYŁĄCZNIE odczyt, nic nie
+  // ujawnia poza tym co trener i tak widzi mając dostęp do zawodnika w UI.
+  // Owinięte w try/catch — nieblokujące: błąd detekcji (np. brak jeszcze
+  // diagnoz/dziennika dla tego zawodnika) nie może wywrócić odpowiedzi na
+  // pytanie trenera.
+  let playerThreadSituations = [];
   if (aboutPlayerUserId) {
     growthSpurtContext = await resolveGrowthSpurtContext(supabase, aboutPlayerUserId);
+    try {
+      const threads = await detectPlayerThreadSignals(supabase, aboutPlayerUserId);
+      playerThreadSituations = threads
+        .filter((t) => t.active)
+        .map((t) => {
+          const def = THREAD_LIBRARY.find((lib) => lib.id === t.id);
+          return def ? def.situation : null;
+        })
+        .filter(Boolean);
+    } catch (e) {
+      console.error('runCoachChat: detectPlayerThreadSignals nie powiodło się (pomijam dodatkowe sygnały):', e);
+    }
   }
 
   const segmentIds = ['odzywianie']; // baza ogólna zawsze; typ jednostki nieznany w Drodze 2 (pytanie swobodne)
@@ -110,7 +156,7 @@ async function runCoachChat(params, injectedSupabase) {
   const knowledgeBlock = `${buildKnowledgeBlock(segmentIds, kbBySegment)}${buildThreadLibraryBlock()}\n\n`;
 
   const systemPrompt = buildChatSystemPrompt({ knowledgeBlock });
-  const userPrompt = buildChatUserPrompt({ questionText, seasonPhase: team.season_phase, growthSpurtContext });
+  const userPrompt = buildChatUserPrompt({ questionText, seasonPhase: team.season_phase, growthSpurtContext, playerThreadSituations });
   const aiResult = await callAnthropic(systemPrompt, userPrompt);
 
   if (!aiResult || typeof aiResult.is_medical_redirect !== 'boolean') {
