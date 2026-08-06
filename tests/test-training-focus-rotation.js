@@ -31,8 +31,8 @@ const {
   fetchActivePriorityGoalsByUser,
   runTrainingFocusRotation,
   ROTATION_CADENCE_DAYS,
-  MATCH_WINDOW_MIN_DAYS,
-  MATCH_WINDOW_MAX_DAYS,
+  POST_MATCH_FIXED_OFFSET_DAYS,
+  PRE_MATCH_FIXED_OFFSET_DAYS,
 } = require('../lib/training-focus-rotation');
 
 let passed = 0;
@@ -53,77 +53,102 @@ const NOW_DATE_STR = '2026-08-10';
 
 console.log('1. shouldRotateTrainingFocus — czysta funkcja decyzyjna');
 
-check('brak lastGeneratedAt -> rotacja natychmiastowa (nowy cel priorytetowy)', () => {
-  const r = shouldRotateTrainingFocus({ lastGeneratedAt: null, now: NOW, nowDateStr: NOW_DATE_STR, upcomingMatchDate: null });
+check('brak lastGeneratedAt -> rotacja natychmiastowa (nowy cel priorytetowy), priorytet nad resztą', () => {
+  const r = shouldRotateTrainingFocus({
+    lastGeneratedAt: null,
+    now: NOW,
+    nowDateStr: NOW_DATE_STR,
+    upcomingMatchDate: null,
+    lastMatchDate: null,
+  });
   assert.strictEqual(r.rotate, true);
   assert.strictEqual(r.reason, 'no_prior_training_focus_for_goal');
 });
 
 check(`dokładnie ${ROTATION_CADENCE_DAYS} dni od ostatniego -> rotacja (cadence)`, () => {
   const lastGeneratedAt = new Date(NOW.getTime() - ROTATION_CADENCE_DAYS * 24 * 60 * 60 * 1000).toISOString();
-  const r = shouldRotateTrainingFocus({ lastGeneratedAt, now: NOW, nowDateStr: NOW_DATE_STR, upcomingMatchDate: null });
+  const r = shouldRotateTrainingFocus({ lastGeneratedAt, now: NOW, nowDateStr: NOW_DATE_STR, upcomingMatchDate: null, lastMatchDate: null });
   assert.strictEqual(r.rotate, true);
   assert.strictEqual(r.reason, 'cadence_due');
 });
 
-check('1 dzień od ostatniego, brak meczu -> brak rotacji', () => {
+check('brak lastMatchDate i brak upcomingMatchDate jednocześnie, cadence nie due -> brak rotacji (tylko cadence decyduje)', () => {
   const lastGeneratedAt = new Date(NOW.getTime() - 1 * 24 * 60 * 60 * 1000).toISOString();
-  const r = shouldRotateTrainingFocus({ lastGeneratedAt, now: NOW, nowDateStr: NOW_DATE_STR, upcomingMatchDate: null });
+  const r = shouldRotateTrainingFocus({ lastGeneratedAt, now: NOW, nowDateStr: NOW_DATE_STR, upcomingMatchDate: null, lastMatchDate: null });
   assert.strictEqual(r.rotate, false);
   assert.strictEqual(r.reason, 'not_due');
 });
 
-check('3 dni od ostatniego, mecz za 2 dni (dolna granica okna) -> rotacja (sygnał meczowy)', () => {
+console.log('1a. Stały moment POST-MATCH (dzień po meczu)');
+
+check(`daysSinceMatch === ${POST_MATCH_FIXED_OFFSET_DAYS} (dzień po meczu) -> rotacja (post_match_fixed_moment)`, () => {
   const lastGeneratedAt = new Date(NOW.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString();
-  const matchDate = '2026-08-12'; // +2 dni
-  const r = shouldRotateTrainingFocus({ lastGeneratedAt, now: NOW, nowDateStr: NOW_DATE_STR, upcomingMatchDate: matchDate });
+  const lastMatchDate = '2026-08-09'; // wczoraj -> daysSinceMatch = 1
+  const r = shouldRotateTrainingFocus({ lastGeneratedAt, now: NOW, nowDateStr: NOW_DATE_STR, upcomingMatchDate: null, lastMatchDate });
   assert.strictEqual(r.rotate, true);
-  assert.strictEqual(r.reason, 'match_window_readiness_signal');
+  assert.strictEqual(r.reason, 'post_match_fixed_moment');
 });
 
-check('3 dni od ostatniego, mecz za 6 dni (górna granica okna) -> rotacja', () => {
+check('daysSinceMatch === 0 (dziś jest dzień meczu) -> brak rotacji (nie ten moment)', () => {
   const lastGeneratedAt = new Date(NOW.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString();
-  const matchDate = '2026-08-16'; // +6 dni
-  const r = shouldRotateTrainingFocus({ lastGeneratedAt, now: NOW, nowDateStr: NOW_DATE_STR, upcomingMatchDate: matchDate });
+  const lastMatchDate = NOW_DATE_STR; // mecz dziś -> daysSinceMatch = 0
+  const r = shouldRotateTrainingFocus({ lastGeneratedAt, now: NOW, nowDateStr: NOW_DATE_STR, upcomingMatchDate: null, lastMatchDate });
+  assert.strictEqual(r.rotate, false);
+  assert.strictEqual(r.reason, 'not_due');
+});
+
+check('daysSinceMatch === 2 -> brak rotacji (już minął stały moment)', () => {
+  const lastGeneratedAt = new Date(NOW.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString();
+  const lastMatchDate = '2026-08-08'; // 2 dni temu
+  const r = shouldRotateTrainingFocus({ lastGeneratedAt, now: NOW, nowDateStr: NOW_DATE_STR, upcomingMatchDate: null, lastMatchDate });
+  assert.strictEqual(r.rotate, false);
+  assert.strictEqual(r.reason, 'not_due');
+});
+
+console.log('1b. Stały moment PRE-MATCH (2 dni przed meczem)');
+
+check(`daysToMatch === ${PRE_MATCH_FIXED_OFFSET_DAYS} -> rotacja (pre_match_fixed_moment)`, () => {
+  const lastGeneratedAt = new Date(NOW.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString();
+  const upcomingMatchDate = '2026-08-12'; // +2 dni
+  const r = shouldRotateTrainingFocus({ lastGeneratedAt, now: NOW, nowDateStr: NOW_DATE_STR, upcomingMatchDate, lastMatchDate: null });
   assert.strictEqual(r.rotate, true);
+  assert.strictEqual(r.reason, 'pre_match_fixed_moment');
 });
 
-check('3 dni od ostatniego, mecz za 1 dzień (POZA oknem, za blisko) -> brak rotacji', () => {
+check('daysToMatch === 1 -> brak rotacji (za blisko, nie ten moment)', () => {
   const lastGeneratedAt = new Date(NOW.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString();
-  const matchDate = '2026-08-11'; // +1 dzień
-  const r = shouldRotateTrainingFocus({ lastGeneratedAt, now: NOW, nowDateStr: NOW_DATE_STR, upcomingMatchDate: matchDate });
+  const upcomingMatchDate = '2026-08-11'; // +1 dzień
+  const r = shouldRotateTrainingFocus({ lastGeneratedAt, now: NOW, nowDateStr: NOW_DATE_STR, upcomingMatchDate, lastMatchDate: null });
+  assert.strictEqual(r.rotate, false);
+  assert.strictEqual(r.reason, 'not_due');
+});
+
+check('daysToMatch === 3 -> brak rotacji (za daleko, nie ten moment)', () => {
+  const lastGeneratedAt = new Date(NOW.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString();
+  const upcomingMatchDate = '2026-08-13'; // +3 dni
+  const r = shouldRotateTrainingFocus({ lastGeneratedAt, now: NOW, nowDateStr: NOW_DATE_STR, upcomingMatchDate, lastMatchDate: null });
+  assert.strictEqual(r.rotate, false);
+  assert.strictEqual(r.reason, 'not_due');
+});
+
+check('mecz W PRZESZŁOŚCI jako upcomingMatchDate (ujemne daysToMatch, dane niespójne) -> brak rotacji przez sygnał pre-match', () => {
+  const lastGeneratedAt = new Date(NOW.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString();
+  const r = shouldRotateTrainingFocus({ lastGeneratedAt, now: NOW, nowDateStr: NOW_DATE_STR, upcomingMatchDate: '2026-08-05', lastMatchDate: null });
   assert.strictEqual(r.rotate, false);
 });
 
-check('3 dni od ostatniego, mecz za 7 dni (POZA oknem, za daleko) -> brak rotacji', () => {
-  const lastGeneratedAt = new Date(NOW.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString();
-  const matchDate = '2026-08-17'; // +7 dni
-  const r = shouldRotateTrainingFocus({ lastGeneratedAt, now: NOW, nowDateStr: NOW_DATE_STR, upcomingMatchDate: matchDate });
-  assert.strictEqual(r.rotate, false);
-});
+console.log('1c. Cadence vs stałe momenty meczowe');
 
-check('mecz DZIŚ (0 dni) -> brak rotacji (poniżej dolnej granicy)', () => {
-  const lastGeneratedAt = new Date(NOW.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString();
-  const r = shouldRotateTrainingFocus({ lastGeneratedAt, now: NOW, nowDateStr: NOW_DATE_STR, upcomingMatchDate: NOW_DATE_STR });
-  assert.strictEqual(r.rotate, false);
-});
-
-check('mecz W PRZESZŁOŚCI (ujemne dni) -> brak rotacji przez sygnał meczowy', () => {
-  const lastGeneratedAt = new Date(NOW.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString();
-  const r = shouldRotateTrainingFocus({ lastGeneratedAt, now: NOW, nowDateStr: NOW_DATE_STR, upcomingMatchDate: '2026-08-05' });
-  assert.strictEqual(r.rotate, false);
-});
-
-check('cadence PRZEBIJA okno meczowe, jeśli oba by pasowały (cadence sprawdzane pierwsze)', () => {
+check('cadence PRZEBIJA stały moment meczowy, jeśli oba by pasowały (cadence sprawdzane pierwsze)', () => {
   const lastGeneratedAt = new Date(NOW.getTime() - ROTATION_CADENCE_DAYS * 24 * 60 * 60 * 1000).toISOString();
-  const r = shouldRotateTrainingFocus({ lastGeneratedAt, now: NOW, nowDateStr: NOW_DATE_STR, upcomingMatchDate: '2026-08-13' });
+  const r = shouldRotateTrainingFocus({ lastGeneratedAt, now: NOW, nowDateStr: NOW_DATE_STR, upcomingMatchDate: '2026-08-12', lastMatchDate: '2026-08-09' });
   assert.strictEqual(r.rotate, true);
   assert.strictEqual(r.reason, 'cadence_due');
 });
 
 check('niestandardowe cadenceDays respektowane (parametr nadpisujący domyślny)', () => {
   const lastGeneratedAt = new Date(NOW.getTime() - 4 * 24 * 60 * 60 * 1000).toISOString();
-  const r = shouldRotateTrainingFocus({ lastGeneratedAt, now: NOW, nowDateStr: NOW_DATE_STR, upcomingMatchDate: null, cadenceDays: 4 });
+  const r = shouldRotateTrainingFocus({ lastGeneratedAt, now: NOW, nowDateStr: NOW_DATE_STR, upcomingMatchDate: null, lastMatchDate: null, cadenceDays: 4 });
   assert.strictEqual(r.rotate, true);
 });
 
@@ -144,6 +169,7 @@ function makeFakeSupabase({ goals = [], recommendations = [], events = [] } = {}
         select() { return builder; },
         eq(col, val) { filters.push((row) => row[col] === val); return builder; },
         gte(col, val) { filters.push((row) => row[col] >= val); return builder; },
+        lt(col, val) { filters.push((row) => row[col] < val); return builder; },
         order(col, opts) { orderCol = col; orderAsc = !(opts && opts.ascending === false); return builder; },
         limit(n) { limitN = n; return builder; },
         maybeSingle() {
@@ -204,7 +230,7 @@ function makeFakeSupabase({ goals = [], recommendations = [], events = [] } = {}
   await (async () => {
     generateRecommendationCalls.length = 0;
     const nowDateStr = new Date().toISOString().slice(0, 10);
-    const matchDate = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const matchDate = new Date(Date.now() + PRE_MATCH_FIXED_OFFSET_DAYS * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const supabase = makeFakeSupabase({
       goals: [{ id: 'goal-3', user_id: 'user-3', segment_id: 'percepcja', status: 'active', is_priority: true, created_at: '2026-07-01T00:00:00Z' }],
       recommendations: [{ goal_id: 'goal-3', recommendation_type: 'training_focus', created_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString() }],
@@ -213,7 +239,24 @@ function makeFakeSupabase({ goals = [], recommendations = [], events = [] } = {}
     const warsawNow = { hour: 9, dateStr: nowDateStr };
     const results = {};
     await runTrainingFocusRotation(supabase, warsawNow, results);
-    check('training_focus wygenerowany wczoraj, ALE mecz za 3 dni -> generuje wcześniej (sygnał meczowy)', () => {
+    check(`training_focus wygenerowany wczoraj, mecz za dokładnie ${PRE_MATCH_FIXED_OFFSET_DAYS} dni -> generuje (pre-match fixed moment)`, () => {
+      assert.strictEqual(generateRecommendationCalls.length, 1);
+    });
+  })();
+
+  await (async () => {
+    generateRecommendationCalls.length = 0;
+    const nowDateStr = new Date().toISOString().slice(0, 10);
+    const lastMatchDate = new Date(Date.now() - POST_MATCH_FIXED_OFFSET_DAYS * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const supabase = makeFakeSupabase({
+      goals: [{ id: 'goal-4', user_id: 'user-4', segment_id: 'technika', status: 'active', is_priority: true, created_at: '2026-07-01T00:00:00Z' }],
+      recommendations: [{ goal_id: 'goal-4', recommendation_type: 'training_focus', created_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString() }],
+      events: [{ user_id: 'user-4', event_type: 'match', status: 'scheduled', scheduled_date: lastMatchDate }],
+    });
+    const warsawNow = { hour: 9, dateStr: nowDateStr };
+    const results = {};
+    await runTrainingFocusRotation(supabase, warsawNow, results);
+    check(`training_focus wygenerowany wczoraj, ostatni mecz dokładnie ${POST_MATCH_FIXED_OFFSET_DAYS} dni temu -> generuje (post-match fixed moment)`, () => {
       assert.strictEqual(generateRecommendationCalls.length, 1);
     });
   })();
