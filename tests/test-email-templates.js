@@ -369,5 +369,98 @@ scenario('stopka odsyła do sekcji "Raporty w wybranych momentach" w Ustawieniac
   assert.match(r.html, /Raporty w wybranych momentach/);
 });
 
+console.log('\n6b. weeklyTeamPulseEmail — NOWE liczniki rozwojowe (redesign 06.08.2026)');
+
+scenario('ZERO celów i ZERO sygnałów ryzyka -> "0 osiągniętych celów" / "0 aktywnych sygnałów ryzyka/przeciążenia"', () => {
+  const r = weeklyTeamPulseEmail({
+    teamName: 'Orły', rosterCount: 10, activePlayersCount: 4, activeFocusBlocksCount: 2,
+    goalsAchievedCount: 0, riskSignalsCount: 0,
+  });
+  assert.match(r.html, /<strong>0<\/strong> osiągniętych celów w drużynie w tym tygodniu/);
+  assert.match(r.html, /<strong>0<\/strong> aktywnych sygnałów ryzyka\/przeciążenia w tym tygodniu/);
+  assert.match(r.text, /0 osiągniętych celów w drużynie w tym tygodniu/);
+  assert.match(r.text, /0 aktywnych sygnałów ryzyka\/przeciążenia w tym tygodniu/);
+});
+
+scenario('brak nowych pól w ogóle (domyślne {}) -> traktowane jak 0, nie "undefined"/NaN, nie wywala', () => {
+  const r = weeklyTeamPulseEmail({ teamName: 'Orły', rosterCount: 5, activePlayersCount: 2, activeFocusBlocksCount: 1 });
+  assert.ok(!r.html.includes('undefined'));
+  assert.ok(!r.html.includes('NaN'));
+  assert.match(r.html, /<strong>0<\/strong> osiągniętych celów/);
+});
+
+scenario('dokładnie 1 osiągnięty cel -> liczba pojedyncza "osiągnięty cel"', () => {
+  const r = weeklyTeamPulseEmail({
+    teamName: 'Orły', rosterCount: 10, activePlayersCount: 4, activeFocusBlocksCount: 0,
+    goalsAchievedCount: 1, riskSignalsCount: 0,
+  });
+  assert.match(r.html, /1<\/strong> osiągnięty cel w drużynie/);
+  assert.match(r.text, /1 osiągnięty cel w drużynie/);
+  assert.ok(!r.html.includes('1 osiągniętych celów'));
+});
+
+scenario('KILKA (3) osiągniętych celów -> liczba mnoga "osiągniętych celów"', () => {
+  const r = weeklyTeamPulseEmail({
+    teamName: 'Orły', rosterCount: 10, activePlayersCount: 4, activeFocusBlocksCount: 0,
+    goalsAchievedCount: 3, riskSignalsCount: 0,
+  });
+  assert.match(r.html, /3<\/strong> osiągniętych celów w drużynie/);
+});
+
+scenario('DUŻO (14) osiągniętych celów -> liczba mnoga, poprawna wartość', () => {
+  const r = weeklyTeamPulseEmail({
+    teamName: 'Orły', rosterCount: 20, activePlayersCount: 18, activeFocusBlocksCount: 3,
+    goalsAchievedCount: 14, riskSignalsCount: 0,
+  });
+  assert.match(r.html, /14<\/strong> osiągniętych celów w drużynie/);
+  assert.match(r.text, /14 osiągniętych celów w drużynie/);
+});
+
+scenario('dokładnie 1 aktywny sygnał ryzyka/przeciążenia -> liczba pojedyncza', () => {
+  const r = weeklyTeamPulseEmail({
+    teamName: 'Orły', rosterCount: 10, activePlayersCount: 4, activeFocusBlocksCount: 0,
+    goalsAchievedCount: 0, riskSignalsCount: 1,
+  });
+  assert.match(r.html, /1<\/strong> aktywny sygnał ryzyka\/przeciążenia w tym tygodniu/);
+  assert.match(r.text, /1 aktywny sygnał ryzyka\/przeciążenia w tym tygodniu/);
+  assert.ok(!r.html.includes('1 aktywnych sygnałów'));
+});
+
+scenario('KILKA (4) aktywnych sygnałów ryzyka/przeciążenia -> liczba mnoga', () => {
+  const r = weeklyTeamPulseEmail({
+    teamName: 'Orły', rosterCount: 10, activePlayersCount: 4, activeFocusBlocksCount: 0,
+    goalsAchievedCount: 0, riskSignalsCount: 4,
+  });
+  assert.match(r.html, /4<\/strong> aktywnych sygnałów ryzyka\/przeciążenia w tym tygodniu/);
+});
+
+scenario('DUŻO (9) aktywnych sygnałów ryzyka/przeciążenia -> liczba mnoga, poprawna wartość', () => {
+  const r = weeklyTeamPulseEmail({
+    teamName: 'Orły', rosterCount: 20, activePlayersCount: 15, activeFocusBlocksCount: 2,
+    goalsAchievedCount: 5, riskSignalsCount: 9,
+  });
+  assert.match(r.html, /9<\/strong> aktywnych sygnałów ryzyka\/przeciążenia w tym tygodniu/);
+  assert.match(r.text, /9 aktywnych sygnałów ryzyka\/przeciążenia w tym tygodniu/);
+});
+
+scenario('istniejące dwie liczby (aktywność/Bloki Skupienia) NIE zmienione przez dodanie nowych liczb', () => {
+  const r = weeklyTeamPulseEmail({
+    teamName: 'Orły', rosterCount: 10, activePlayersCount: 4, activeFocusBlocksCount: 2,
+    goalsAchievedCount: 3, riskSignalsCount: 2,
+  });
+  assert.match(r.html, /<strong>4 z 10<\/strong> zawodników/);
+  assert.match(r.html, /\(40%\)/);
+  assert.match(r.html, /2<\/strong> aktywnych Bloków Skupienia/);
+});
+
+scenario('XSS-owy ładunek w goalsAchievedCount/riskSignalsCount (obronnie, mimo że w praktyce zawsze liczby) -> uciecznięty w html', () => {
+  const r = weeklyTeamPulseEmail({
+    teamName: 'Orły', rosterCount: 5, activePlayersCount: 2, activeFocusBlocksCount: 0,
+    goalsAchievedCount: XSS_PAYLOAD, riskSignalsCount: XSS_PAYLOAD,
+  });
+  assert.ok(!r.html.includes(XSS_PAYLOAD));
+  assert.ok(r.html.includes(XSS_ESCAPED));
+});
+
 console.log(failed === 0 ? `\nWSZYSTKIE TESTY PRZESZŁY (${passed}).` : `\n${failed} TEST(ÓW) NIE PRZESZŁO (${passed} ok).`);
 process.exit(failed === 0 ? 0 : 1);

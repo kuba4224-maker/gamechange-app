@@ -18,10 +18,16 @@
 // weryfikują ODTWORZONY kod, nie oryginalny — napisane niezależnie od
 // implementacji, patrząc na kontrakt opisany w claude/INTEGRACJA_RAPORTY_
 // KRYTYCZNE_MOMENTY.md.
+//
+// DOPISANE 06.08.2026 (redesign weekly_team_pulse, claude/BRIEF_DELEGACJA_
+// PULS_TYGODNIOWY.md) — sekcje "isoWeekRange", "countGoalsAchievedThisWeek",
+// "computeTeamOverloadActive", "countPlayersWithActiveRiskStandout" oraz
+// rozszerzenie "computeWeeklyTeamPulseSummary" o dwie nowe liczby.
 // ============================================================
 
 const assert = require('assert');
 const lib = require('../lib/coach-scheduled-reports.js');
+const signals = require('../lib/coach-digest-signals.js');
 
 const {
   REPORT_TYPES,
@@ -35,12 +41,16 @@ const {
   hourInWindow,
   addOneDay,
   dateStrToUtcDate,
+  isoWeekRange,
   playerLabel,
   unwrapRpcRows,
   detectPreMatchTeamBriefingDue,
   detectWeeklyTeamPulseDue,
   summarizePreMatchSignals,
   computeWeeklyTeamPulseSummary,
+  countGoalsAchievedThisWeek,
+  computeTeamOverloadActive,
+  countPlayersWithActiveRiskStandout,
   isReportDeduped,
   WEEKDAY_STRING_TO_INDEX,
 } = lib._internal;
@@ -292,6 +302,169 @@ scenario('brak activeFocusBlocksCount -> domyślnie 0', () => {
 scenario('wszyscy aktywni -> ratio 1', () => {
   const s = computeWeeklyTeamPulseSummary({ rosterCount: 3, activePlayersCount: 3 });
   assert.strictEqual(s.activeRatio, 1);
+});
+
+console.log('\n=== computeWeeklyTeamPulseSummary — NOWE liczniki rozwojowe (redesign 06.08.2026) ===');
+scenario('brak nowych pól (domyślne {}) -> goalsAchievedCount=0, teamOverloadActive=false, riskSignalsCount=0', () => {
+  const s = computeWeeklyTeamPulseSummary({ rosterCount: 5, activePlayersCount: 2 });
+  assert.strictEqual(s.goalsAchievedCount, 0);
+  assert.strictEqual(s.teamOverloadActive, false);
+  assert.strictEqual(s.riskyPlayersCount, 0);
+  assert.strictEqual(s.riskSignalsCount, 0);
+});
+scenario('ZERO celów, zero ryzyka -> obie nowe liczby 0', () => {
+  const s = computeWeeklyTeamPulseSummary({
+    rosterCount: 8, activePlayersCount: 3, goalsAchievedCount: 0, teamOverloadActive: false, riskyPlayersCount: 0,
+  });
+  assert.strictEqual(s.goalsAchievedCount, 0);
+  assert.strictEqual(s.riskSignalsCount, 0);
+});
+scenario('KILKA celów (2) + tylko player_risk_standout aktywny (bez team_overload) -> riskSignalsCount = riskyPlayersCount', () => {
+  const s = computeWeeklyTeamPulseSummary({
+    rosterCount: 10, activePlayersCount: 6, goalsAchievedCount: 2, teamOverloadActive: false, riskyPlayersCount: 3,
+  });
+  assert.strictEqual(s.goalsAchievedCount, 2);
+  assert.strictEqual(s.riskSignalsCount, 3);
+});
+scenario('tylko team_overload aktywny (riskyPlayersCount=0) -> riskSignalsCount = 1 (nie 0)', () => {
+  const s = computeWeeklyTeamPulseSummary({
+    rosterCount: 10, activePlayersCount: 6, goalsAchievedCount: 0, teamOverloadActive: true, riskyPlayersCount: 0,
+  });
+  assert.strictEqual(s.teamOverloadActive, true);
+  assert.strictEqual(s.riskSignalsCount, 1);
+});
+scenario('team_overload aktywny ORAZ kilku zawodników z player_risk_standout -> riskSignalsCount = suma obu typów', () => {
+  const s = computeWeeklyTeamPulseSummary({
+    rosterCount: 12, activePlayersCount: 9, goalsAchievedCount: 1, teamOverloadActive: true, riskyPlayersCount: 4,
+  });
+  assert.strictEqual(s.riskSignalsCount, 5); // 1 (team_overload) + 4 (zawodnicy)
+});
+scenario('DUŻO celów (15) i DUŻO sygnałów ryzyka (11 zawodników + team_overload) -> liczby bez zaokrągleń/utraty precyzji', () => {
+  const s = computeWeeklyTeamPulseSummary({
+    rosterCount: 20, activePlayersCount: 18, goalsAchievedCount: 15, teamOverloadActive: true, riskyPlayersCount: 11,
+  });
+  assert.strictEqual(s.goalsAchievedCount, 15);
+  assert.strictEqual(s.riskyPlayersCount, 11);
+  assert.strictEqual(s.riskSignalsCount, 12);
+});
+
+console.log('\n=== isoWeekRange (NOWE, redesign 06.08.2026) ===');
+scenario('środa w środku tygodnia -> zakres zaczyna się w poniedziałek tego samego tygodnia', () => {
+  // 2026-08-05 to środa (patrz makeWarsawNow domyślne 'WED')
+  const r = isoWeekRange(dateStrToUtcDate('2026-08-05'));
+  const start = new Date(r.startIso);
+  assert.strictEqual(start.getUTCFullYear(), 2026);
+  assert.strictEqual(start.getUTCMonth(), 7);
+  assert.strictEqual(start.getUTCDate(), 3); // poniedziałek 2026-08-03
+  assert.strictEqual(start.getUTCHours(), 0);
+});
+scenario('niedziela -> zakres zaczyna się w poniedziałek TEGO SAMEGO tygodnia (nie następnego)', () => {
+  // 2026-08-09 to niedziela tego samego tygodnia ISO co 2026-08-03..09
+  const r = isoWeekRange(dateStrToUtcDate('2026-08-09'));
+  const start = new Date(r.startIso);
+  assert.strictEqual(start.getUTCDate(), 3);
+  assert.strictEqual(start.getUTCMonth(), 7);
+});
+scenario('poniedziałek -> start = ten sam dzień (00:00 UTC)', () => {
+  const r = isoWeekRange(dateStrToUtcDate('2026-08-03'));
+  const start = new Date(r.startIso);
+  assert.strictEqual(start.getUTCDate(), 3);
+});
+scenario('zakres obejmuje dokładnie 7 dni (end - start)', () => {
+  const r = isoWeekRange(dateStrToUtcDate('2026-08-05'));
+  const diffDays = (new Date(r.endIso).getTime() - new Date(r.startIso).getTime()) / (24 * 60 * 60 * 1000);
+  assert.strictEqual(diffDays, 7);
+});
+scenario('różne dni tego samego tygodnia ISO -> identyczny zakres (start i end)', () => {
+  const r1 = isoWeekRange(dateStrToUtcDate('2026-08-03')); // poniedziałek
+  const r2 = isoWeekRange(dateStrToUtcDate('2026-08-07')); // piątek
+  const r3 = isoWeekRange(dateStrToUtcDate('2026-08-09')); // niedziela
+  assert.strictEqual(r1.startIso, r2.startIso);
+  assert.strictEqual(r1.startIso, r3.startIso);
+  assert.strictEqual(r1.endIso, r2.endIso);
+  assert.strictEqual(r1.endIso, r3.endIso);
+});
+scenario('brak argumentu -> nie wywala się (spada do new Date())', () => {
+  assert.doesNotThrow(() => isoWeekRange());
+});
+
+console.log('\n=== countGoalsAchievedThisWeek (NOWE, redesign 06.08.2026 — DRY z Digestem #19) ===');
+scenario('pusta tablica -> 0', () => {
+  assert.strictEqual(countGoalsAchievedThisWeek([]), 0);
+});
+scenario('null/undefined -> 0, nie wywala się', () => {
+  assert.strictEqual(countGoalsAchievedThisWeek(null), 0);
+  assert.strictEqual(countGoalsAchievedThisWeek(undefined), 0);
+});
+scenario('KILKA (3) celów, wszystkie status completed -> liczy wszystkie', () => {
+  const goals = [{ status: 'completed' }, { status: 'completed' }, { status: 'completed' }];
+  assert.strictEqual(countGoalsAchievedThisWeek(goals), 3);
+});
+scenario('DUŻO (12) celów completed -> 12', () => {
+  const goals = Array.from({ length: 12 }, () => ({ status: 'completed' }));
+  assert.strictEqual(countGoalsAchievedThisWeek(goals), 12);
+});
+scenario('część celów NIE completed (obronnie, mimo że fetch już filtruje) -> liczy tylko completed', () => {
+  const goals = [{ status: 'completed' }, { status: 'active' }, { status: 'completed' }, { status: 'abandoned' }];
+  assert.strictEqual(countGoalsAchievedThisWeek(goals), 2);
+});
+scenario('DRY guard: countGoalsAchievedThisWeek zgadza się z ręcznym filtrem przez signals.detectGoalAchieved', () => {
+  const goals = [{ status: 'completed' }, { status: 'active' }, { status: 'completed' }];
+  const manual = goals.filter((g) => signals.detectGoalAchieved({ status: g.status }).active).length;
+  assert.strictEqual(countGoalsAchievedThisWeek(goals), manual);
+});
+
+console.log('\n=== computeTeamOverloadActive (NOWE, redesign 06.08.2026 — DRY z Digestem #19) ===');
+scenario('deleguje do signals.detectTeamOverload -- próg spełniony -> true', () => {
+  const active = computeTeamOverloadActive({ eligiblePlayersCount: 10, elevatedCount: 5 }); // 50% >= 40%, 10 >= 5 min
+  assert.strictEqual(active, true);
+});
+scenario('za mało zawodników z danymi (< TEAM_OVERLOAD_MIN_PLAYERS_WITH_DATA) -> false mimo 100% ratio', () => {
+  const active = computeTeamOverloadActive({ eligiblePlayersCount: 2, elevatedCount: 2 });
+  assert.strictEqual(active, false);
+});
+scenario('ratio poniżej progu -> false', () => {
+  const active = computeTeamOverloadActive({ eligiblePlayersCount: 10, elevatedCount: 1 });
+  assert.strictEqual(active, false);
+});
+scenario('brak argumentów -> false, nie wywala się', () => {
+  assert.doesNotThrow(() => computeTeamOverloadActive());
+  assert.strictEqual(computeTeamOverloadActive(), false);
+});
+
+console.log('\n=== countPlayersWithActiveRiskStandout (NOWE, redesign 06.08.2026 — DRY z Digestem #19) ===');
+scenario('pusta tablica -> 0', () => {
+  assert.strictEqual(countPlayersWithActiveRiskStandout([]), 0);
+});
+scenario('null -> 0, nie wywala się', () => {
+  assert.strictEqual(countPlayersWithActiveRiskStandout(null), 0);
+});
+scenario('KILKU (2) zawodników z injuryModeActive=true -> policzeni', () => {
+  const inputs = [
+    { readinessSignals: null, injuryModeActive: true, recentExcludingPain: false },
+    { readinessSignals: null, injuryModeActive: false, recentExcludingPain: false },
+    { readinessSignals: null, injuryModeActive: true, recentExcludingPain: false },
+  ];
+  assert.strictEqual(countPlayersWithActiveRiskStandout(inputs), 2);
+});
+scenario('DUŻO (9 z 10) zawodników z recentExcludingPain=true -> policzeni', () => {
+  const inputs = Array.from({ length: 10 }, (_, i) => ({
+    readinessSignals: null, injuryModeActive: false, recentExcludingPain: i < 9,
+  }));
+  assert.strictEqual(countPlayersWithActiveRiskStandout(inputs), 9);
+});
+scenario('żaden zawodnik bez aktywnego sygnału -> 0', () => {
+  const inputs = [
+    { readinessSignals: null, injuryModeActive: false, recentExcludingPain: false },
+    { readinessSignals: null, injuryModeActive: false, recentExcludingPain: false },
+  ];
+  assert.strictEqual(countPlayersWithActiveRiskStandout(inputs), 0);
+});
+scenario('readinessSignals podwyższone (fatigueActive) -> policzony bez injury/pain', () => {
+  const inputs = [
+    { readinessSignals: { sleepFlag: { active: true } }, injuryModeActive: false, recentExcludingPain: false },
+  ];
+  assert.strictEqual(countPlayersWithActiveRiskStandout(inputs), 1);
 });
 
 console.log('\n=== isReportDeduped ===');
