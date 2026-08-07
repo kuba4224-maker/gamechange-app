@@ -88,7 +88,30 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--i
   display: inline-block; background: var(--amber-bg); color: var(--amber-ink); border: 1px solid var(--amber-border);
   font-size: 11px; letter-spacing: 0.02em; padding: 3px 9px;
 }
-.gc-risk-badge-muted { background: var(--surface); color: var(--muted); border: 1px solid var(--rule); }
+/* AUDYT 06.08.2026 — usunięta klasa .gc-risk-badge-muted: zdefiniowana, nigdy nieużyta. */
+
+/* PANEL TRENERA 07.08.2026 — punkt wejścia + hierarchia Składu.
+   Trener po zalogowaniu widział dziś: nazwę drużyny, żółty baner o granicach
+   systemu i płaską listę identycznych białych prostokątów. Nagłówek dnia i
+   jedno zdanie stanu drużyny wchodzą NAD listę; baner zostaje co do słowa
+   (audyt 06.08.2026 uznał go za dobrą, uczciwą rzecz — problem był wyłącznie
+   w tym, że był PIERWSZĄ rzeczą, jaką trener czyta), tylko zjeżdża pod treść.
+
+   .gc-ok-badge (plakietka pozytywna) świadomie NIE jest zielona. Reguła "nie
+   semafor" z SKLAD_MECZOWY_SYGNALY_RYZYKA.md sekcja 4 dotyczy dokładnie tego:
+   czerwony/zielony = werdykt stop/jedź. Ryzyko zostaje bursztynowe, pozytyw
+   jest cichy i bezbarwny — różnicuje je TEKST, nie kolor ani intensywność. */
+.gc-day-header { font-family: 'Bebas Neue', sans-serif; font-size: 13px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink2); margin-bottom: 6px; }
+.gc-team-state { font-size: 16px; line-height: 1.45; color: var(--ink); margin-bottom: 6px; }
+.gc-team-state-note { font-size: 12px; color: var(--muted); line-height: 1.5; margin-bottom: 20px; }
+.gc-roster-group-label {
+  font-family: 'Bebas Neue', sans-serif; font-size: 13px; letter-spacing: 0.08em; color: var(--ink2);
+  margin: 24px 0 10px; padding-top: 14px; border-top: 1px solid var(--rule);
+}
+.gc-ok-badge {
+  display: inline-block; background: var(--surface); color: var(--ink2); border: 1px solid var(--rule);
+  font-size: 11px; letter-spacing: 0.02em; padding: 3px 9px;
+}
 
 .gc-back-link { display: inline-block; margin-bottom: 20px; font-size: 13px; color: var(--muted); cursor: pointer; }
 .gc-back-link:hover { color: var(--ink); }
@@ -214,22 +237,101 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--i
       <button class="gc-nav-btn" id="nav-assistant" onclick="switchCoachPanel('assistant')">Asystent</button>
       <button class="gc-nav-btn" id="nav-settings" onclick="switchCoachPanel('settings')">Ustawienia</button>
       <button class="gc-nav-btn" id="nav-aggregate" onclick="switchCoachPanel('aggregate')">Agregat drużynowy</button>
+      <!-- ⛔ ZAMROŻONE 06.08.2026 (decyzja Kuby po audycie wartości produktu).
+           Zakładka jest dziś nieosiągalna produktowo: ekran ZAWODNIKA, na którym
+           można dodać prywatnego trenera, nie istnieje (patrz stopka pliku, pkt 4),
+           więc nikt fizycznie nie może się tu pojawić. Panel widziałby wyłącznie
+           komunikat o pustce, zajmując jedną z pięciu pozycji nawigacji.
+           ŻEBY PRZYWRÓCIĆ: odkomentuj ten przycisk — cały #panel-private,
+           loadPrivatePlayers() i switchCoachPanel('private') są nietknięte.
       <button class="gc-nav-btn" id="nav-private" onclick="switchCoachPanel('private')">Zawodnicy prywatni</button>
+      -->
     </div>
 
     <!-- ─── Skład (roster) ─── -->
     <div id="panel-roster">
+      <!-- PANEL TRENERA 07.08.2026 — punkt wejścia. Nagłówek dnia + JEDNO zdanie
+           stanu drużyny jako pierwsza rzecz na ekranie. Treść liczona w
+           renderRosterHeader() z tych samych flag, które i tak już przychodzą
+           z get_pre_match_signals — zero nowego zapytania, zero nowego wskaźnika. -->
+      <div class="gc-day-header" id="roster-day-header"></div>
+      <div class="gc-team-state" id="roster-team-state">Wczytuję skład...</div>
+      <div class="gc-team-state-note gc-hidden" id="roster-team-state-note"></div>
+
+      <div id="roster-list"></div>
+
       <!-- Skład Meczowy — sygnały ryzyka (Domena 21, SKLAD_MECZOWY_SYGNALY_RYZYKA.md sekcja 4).
-           Stały tekst, część interfejsu, nie tylko dokumentacji — cytat dokładny. -->
-      <div class="gc-signals-banner">
+           Stały tekst, część interfejsu, nie tylko dokumentacji — cytat dokładny.
+           PANEL TRENERA 07.08.2026: przeniesiony spod nagłówka POD listę. Treść
+           NIETKNIĘTA (ani jedno słowo) — zmienia się wyłącznie miejsce. Uzasadnienie:
+           zastrzeżenie o granicach systemu ma być dostępne zawsze, ale nie ma być
+           pierwszym zdaniem, jakie trener czyta po zalogowaniu. -->
+      <div class="gc-signals-banner" style="margin-top:28px; margin-bottom:0;">
         Sygnały do rozważenia. System nie zna taktyki ani formy sportowej — tylko wybrane dane zdrowotne
         i obciążeniowe. Decyzja o składzie zawsze należy do Ciebie.
       </div>
-      <div id="roster-list"></div>
     </div>
 
     <!-- ─── Asystent trenera (Filar A: tryb + podpowiedzi V1, kanał konwersacyjny, gotowiec żywieniowy) ─── -->
     <div id="panel-assistant" class="gc-hidden">
+
+      <!-- ─── Zaplanuj sesję drużyny — Pakiet 17, "Zamknięcie pętli: sesja
+           trenera → dziennik zawodnika" (04.08.2026, Sesja 2; przywrócone
+           po utracie UI przy równoległym zapisie coach.html — patrz
+           LOG_SESJI_ROWNOLEGLYCH.md). Tworzy PO JEDNYM wpisie
+           calendar_events dla każdego aktywnego zawodnika drużyny
+           (fan-out po stronie SQL, funkcja create_coach_planned_session) —
+           zero zmian w asystent_app.html (plik zamrożony) potrzeba, żeby
+           zawodnik zobaczył sesję w swoim Dzienniku. Pełny opis:
+           claude/INTEGRACJA_SESJA_DZIENNIK_SQL.md.
+
+           PANEL TRENERA 07.08.2026 — PRZENIESIONE NA GÓRĘ ZAKŁADKI (było:
+           czwarty blok, pod dwoma blokami AI i statyczną kartką o odżywianiu).
+           Zero zmian w treści bloków, w id-kach i w funkcjach — wyłącznie
+           kolejność w DOM. Powód (audyt 06.08.2026): to jedyne miejsce w całym
+           panelu, gdzie trener wykonuje akcję i dostaje wynik TEJ akcji
+           ("przypisano 14 · zalogowano 9 · śr. RPE 7"), a jednocześnie jedyna
+           część zakładki, która działa bez ANTHROPIC_API_KEY.
+           loadAssistantPanel() operuje po id, nie po kolejności — przeniesienie
+           jest dla niego niewidoczne. ─── -->
+      <div class="gc-section-block">
+        <div class="gc-label">Zaplanuj sesję drużyny</div>
+        <p style="font-size:12px; color:var(--muted); margin-bottom:14px;">
+          Tworzy wpis w kalendarzu każdego aktywnego zawodnika drużyny (źródło: trener) — zawodnik
+          zobaczy go w swoim Dzienniku i będzie mógł powiązać z nim swój wpis potreningowy.
+        </p>
+        <label class="gc-label">Typ jednostki</label>
+        <select class="gc-select" id="session-unit-type-select">
+          <option value="silowa">Siłowa</option>
+          <option value="wytrzymalosciowa">Wytrzymałościowa</option>
+          <option value="techniczna">Techniczna</option>
+          <option value="taktyczna">Taktyczna (gierka zadaniowa)</option>
+        </select>
+        <label class="gc-label" style="margin-top:10px;">Data sesji</label>
+        <input class="gc-input" id="session-date-input" type="date">
+        <label class="gc-label" style="margin-top:10px;">Tytuł (opcjonalnie)</label>
+        <input class="gc-input" id="session-title-input" type="text" placeholder="np. Sesja siłowa">
+        <!-- ─── PANEL TRENERA C2 08.08.2026 — WYCIĘTE: pole „Pytanie do
+             zawodników".
+             Etykieta sama się przyznawała: „dziś zapisane, wyświetlenie
+             zawodnikowi to osobny, świadomie odłożony krok". Czyli trener
+             wpisywał pytanie, którego nikt nigdy nie zobaczy — a przy sesji,
+             która JEST pokazywana zawodnikowi w Kalendarzu, wygląda to jak
+             działająca komunikacja. Werdykt audytu wartości: WYTNIJ.
+             NIE RUSZONE: tabela coach_planned_sessions, kolumna
+             coach_question, RPC create_coach_planned_session (nadal dostaje
+             p_coach_question, teraz zawsze null) i RPC
+             set_coach_session_question. Pole wraca jednym wklejeniem, gdy
+             powstanie strona zawodnika, która to pokaże. ─── -->
+        <button class="gc-btn" id="session-create-btn" onclick="createPlannedSession()">Zaplanuj sesję</button>
+        <div id="session-create-error" class="gc-error gc-hidden"></div>
+        <div id="session-create-ok" class="gc-ok gc-hidden"></div>
+      </div>
+
+      <div class="gc-section-block">
+        <div class="gc-label">Zaplanowane sesje — ostatnie</div>
+        <div id="planned-sessions-list"><div class="gc-empty">Wczytuję...</div></div>
+      </div>
 
       <div class="gc-section-block">
         <div class="gc-label">Podpowiedź V1 przy planowaniu sesji</div>
@@ -261,55 +363,18 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--i
         <div id="chat-history" style="margin-top:16px;"></div>
       </div>
 
-      <div class="gc-section-block">
-        <div class="gc-label">Protokół meczowy odżywiania i nawodnienia</div>
-        <p style="font-size:12px; color:var(--muted); margin-bottom:14px;">
-          Gotowa karta do przekazania całej drużynie albo rodzicom — kopiujesz tekst i wysyłasz dalej.
-        </p>
-        <div class="gc-nutrition-card" id="nutrition-card-content"></div>
-        <div class="gc-btn-row" style="margin-top:14px;">
-          <button class="gc-btn gc-btn-secondary" onclick="copyNutritionCard()">Kopiuj tekst</button>
-        </div>
-        <div id="nutrition-copy-ok" class="gc-ok gc-hidden">Skopiowano.</div>
-      </div>
-
-      <!-- ─── Zaplanuj sesję drużyny — Pakiet 17, "Zamknięcie pętli: sesja
-           trenera → dziennik zawodnika" (04.08.2026, Sesja 2; przywrócone
-           po utracie UI przy równoległym zapisie coach.html — patrz
-           LOG_SESJI_ROWNOLEGLYCH.md). Tworzy PO JEDNYM wpisie
-           calendar_events dla każdego aktywnego zawodnika drużyny
-           (fan-out po stronie SQL, funkcja create_coach_planned_session) —
-           zero zmian w asystent_app.html (plik zamrożony) potrzeba, żeby
-           zawodnik zobaczył sesję w swoim Dzienniku. Pełny opis:
-           claude/INTEGRACJA_SESJA_DZIENNIK_SQL.md. ─── -->
-      <div class="gc-section-block">
-        <div class="gc-label">Zaplanuj sesję drużyny</div>
-        <p style="font-size:12px; color:var(--muted); margin-bottom:14px;">
-          Tworzy wpis w kalendarzu każdego aktywnego zawodnika drużyny (źródło: trener) — zawodnik
-          zobaczy go w swoim Dzienniku i będzie mógł powiązać z nim swój wpis potreningowy.
-        </p>
-        <label class="gc-label">Typ jednostki</label>
-        <select class="gc-select" id="session-unit-type-select">
-          <option value="silowa">Siłowa</option>
-          <option value="wytrzymalosciowa">Wytrzymałościowa</option>
-          <option value="techniczna">Techniczna</option>
-          <option value="taktyczna">Taktyczna (gierka zadaniowa)</option>
-        </select>
-        <label class="gc-label" style="margin-top:10px;">Data sesji</label>
-        <input class="gc-input" id="session-date-input" type="date">
-        <label class="gc-label" style="margin-top:10px;">Tytuł (opcjonalnie)</label>
-        <input class="gc-input" id="session-title-input" type="text" placeholder="np. Sesja siłowa">
-        <label class="gc-label" style="margin-top:10px;">Pytanie do zawodników (opcjonalnie — dziś zapisane, wyświetlenie zawodnikowi to osobny, świadomie odłożony krok)</label>
-        <textarea class="gc-textarea" id="session-question-input" maxlength="300" placeholder="np. jak czułeś się dziś na treningu?"></textarea>
-        <button class="gc-btn" id="session-create-btn" onclick="createPlannedSession()">Zaplanuj sesję</button>
-        <div id="session-create-error" class="gc-error gc-hidden"></div>
-        <div id="session-create-ok" class="gc-ok gc-hidden"></div>
-      </div>
-
-      <div class="gc-section-block">
-        <div class="gc-label">Zaplanowane sesje — ostatnie</div>
-        <div id="planned-sessions-list"><div class="gc-empty">Wczytuję...</div></div>
-      </div>
+      <!-- ─── PANEL TRENERA C2 08.08.2026 — WYCIĘTE: karta „Protokół meczowy
+           odżywiania i nawodnienia".
+           Werdykt AUDYT_WARTOSCI_PRODUKTU_06_08_2026.md: cztery akapity
+           statycznego tekstu, identyczne dla U12 i dla seniorów, niezależne
+           od danych zawodników i od fazy sezonu (mimo że opis w Ustawieniach
+           twierdzi inaczej), zajmujące 1/5 zakładki Asystent. To załącznik do
+           maila, nie funkcja panelu — nie zmienia żadnej decyzji trenera.
+           USUNIĘTY JEST WYŁĄCZNIE INTERFEJS. Sama treść (NUTRITION_CARD_TEXT)
+           zostaje w JS niżej, nietknięta — jest gotowa do wysyłki mailem albo
+           do warstwy 3 „Materiał" z KREGOSLUP_PRODUKTU_I_DROGA_07_08_2026.md
+           (PDF per segment). Przywrócenie karty to wklejenie tego bloku z
+           powrotem plus jedna linia w loadAssistantPanel(). ─── -->
 
     </div>
 
@@ -317,8 +382,17 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--i
     <div id="panel-settings" class="gc-hidden">
       <div class="gc-section-block">
         <label class="gc-label">Poziom widoczności drużyny</label>
+        <!-- PANEL C3 08.08.2026 — opis poziomu Podstawowego rozszerzony
+             o „tryb kontuzji" (decyzja B9). To NIE poszerza dostępu — flaga
+             zjechała na Podstawowy w visibleRiskFlagKeys(), a ten opis jest
+             JEDYNYM spisanym kontraktem tego, co który poziom pokazuje
+             (znalezisko C2-N2: Domena 08/RLS nigdy nie trafiła do pamięci
+             projektu). Zostawienie starego tekstu znaczyłoby, że panel
+             pokazuje trenerowi rzecz, o której jego własne Ustawienia mówią,
+             że jej nie pokazuje. Ten sam tekst jest cytowany w komentarzu
+             przy DETAIL_SECTIONS niżej — oba miejsca zmienione razem. -->
         <select class="gc-select" id="settings-visibility-select">
-          <option value="basic">Podstawowy — diagnoza i ogólna gotowość</option>
+          <option value="basic">Podstawowy — diagnoza, ogólna gotowość i tryb kontuzji</option>
           <option value="extended">Rozszerzony — dodatkowo cele zawodników</option>
           <option value="full">Pełny — dodatkowo dziennik, mecze i historia urazów</option>
         </select>
@@ -347,83 +421,147 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--i
         w fazie przygotowawczej).
       </p>
 
-      <!-- ─── Digest sygnałów e-mail (04.08.2026) — lib/coach-digest.js +
-           claude/INTEGRACJA_DIGEST_TRENERA_SQL.md. Brak wiersza w
-           coach_digest_preferences = WŁĄCZONE (checkboxy startują
-           zaznaczone), trener odznacza to, czego NIE chce — ten sam wzorzec
-           co notification_preferences zawodnika. ─── -->
+      <!-- ─── PANEL TRENERA C2 08.08.2026 — „KIEDY MAM CI NAPISAĆ".
+           Scalenie dwóch osobnych bloków ustawień e-mail w JEDNĄ listę.
+
+           Było: „Digest sygnałów e-mail" (7 pozycji, domyślnie WŁĄCZONE) +
+           „Raporty w wybranych momentach" (2 pozycje, domyślnie WYŁĄCZONE),
+           z nakładającą się treścią („Przeciążenie drużyny" ≈ „Cotygodniowy
+           puls drużyny") i z dwoma przyciskami Zapisz. Ten podział był
+           ARCHITEKTONICZNY (reaguje na zdarzenie vs przychodzi o czasie —
+           dwie tabele, dwa moduły w lib/), nie użytkowniczy: trener nie myśli
+           kategoriami wyzwalacza, tylko „o czym chcę wiedzieć". Werdykt
+           audytu wartości: 9 checkboxów w jedną listę.
+
+           Co ZOSTAJE bez zmian (scalamy interfejs, nie backend):
+           • dwie tabele: coach_digest_preferences i
+             coach_scheduled_report_preferences — po staremu, te same wiersze,
+             te same klucze, ten sam upsert ?on_conflict,
+           • id-ki wszystkich 9 checkboxów (digest-* i sched-report-*) —
+             loadDigestPreferences()/loadScheduledReportPreferences() działają
+             na nich nietknięte,
+           • DOMYŚLNE: digest = brak wiersza znaczy WŁĄCZONE, raporty = brak
+             wiersza znaczy WYŁĄCZONE. Ujednolicenie tych domyślnych wymagałoby
+             zmiany po stronie serwera (lib/coach-digest.js i
+             lib/coach-scheduled-reports.js interpretują brak wiersza
+             przeciwnie) — świadomie NIE ruszane, zgodnie z poleceniem.
+             Zamiast tego różnica jest napisana wprost przy dwóch pozycjach
+             opt-in, żeby scalona lista nie kłamała jednolitym wyglądem.
+             ⇒ PANEL C3 08.08.2026 — TEN PUNKT JEST JUŻ NIEAKTUALNY. Kuba
+             rozstrzygnął (decyzja B10): wszystko domyślnie WŁĄCZONE. Zmiana
+             weszła po stronie serwera (isReportEnabled() w
+             lib/coach-scheduled-reports.js) i zdania „Domyślnie wyłączone."
+             zniknęły z listy. Reszta akapitu zostaje jako zapis historyczny —
+             opisuje stan, w którym ten interfejs powstawał.
+
+           Źródła obu mechanizmów (bez zmian, wypisane tu, bo zniknęły dwa
+           osobne nagłówki, które je wskazywały): lib/coach-digest.js +
+           claude/INTEGRACJA_DIGEST_TRENERA_SQL.md oraz
+           lib/coach-scheduled-reports.js +
+           claude/INTEGRACJA_RAPORTY_KRYTYCZNE_MOMENTY_SQL.md.
+
+           Zmienia się: jeden nagłówek, jedna lista, JEDEN przycisk Zapisz
+           (saveEmailPreferences() — zapisuje do obu tabel naraz) i moment
+           wysyłki opisany przy KAŻDEJ pozycji zamiast w nagłówku sekcji.
+           Grupy tematyczne zostają, bo są użytkownicze („o czym"), w
+           odróżnieniu od starego podziału („skąd technicznie"). ─── -->
       <div class="gc-section-block">
-        <label class="gc-label">Digest sygnałów e-mail</label>
+        <label class="gc-label">Kiedy mam Ci napisać</label>
         <p style="font-size:12px; color:var(--muted); margin-bottom:14px;">
-          System wysyła Ci e-mail, gdy zauważy coś w danych Twoich zawodników — tylko dla
-          zaznaczonych kategorii. To nie jest cotygodniowy raport, tylko konkretne zdarzenia.
+          Zaznacz, o czym chcesz dostawać e-mail. Przy każdej pozycji jest napisane, kiedy przychodzi:
+          od razu, gdy system coś zauważy, albo o stałej porze.
         </p>
 
         <div style="margin-bottom:14px;">
-          <div style="font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px;">Ryzyko / obciążenie</div>
-          <label style="display:block; font-size:14px; margin-bottom:6px;"><input type="checkbox" id="digest-team_overload" style="margin-right:8px;">Przeciążenie drużyny</label>
-          <label style="display:block; font-size:14px; margin-bottom:6px;"><input type="checkbox" id="digest-player_risk_standout" style="margin-right:8px;">Zawodnik wart sprawdzenia</label>
+          <div style="font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px;">Ryzyko i obciążenie</div>
+
+          <label style="display:block; font-size:14px; margin-bottom:2px;"><input type="checkbox" id="digest-team_overload" style="margin-right:8px;">Przeciążenie drużyny</label>
+          <p style="font-size:12px; color:var(--muted); margin:0 0 8px 26px;">Gdy system to zauważy.</p>
+
+          <label style="display:block; font-size:14px; margin-bottom:2px;"><input type="checkbox" id="digest-player_risk_standout" style="margin-right:8px;">Zawodnik wart sprawdzenia</label>
+          <p style="font-size:12px; color:var(--muted); margin:0 0 8px 26px;">Gdy system to zauważy.</p>
+
+          <!-- PANEL C3 08.08.2026 — zdjęte zdanie „Domyślnie wyłączone."
+               (decyzja B10). Ta pozycja jest od teraz domyślnie WŁĄCZONA,
+               tak samo jak pozostałe — patrz loadScheduledReportPreferences()
+               i isReportEnabled() w lib/coach-scheduled-reports.js. -->
+          <label style="display:block; font-size:14px; margin-bottom:2px;"><input type="checkbox" id="sched-report-pre_match_team_briefing" style="margin-right:8px;">Przegląd sygnałów ryzyka przed meczem</label>
+          <p style="font-size:12px; color:var(--muted); margin:0 0 8px 26px;">
+            Wieczorem przed meczem, tylko gdy przynajmniej jeden zawodnik ma zalogowany mecz na jutro w Kalendarzu.
+          </p>
         </div>
 
         <div style="margin-bottom:14px;">
-          <div style="font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px;">Zaangażowanie / aktywność</div>
-          <label style="display:block; font-size:14px; margin-bottom:6px;"><input type="checkbox" id="digest-player_went_quiet" style="margin-right:8px;">Zawodnik ucichł</label>
-          <label style="display:block; font-size:14px; margin-bottom:6px;"><input type="checkbox" id="digest-player_never_started" style="margin-right:8px;">Zawodnik jeszcze nie zaczął</label>
+          <div style="font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px;">Zaangażowanie</div>
+
+          <label style="display:block; font-size:14px; margin-bottom:2px;"><input type="checkbox" id="digest-player_went_quiet" style="margin-right:8px;">Zawodnik ucichł</label>
+          <p style="font-size:12px; color:var(--muted); margin:0 0 8px 26px;">Gdy system to zauważy.</p>
+
+          <label style="display:block; font-size:14px; margin-bottom:2px;"><input type="checkbox" id="digest-player_never_started" style="margin-right:8px;">Zawodnik jeszcze nie zaczął</label>
+          <p style="font-size:12px; color:var(--muted); margin:0 0 8px 26px;">Gdy system to zauważy.</p>
         </div>
 
         <div style="margin-bottom:14px;">
-          <div style="font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px;">Docenienie / postęp</div>
-          <label style="display:block; font-size:14px; margin-bottom:6px;"><input type="checkbox" id="digest-player_high_consistency" style="margin-right:8px;">Rzadka konsekwencja</label>
-          <label style="display:block; font-size:14px; margin-bottom:6px;"><input type="checkbox" id="digest-focus_block_completed_strong" style="margin-right:8px;">Mocno domknięty Blok Skupienia</label>
-          <label style="display:block; font-size:14px; margin-bottom:6px;"><input type="checkbox" id="digest-goal_achieved" style="margin-right:8px;">Osiągnięty cel</label>
+          <div style="font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px;">Docenienie i postęp</div>
+
+          <label style="display:block; font-size:14px; margin-bottom:2px;"><input type="checkbox" id="digest-player_high_consistency" style="margin-right:8px;">Rzadka konsekwencja</label>
+          <p style="font-size:12px; color:var(--muted); margin:0 0 8px 26px;">Gdy system to zauważy.</p>
+
+          <label style="display:block; font-size:14px; margin-bottom:2px;"><input type="checkbox" id="digest-focus_block_completed_strong" style="margin-right:8px;">Mocno domknięty Blok Skupienia</label>
+          <p style="font-size:12px; color:var(--muted); margin:0 0 8px 26px;">Gdy system to zauważy.</p>
+
+          <label style="display:block; font-size:14px; margin-bottom:2px;"><input type="checkbox" id="digest-goal_achieved" style="margin-right:8px;">Osiągnięty cel</label>
+          <p style="font-size:12px; color:var(--muted); margin:0 0 8px 26px;">Gdy system to zauważy.</p>
         </div>
 
-        <button class="gc-btn" id="settings-digest-save-btn" onclick="saveDigestPreferences()">Zapisz</button>
-        <div id="settings-digest-error" class="gc-error gc-hidden"></div>
-        <div id="settings-digest-ok" class="gc-ok gc-hidden"></div>
-      </div>
+        <!-- ─── PANEL C3 08.08.2026 — WYCIĘTA GRUPA „STAŁY PRZEGLĄD"
+             („Cotygodniowy puls drużyny", decyzja B11). ───
 
-      <!-- ─── Raporty w wybranych momentach (Pakiet 20, 04.08.2026) —
-           lib/coach-scheduled-reports.js + claude/INTEGRACJA_RAPORTY_
-           KRYTYCZNE_MOMENTY_SQL.md. W ODRÓŻNIENIU od Digestu wyżej: brak
-           wiersza w coach_scheduled_report_preferences = WYŁĄCZONE
-           (opt-in) — checkboxy startują ODZNACZONE, trener sam włącza to,
-           czego chce (nowy typ e-maila, o który nikt jeszcze nie prosił —
-           patrz uzasadnienie w dokumencie projektowym). ─── -->
-      <div class="gc-section-block">
-        <label class="gc-label">Raporty w wybranych momentach</label>
-        <p style="font-size:12px; color:var(--muted); margin-bottom:14px;">
-          W odróżnieniu od Digestu wyżej (który reaguje na zdarzenia), te raporty przychodzą
-          w konkretnym momencie, który sam wybierzesz — niezależnie od tego, czy coś się akurat
-          zmieniło.
-        </p>
+             USUNIĘTY JEST WYŁĄCZNIE INTERFEJS. Ten sam wzorzec, co przy
+             karcie odżywiania w rundzie 2: kod zostaje, tabela zostaje,
+             dane zostają, znika tylko checkbox i wysyłka.
 
-        <label style="display:block; font-size:14px; margin-bottom:6px;">
-          <input type="checkbox" id="sched-report-pre_match_team_briefing" style="margin-right:8px;">Przegląd sygnałów ryzyka wieczorem przed meczem drużyny
-        </label>
-        <p style="font-size:12px; color:var(--muted); margin:0 0 14px 26px;">
-          Wysyłany tylko, gdy przynajmniej jeden zawodnik ma zalogowany mecz na jutro w Kalendarzu.
-        </p>
+             Powód (cytat z decyzji): mail przychodzący NIEZALEŻNIE od tego,
+             czy jest co powiedzieć, uczy trenera ignorowania maili — a potem
+             ignoruje też te, które coś znaczą. Zdarzeniowe „Przeciążenie
+             drużyny" (wyżej, grupa „Ryzyko i obciążenie") niesie tę samą
+             treść, tylko wtedy, gdy ma sens. Nakładanie się tych dwóch
+             pozycji zostało opisane wprost w rundzie 2 i było wtedy
+             świadomie zostawione Kubie do rozstrzygnięcia — to jest to
+             rozstrzygnięcie.
 
-        <label style="display:block; font-size:14px; margin-bottom:6px;">
-          <input type="checkbox" id="sched-report-weekly_team_pulse" style="margin-right:8px;">Cotygodniowy puls drużyny
-        </label>
-        <div style="margin:0 0 14px 26px; display:flex; align-items:center; gap:8px;">
-          <span style="font-size:13px; color:var(--muted);">Dzień tygodnia:</span>
-          <select class="gc-select" id="sched-report-weekly-day-select" style="width:auto;">
-            <option value="MON">Poniedziałek</option>
-            <option value="TUE">Wtorek</option>
-            <option value="WED">Środa</option>
-            <option value="THU">Czwartek</option>
-            <option value="FRI">Piątek</option>
-            <option value="SAT">Sobota</option>
-            <option value="SUN">Niedziela</option>
-          </select>
-        </div>
+             CO ZOSTAJE NIETKNIĘTE, żeby powrót był jednym wpisem:
+             • tabela coach_scheduled_report_preferences i wszystkie istniejące
+               w niej wiersze weekly_team_pulse (razem z weekly_day_of_week —
+               wybrany dzień tygodnia NIE jest kasowany),
+             • cały mechanizm w lib/coach-scheduled-reports.js
+               (detectWeeklyTeamPulseDue, computeWeeklyTeamPulseSummary,
+               liczniki rozwojowe z redesignu 06.08.2026) i szablon
+               weeklyTeamPulseEmail w lib/email-templates.js,
+             • stała SCHEDULED_REPORT_TYPES niżej — nadal wymienia OBA typy,
+               bo opisuje kontrakt backendu, nie zawartość ekranu.
 
-        <button class="gc-btn" id="settings-sched-report-save-btn" onclick="saveScheduledReportPreferences()">Zapisz</button>
-        <div id="settings-sched-report-error" class="gc-error gc-hidden"></div>
-        <div id="settings-sched-report-ok" class="gc-ok gc-hidden"></div>
+             POWRÓT = DWA WPISY, oba oznaczone tym samym znacznikiem:
+             1. tutaj — wkleić z powrotem ten blok HTML (checkbox + opis +
+                select dnia tygodnia),
+             2. dopisać 'weekly_team_pulse' do SCHEDULED_REPORT_TYPES_IN_UI
+                (coach.html) i przestawić WEEKLY_TEAM_PULSE_ENABLED na true
+                (lib/coach-scheduled-reports.js).
+             Zero pisania logiki od nowa.
+
+             Blok HTML do przywrócenia, żeby nie trzeba było go odtwarzać
+             z historii gita:
+             <div style="margin-bottom:14px;">
+               <div style="...">Stały przegląd</div>
+               <label ...><input type="checkbox" id="sched-report-weekly_team_pulse" ...>Cotygodniowy puls drużyny</label>
+               <p ...>Raz w tygodniu, niezależnie od tego, czy coś się zmieniło.</p>
+               <div ...>Dzień tygodnia: <select id="sched-report-weekly-day-select">MON..SUN</select></div>
+             </div>
+             ─── -->
+
+        <button class="gc-btn" id="settings-email-save-btn" onclick="saveEmailPreferences()">Zapisz</button>
+        <div id="settings-email-error" class="gc-error gc-hidden"></div>
+        <div id="settings-email-ok" class="gc-ok gc-hidden"></div>
       </div>
     </div>
 
@@ -606,7 +744,22 @@ const SEGMENTS_BY_PILLAR = [
   ]],
   ['Filar 4 — Mentalność', [
     ['koncentracja', 'Koncentracja'],
-    ['mental', 'Stan Mentalny'],
+    // PANEL C3 08.08.2026 — RENAME SEGMENTU (decyzja A1 z DECYZJE_PRODUKTOWE_
+    // 07_08_2026.md). Było: 'Stan Mentalny'. Jest: 'Odwaga w grze'.
+    // Powód: dwie z trzech map webowych mówiły już „ODWAGA W GRZE", trzecia
+    // i cała appka „Stan Mentalny" — rozjazd zamknięty na korzyść nazwy,
+    // która mówi zawodnikowi, o co chodzi na boisku, a nie nazywa stanu
+    // psychicznego. Zmiana musi wejść WSZĘDZIE NARAZ; to jest jedno z trzech
+    // miejsc (pozostałe: appka przez lib/labels.ts, index.html/SEG_ORDER) —
+    // tamte dwa są poza pasem tej sesji.
+    //
+    // Klucz segmentu `mental` NIE zmienia się — to id w bazie (diagnostics.
+    // scores, goals.segment_id, segment_components) i jego zmiana wymagałaby
+    // migracji. Zmienia się WYŁĄCZNIE etykieta widoczna dla człowieka.
+    //
+    // Nazwa filaru („Mentalność") zostaje bez zmian — decyzja A1 dotyczy
+    // segmentu, nie filaru, a filar jest wspólny z asystent_app.html.
+    ['mental', 'Odwaga w grze'],
   ]],
   ['Filar 5 — Boiskowa mądrość', [
     ['percepcja', 'Percepcja'],
@@ -634,6 +787,64 @@ const RISK_BADGE_LABELS = {
   match_load: 'Zagęszczenie meczowe',
 };
 
+// PANEL TRENERA 07.08.2026 — WAGI SYGNAŁÓW (używane WYŁĄCZNIE do kolejności
+// na liście, nigdy nie pokazywane trenerowi jako liczba).
+//
+// Świadome napięcie do odnotowania, nie przeoczenie: SKLAD_MECZOWY_SYGNALY_
+// RYZYKA.md sekcja 4 mówi wprost "nie ranking, nie sortowanie po ryzyku".
+// Kuba zlecił sortowanie wprost 07.08.2026 ("posortuj zawodników po liczbie
+// i wadze sygnałów"), znając tamtą decyzję i cytując resztę tego samego
+// akapitu — nowsza, jawna decyzja wygrywa. Granica utrzymana tak, żeby to
+// NIE stało się rankingiem, którego tamten zapis się bał:
+//   • zero liczby/wyniku na ekranie (żadnego "gotowość 72/100"),
+//   • zero etykiet "najlepszy/najgorszy wybór", zero sugerowanej jedenastki,
+//   • sortowanie DOTYCZY WYŁĄCZNIE zawodników z jakimkolwiek sygnałem;
+//     reszta zostaje w pierwotnej kolejności joined_at, nieuszeregowana,
+//   • remisy zachowują pierwotną kolejność (sort w JS jest stabilny od ES2019),
+//     więc przy zerze sygnałów lista wygląda DOKŁADNIE tak jak przed zmianą.
+// To zmiana kolejności czytania, nie werdykt o zawodniku.
+//
+// Skala wag: jawny, zgłoszony stan (tryb kontuzji) > obserwacja bólu >
+// sygnały obciążeniowe > brak danych. "Za mało danych" celowo ma wagę
+// najniższą, ale NIEZEROWĄ — to nie jest ryzyko zdrowotne, ale jest
+// zadaniem dla trenera (rozmowa z zawodnikiem), więc nie może wypaść na
+// sam dół listy razem z "nic nie wykryto".
+const RISK_FLAG_WEIGHTS = {
+  injury_mode: 4,
+  pain: 3,
+  fatigue: 2,
+  match_load: 2,
+  insufficient_data: 1,
+};
+
+// PANEL TRENERA 07.08.2026 — SYGNAŁ POZYTYWNY.
+// Jedyny sygnał pozytywny, jaki da się dziś wystawić UCZCIWIE bez zmiany w
+// SQL. Sprawdzone: get_pre_match_signals zwraca WYŁĄCZNIE `player_user_id` +
+// `flags` (zestaw boolów), zero liczb — nie ma w nim ani minut meczowych, ani
+// wolumenu Dziennika, więc "niskie obciążenie w ostatnich 7 dniach" (przykład
+// z briefu) NIE DA SIĘ dziś policzyć bez migracji. SQL, który byłby do tego
+// potrzebny, jest w raporcie zwrotnym, sekcja 7 — świadomie nie zmyślam
+// wskaźnika po stronie przeglądarki.
+//
+// Treść plakietki dobrana pod zasadę z sekcji 2 tamtego dokumentu: "Brak
+// żadnej flagi = «nic nie wykryto», nie «zawodnik gotowy w 100%». To
+// rozróżnienie musi być widoczne w interfejsie". Dlatego "Bez sygnałów
+// ryzyka", nigdy "Gotowy"/"Świeży"/"Optymalna forma".
+// Rozwiązuje realny problem z audytu: zawodnik świeży i zawodnik bez danych
+// wyglądali identycznie (pusta karta) — teraz pierwszy ma plakietkę
+// pozytywną, drugi "Za mało danych", a trzeci przypadek (sygnały w ogóle się
+// nie wczytały) nie dostaje żadnej, bo to NIE to samo co "nic nie wykryto".
+const POSITIVE_BADGE_LABEL = 'Bez sygnałów ryzyka';
+
+const RISK_FLAG_SHORT_LABELS = {
+  fatigue: 'zmęczenia',
+  injury_mode: 'trybu kontuzji',
+  pain: 'bólu',
+  match_load: 'zagęszczenia meczowego',
+  insufficient_data: 'braku danych',
+};
+const VISIBILITY_LEVEL_LABELS = { basic: 'Podstawowy', extended: 'Rozszerzony', full: 'Pełny' };
+
 let currentUser = null;      // { id, email, accessToken }
 let currentTeam = null;      // wiersz public.teams (id, code, coach_name, coach_email, club_name, coach_user_id, visibility_level, season_phase, created_at)
 let rosterCache = [];        // [{ player_user_id, joined_at, users: { full_name, email } }]
@@ -641,7 +852,24 @@ let privateRosterCache = []; // [{ player_user_id, users: {...}, isPrivate: true
 let lastRosterSourcePanel = 'roster'; // 'roster' albo 'private' — dokąd wraca "← Wróć do składu" z widoku szczegółów
 let diagnosisByUser = new Map(); // user_id -> { user_id, scores, created_at } (najnowszy wiersz diagnostics per zawodnik)
 let currentPlayer = null;    // aktywny wpis z rosterCache otwarty w widoku szczegółów
-let preMatchSignalsByUser = new Map(); // user_id -> { flags, injury_mode_category, pain_entries, match_minutes_7d, entered_last_match_fatigued } (Domena 21)
+// PANEL TRENERA 07.08.2026 — SPROSTOWANIE do poprzedniego komentarza w tej linii.
+// Było tu napisane, że wiersz zawiera { flags, injury_mode_category, pain_entries,
+// match_minutes_7d, entered_last_match_fatigued }. To NIEPRAWDA i nic w tym pliku
+// nigdy tych pól nie czytało. Zweryfikowany kształt (SESJA_01_08_2026_SKLAD_
+// MECZOWY_KROK1_2_3_STATUS.md, Krok 0.1, potwierdzone żywo w pg_proc: proretset=true,
+// prorettype='record' → TABLE(player_user_id, flags); plus jedyny drugi konsument
+// tej funkcji w repo, summarizePreMatchSignals() w lib/coach-scheduled-reports.js,
+// który czyta wyłącznie r.player_user_id i r.flags):
+//   user_id -> { player_user_id: uuid, flags: { fatigue, injury_mode, pain,
+//                insufficient_data, match_load } }  // same boole, ZERO liczb
+// Gating widoczności robi sama funkcja SQL wg teams.visibility_level.
+let preMatchSignalsByUser = new Map();
+// true tylko wtedy, gdy wywołanie RPC się NIE UDAŁO. Świadomie rozdzielone od
+// "wywołało się i nic nie wykryło" — bez tego rozróżnienia zdanie stanu drużyny
+// mówiłoby "nikt nie ma dziś sygnału" w sytuacji, w której system po prostu nic
+// nie sprawdził. To dokładnie ten rodzaj cichego fałszywego uspokojenia, przed
+// którym ostrzega sekcja 2 SKLAD_MECZOWY_SYGNALY_RYZYKA.md.
+let preMatchSignalsLoadFailed = false;
 let lastGeneratedTipId = null; // id ostatniej podpowiedzi coach_tips, do zapisu feedbacku
 
 function authHeaders() {
@@ -926,8 +1154,15 @@ async function enterApp() {
 const COACH_PANELS = ['roster', 'assistant', 'settings', 'aggregate', 'private'];
 function switchCoachPanel(name) {
   COACH_PANELS.forEach(p => {
-    document.getElementById('nav-' + p).classList.toggle('active', p === name);
-    document.getElementById('panel-' + p).classList.toggle('gc-hidden', p !== name);
+    // AUDYT 06.08.2026 — odporne na brak przycisku w nawigacji. Zakładka
+    // "Zawodnicy prywatni" jest zamrożona (przycisk zakomentowany w HTML), ale
+    // jej panel zostaje w DOM i musi się dalej poprawnie ukrywać. Bez tego
+    // zabezpieczenia getElementById('nav-private') zwracałby null i wysypywał
+    // przełączanie WSZYSTKICH zakładek.
+    const navBtn = document.getElementById('nav-' + p);
+    if (navBtn) navBtn.classList.toggle('active', p === name);
+    const panelEl = document.getElementById('panel-' + p);
+    if (panelEl) panelEl.classList.toggle('gc-hidden', p !== name);
   });
   if (name === 'roster') loadRoster();
   if (name === 'assistant') loadAssistantPanel();
@@ -958,6 +1193,10 @@ function averageScore(scoresObj) {
 async function loadRoster() {
   const listEl = document.getElementById('roster-list');
   listEl.innerHTML = '<div class="gc-empty">Wczytuję skład...</div>';
+  // PANEL TRENERA 07.08.2026 — nagłówek dnia od razu, jeszcze przed danymi;
+  // zdanie stanu drużyny dopisuje renderRosterHeader() po wczytaniu sygnałów.
+  const dayHeaderEl = document.getElementById('roster-day-header');
+  if (dayHeaderEl) dayHeaderEl.textContent = todayHeaderLabel();
 
   try {
     // team_memberships.player_user_id ma FK do public.users(id) — PostgREST
@@ -975,6 +1214,9 @@ async function loadRoster() {
   } catch (e) {
     listEl.innerHTML = '<div class="gc-empty">Nie udało się wczytać składu drużyny.</div>';
     rosterCache = [];
+    // PANEL TRENERA 07.08.2026 — zdanie stanu nie może zostać na "Wczytuję skład...".
+    const stateEl = document.getElementById('roster-team-state');
+    if (stateEl) stateEl.textContent = 'Nie udało się wczytać składu drużyny.';
     updateAggregateAvailability();
     return;
   }
@@ -982,6 +1224,7 @@ async function loadRoster() {
   if (!rosterCache.length) {
     listEl.innerHTML = '<div class="gc-empty">Brak aktywnych zawodników w drużynie.</div>';
     diagnosisByUser = new Map();
+    renderRosterHeader(); // PANEL TRENERA 07.08.2026
     updateAggregateAvailability();
     return;
   }
@@ -991,7 +1234,10 @@ async function loadRoster() {
     loadPreMatchSignals(),
   ]);
 
-  listEl.innerHTML = rosterCache.map(renderRosterCard).join('');
+  // PANEL TRENERA 07.08.2026 — kolejność: najpierw zdanie stanu (żeby trener
+  // dostał odpowiedź zanim zacznie skanować), potem pogrupowana i posortowana lista.
+  renderRosterHeader();
+  renderRosterList();
   updateAggregateAvailability();
 }
 
@@ -1031,6 +1277,7 @@ async function loadLatestDiagnoses(playerIds) {
 // jawną flagą z backendu), więc nie mieszamy tych dwóch stanów.
 async function loadPreMatchSignals() {
   preMatchSignalsByUser = new Map();
+  preMatchSignalsLoadFailed = false; // PANEL TRENERA 07.08.2026
   try {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_pre_match_signals`, {
       method: 'POST',
@@ -1053,30 +1300,209 @@ async function loadPreMatchSignals() {
   } catch (e) {
     // Cicha degradacja do "brak plakietek" — Skład Meczowy jest dodatkiem
     // do rostera, nie warunkiem jego wyświetlenia. Błąd nie blokuje reszty.
+    // PANEL TRENERA 07.08.2026 — ale od teraz zdanie stanu drużyny nad listą
+    // MÓWI o tym wprost, zamiast raportować "nikt nie ma dziś sygnału".
+    preMatchSignalsLoadFailed = true;
   }
 }
 
 // Mapowanie widoczności flag na 3 poziomy wglądu (SKLAD_MECZOWY_SYGNALY_
 // RYZYKA.md, sekcja 5) — reuse istniejącego team.visibility_level, zero
 // nowego mechanizmu. insufficient_data ZAWSZE widoczna na każdym poziomie.
+// PANEL TRENERA C2 08.08.2026 — WYRÓWNANIE ROZJAZDU `match_load`.
+// Do dziś ta funkcja wpuszczała `match_load` dopiero na poziomie PEŁNYM,
+// podczas gdy SKLAD_MECZOWY_SYGNALY_RYZYKA.md sekcja 5 mówi wprost:
+//   „Flaga zagęszczenia meczowego — widoczna od Podstawowego, tak samo jak
+//    zmęczenie treningowe (gotowość ogólna, w tym meczowa, już dziś
+//    zdefiniowana jako część poziomu podstawowego w Funkcji 9)."
+// Skutek starego stanu: gating robi SAMA funkcja SQL, a wg tego samego
+// dokumentu wysyła `match_load` już na Podstawowym — czyli front CHOWAŁ
+// flagę, którą baza przysłała, i trener na poziomie domyślnym mógł nie
+// widzieć zagęszczenia meczowego, choć system je wykrył. Znalezisko z rundy 1
+// (raport C, sekcja 11); decyzja Kuby: front ma przestać chować to, co baza
+// przysłała. Kierunek wyrównania jednoznaczny — front do dokumentu.
+//
+// Uwaga dla kolejnych sesji: to jest ZŁAGODZENIE filtru po stronie klienta,
+// nie obejście bezpieczeństwa. Jeśli SQL na Podstawowym `match_load` nie
+// odda, ta zmiana nie pokaże niczego — filtr klienta może tylko ukryć to, co
+// przyszło, nigdy dorysować czegoś, czego nie ma. Prawdziwą bramką pozostaje
+// get_pre_match_signals (SECURITY DEFINER, sprawdza coach_user_id).
+//
+// ─── PANEL C3 08.08.2026 — TRYB KONTUZJI SCHODZI NA PODSTAWOWY (decyzja B9
+// z DECYZJE_PRODUKTOWE_07_08_2026.md). ───
+// Było: `injury_mode` wpuszczany dopiero od poziomu ROZSZERZONEGO (zgodnie
+// z SKLAD_MECZOWY_SYGNALY_RYZYKA.md sekcja 5, która stawiała go na drugim
+// stopniu). Jest: Podstawowy.
+//
+// Uzasadnienie Kuby, przepisane tu w całości, bo to jedyne miejsce, w którym
+// kolejna sesja je znajdzie: `injury_mode_active` to NIE szczegół dziennika,
+// tylko ŚWIADOMA DEKLARACJA zawodnika „nie jestem w pełni sprawny" — coś, co
+// on sam włączył i o czym wie, że trener to zobaczy. Chowanie tej deklaracji
+// przed trenerem układającym skład nie chroni prywatności, tylko zwiększa
+// ryzyko kontuzji. Ból (`pain`, obserwacja z pain_entries) i dziennik zostają
+// wyżej — bez zmian, bo tam zawodnik NIE deklaruje niczego trenerowi, tylko
+// notuje dla siebie. Nie ruszamy systemu poziomów, przesuwamy jedną flagę.
+//
+// To jest ZMIANA DOKUMENTU, nie wyrównanie do niego — odwrotnie niż
+// `match_load` w rundzie 2. SKLAD_MECZOWY_SYGNALY_RYZYKA.md sekcja 5 nadal
+// mówi „Rozszerzony — dodatkowo flaga trybu kontuzji"; decyzja B9 jest
+// nowsza i wygrywa. Kontrakt do aktualizacji przez sesję główną.
+//
+// Ta sama uwaga co przy `match_load`: to ZŁAGODZENIE filtru po stronie
+// klienta, nie obejście bezpieczeństwa. Jeśli get_pre_match_signals na
+// Podstawowym `injury_mode` nie odda, ta zmiana nie pokaże NICZEGO — filtr
+// klienta może tylko ukryć to, co przyszło, nigdy dorysować czegoś, czego
+// nie ma. SQL, który by to naprawił po stronie bazy, jest w raporcie
+// zwrotnym C runda 3, sekcja 7.
+//
+// Konsekwencja, świadoma i pożądana: zdanie o poziomie widoczności z rundy 1
+// (visibilityScopeNote() niżej) przestaje wymieniać „trybu kontuzji" wśród
+// rzeczy, których panel nie sprawdza na Podstawowym — bo teraz sprawdza.
+// Ta funkcja jest jedynym źródłem tamtego zdania, więc wyrównuje się sama.
 function visibleRiskFlagKeys(visibilityLevel) {
-  const keys = ['fatigue', 'insufficient_data']; // Podstawowy
-  if (visibilityLevel === 'extended' || visibilityLevel === 'full') keys.push('injury_mode');
-  if (visibilityLevel === 'full') keys.push('pain', 'match_load');
+  const keys = ['fatigue', 'insufficient_data', 'match_load', 'injury_mode']; // Podstawowy
+  if (visibilityLevel === 'full') keys.push('pain');
   return keys;
 }
 
-function renderRiskBadges(playerId) {
+// PANEL TRENERA 07.08.2026 — jedno miejsce, które odpowiada na pytanie "co
+// system wie o tym zawodniku". Używane naraz przez: plakietki na karcie,
+// kolejność listy i zdanie stanu drużyny nad listą — żeby te trzy rzeczy
+// NIGDY nie mogły się rozjechać (dziś każda liczyłaby to sobie osobno).
+//
+// Trzy rozłączne stany, świadomie nie sklejane w dwa:
+//   known=false            → nie wiemy nic (RPC padło albo nie ma wiersza)
+//   activeKeys.length > 0  → są sygnały do rozważenia
+//   known && zero flag     → "nic nie wykryto" (plakietka pozytywna)
+function playerSignalSummary(playerId) {
   const signals = preMatchSignalsByUser.get(playerId);
-  if (!signals || !signals.flags) return '';
-
+  if (!signals || !signals.flags) {
+    return { known: false, activeKeys: [], weight: 0, riskCount: 0, stale: false };
+  }
+  // Gating i tak zrobiła już funkcja SQL wg teams.visibility_level — ten filtr
+  // to druga, spójnościowa warstwa (była tu przed tą zmianą, zostaje bez zmian).
   const allowedKeys = visibleRiskFlagKeys(currentTeam.visibility_level || 'basic');
-  const activeBadges = allowedKeys
-    .filter(key => signals.flags[key])
-    .map(key => `<span class="gc-risk-badge">${escapeHtml(RISK_BADGE_LABELS[key])}</span>`);
+  const activeKeys = allowedKeys.filter(key => signals.flags[key]);
+  return {
+    known: true,
+    activeKeys,
+    weight: activeKeys.reduce((sum, key) => sum + (RISK_FLAG_WEIGHTS[key] || 1), 0),
+    riskCount: activeKeys.filter(key => key !== 'insufficient_data').length,
+    stale: activeKeys.indexOf('insufficient_data') !== -1,
+  };
+}
 
-  if (!activeBadges.length) return '';
-  return `<div class="gc-risk-badges">${activeBadges.join('')}</div>`;
+function renderRiskBadges(playerId) {
+  const summary = playerSignalSummary(playerId);
+  if (!summary.known) return ''; // brak wiedzy ≠ brak ryzyka — świadomie ZERO plakietek
+
+  if (!summary.activeKeys.length) {
+    // PANEL TRENERA 07.08.2026 — sygnał pozytywny (patrz POSITIVE_BADGE_LABEL).
+    return `<div class="gc-risk-badges"><span class="gc-ok-badge">${escapeHtml(POSITIVE_BADGE_LABEL)}</span></div>`;
+  }
+  const badges = summary.activeKeys
+    .map(key => `<span class="gc-risk-badge">${escapeHtml(RISK_BADGE_LABELS[key])}</span>`)
+    .join('');
+  return `<div class="gc-risk-badges">${badges}</div>`;
+}
+
+// PANEL TRENERA 07.08.2026 — hierarchia Składu. Dwie grupy zamiast jednej
+// płaskiej listy: najpierw zawodnicy z sygnałami (malejąco po wadze), potem
+// reszta w NIEZMIENIONEJ, pierwotnej kolejności joined_at. Trener czyta górę
+// listy i może przestać — to jest cała zmiana wobec "14 identycznych białych
+// prostokątów". Patrz komentarz przy RISK_FLAG_WEIGHTS: to kolejność czytania,
+// nie ranking zawodników.
+function renderRosterList() {
+  const listEl = document.getElementById('roster-list');
+  const withSignals = [];
+  const withoutSignals = [];
+
+  rosterCache.forEach(row => {
+    const summary = playerSignalSummary(row.player_user_id);
+    (summary.activeKeys.length ? withSignals : withoutSignals).push({ row, summary });
+  });
+
+  // Sort stabilny (ES2019+) — remis wag zachowuje kolejność joined_at.
+  withSignals.sort((a, b) => b.summary.weight - a.summary.weight);
+
+  let html = withSignals.map(x => renderRosterCard(x.row)).join('');
+  if (withSignals.length && withoutSignals.length) {
+    html += `<div class="gc-roster-group-label">Pozostali (${withoutSignals.length})</div>`;
+  }
+  html += withoutSignals.map(x => renderRosterCard(x.row)).join('');
+  listEl.innerHTML = html;
+}
+
+// PANEL TRENERA 07.08.2026 — punkt wejścia: nagłówek dnia + JEDNO zdanie stanu
+// drużyny. Liczone wyłącznie z flag, które i tak już przyszły — zero nowego
+// zapytania i zero nowego wskaźnika.
+//
+// Liczebniki po polsku: świadomie ominięte przez formę dopełniaczową
+// ("3 z 14 zawodników"), która jest poprawna dla KAŻDEJ liczby — zamiast
+// odmieniać "zawodnik/zawodnicy/zawodników" wg reguły 2-4 vs 5+.
+function todayHeaderLabel() {
+  const label = new Date().toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' });
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+// Uczciwa granica plakietki pozytywnej: na poziomie innym niż Pełny część flag
+// w ogóle nie jest sprawdzana, więc "Bez sygnałów ryzyka" znaczy mniej, niż się
+// wydaje. Audyt 06.08.2026 wskazał to jako P0 ("visibility_level po cichu ukrywa
+// plakietki — trener nie wie, że sam przed sobą chowa 2 sygnały"). Tu nie
+// zmieniam gatingu (to osobna decyzja), tylko przestaję o nim milczeć.
+function visibilityScopeNote() {
+  const level = currentTeam.visibility_level || 'basic';
+  const allowed = visibleRiskFlagKeys(level);
+  const hidden = Object.keys(RISK_BADGE_LABELS).filter(key => allowed.indexOf(key) === -1);
+  if (!hidden.length) return '';
+  return `Poziom widoczności: ${VISIBILITY_LEVEL_LABELS[level] || level} — panel nie sprawdza ` +
+    `${hidden.map(key => RISK_FLAG_SHORT_LABELS[key] || key).join(', ')}. ` +
+    `„${POSITIVE_BADGE_LABEL}” znaczy tu „bez sygnałów, które ten poziom w ogóle sprawdza”. ` +
+    `Zmienisz to w Ustawieniach.`;
+}
+
+function renderRosterHeader() {
+  const headerEl = document.getElementById('roster-day-header');
+  const stateEl = document.getElementById('roster-team-state');
+  const noteEl = document.getElementById('roster-team-state-note');
+  if (!headerEl || !stateEl || !noteEl) return;
+
+  headerEl.textContent = todayHeaderLabel();
+  noteEl.classList.add('gc-hidden');
+  noteEl.textContent = '';
+
+  const total = rosterCache.length;
+  if (!total) {
+    stateEl.textContent = 'Brak aktywnych zawodników w drużynie.';
+    return;
+  }
+  if (preMatchSignalsLoadFailed) {
+    stateEl.textContent =
+      'Nie udało się dziś wczytać sygnałów — poniżej sam skład, bez plakietek. ' +
+      'To nie znaczy, że nikt nie wymaga uwagi.';
+    return;
+  }
+
+  let attention = 0; // co najmniej jeden sygnał INNY niż "za mało danych"
+  let stale = 0;     // "za mało danych"
+  rosterCache.forEach(row => {
+    const summary = playerSignalSummary(row.player_user_id);
+    if (summary.riskCount > 0) attention++;
+    else if (summary.stale) stale++;
+  });
+
+  const parts = [];
+  parts.push(attention
+    ? `Sygnał do rozważenia: ${attention} z ${total} zawodników — na górze listy.`
+    : `Żaden z ${total} zawodników nie ma dziś sygnału do rozważenia.`);
+  if (stale) parts.push(`Za mało danych: ${stale}.`);
+  stateEl.textContent = parts.join(' ');
+
+  const note = visibilityScopeNote();
+  if (note) {
+    noteEl.textContent = note;
+    noteEl.classList.remove('gc-hidden');
+  }
 }
 
 function renderRosterCard(row) {
@@ -1086,7 +1512,7 @@ function renderRosterCard(row) {
   // users_coach_select z Domeny 18 nie jest jeszcze wdrożona na tej bazie),
   // pokaż to wprost jako TODO, nie cichy pusty ciąg — zgodnie z zasadą
   // "zero cichych błędów zamiast jasnego komunikatu" z tego zlecenia.
-  const nameLabel = name || 'Zawodnik (brak danych identyfikacyjnych — sprawdź, czy wdrożono Domenę 18 / users_coach_select)';
+  const nameLabel = name || 'Zawodnik (brak danych identyfikacyjnych — napisz do Kuby)'; // AUDYT 06.08.2026: było 'sprawdź, czy wdrożono Domenę 18 / users_coach_select' — nazwa migracji SQL w interfejsie trenera
 
   const diag = diagnosisByUser.get(row.player_user_id);
   let diagLabel = 'Brak odnotowanej diagnozy.';
@@ -1252,13 +1678,90 @@ function backToRoster() {
 // komunikat pokrywający oba, tak jak wprost dopuszcza treść zlecenia.
 const EMPTY_SECTION_MESSAGE = 'Brak danych / brak dostępu na tym poziomie.';
 
+// ─────────────────────────────────────────────────────────────────────────
+// PANEL TRENERA C2 08.08.2026 — UCZCIWE PUSTE STANY (P0 z AUDYT_WARTOSCI_
+// PRODUKTU_06_08_2026.md, sekcja "Panel trenera").
+//
+// Komentarz wyżej opisuje decyzję z pierwotnego zlecenia i ZOSTAJE jako zapis
+// historyczny — ale sam komunikat był wadliwy i to jest jego naprawa.
+// „Brak danych / brak dostępu na tym poziomie" sklejał w jedno zdanie dwie
+// sytuacje, które prowadzą do DWÓCH RÓŻNYCH DECYZJI trenera:
+//   • zawodnik nic nie wpisał            → zadzwoń do zawodnika,
+//   • Twój poziom widoczności tego nie pokazuje → przestaw własny przełącznik.
+// Jeden komunikat na osiem sekcji znaczył, że trener nie wie, którą z tych
+// dwóch rzeczy zrobić — więc nie robił żadnej.
+//
+// Dlaczego to NIE jest duplikowanie logiki RLS po stronie klienta (obawa
+// z komentarza wyżej): nie zgadujemy tu polityk bazy. Czytamy poziom, który
+// trener SAM ustawił w Ustawieniach, i powtarzamy mu dokładnie to, co jest
+// napisane w tym samym pliku przy <select id="settings-visibility-select">:
+//   Podstawowy  — diagnoza, ogólna gotowość i tryb kontuzji
+//   Rozszerzony — dodatkowo cele zawodników
+//   Pełny       — dodatkowo dziennik, mecze i historia urazów
+// (PANEL C3 08.08.2026 — pierwsza linia rozszerzona o „tryb kontuzji" razem
+//  ze zmianą w <select>; decyzja B9. Mapowanie DETAIL_SECTIONS niżej NIE
+//  zmienia się: „tryb kontuzji" to jedna flaga i jedno zdanie w sekcji
+//  Profil — która i tak była od zawsze na minLevel 'basic' — a nie osobna
+//  sekcja. Historia urazów zostaje na Pełnym.)
+// To jedyne źródło, jakie ma tu front — i jedyne, jakie widzi trener. Bramką
+// pozostaje RLS: gdyby ten opis rozjechał się z polityką bazy, sekcja zostanie
+// pusta mimo obiecującego komunikatu (patrz raport C runda 2, sekcja 9).
+//
+// Trzeci stan, dopisany świadomie: BŁĄD WCZYTANIA. Wcześniej gałąź catch
+// pokazywała ten sam tekst co pusta sekcja — czyli awaria sieci wyglądała jak
+// „zawodnik nic nie ma". To ten sam rodzaj cichego fałszywego uspokojenia,
+// który runda 1 naprawiła na liście Składu (znalezisko C-N2); tu tylko
+// domykam to samo o poziom niżej. Ton zdania („To nie znaczy, że jest pusta")
+// celowo taki sam jak w zdaniu stanu drużyny.
+// ─────────────────────────────────────────────────────────────────────────
+const VISIBILITY_RANK = { basic: 0, extended: 1, full: 2 };
+
+// minLevel — najniższy poziom widoczności, na którym ta sekcja w ogóle ma
+// prawo cokolwiek pokazać (wprost z opisu przy settings-visibility-select).
+// empty — co powiedzieć, gdy poziom jest wystarczający, a mimo to pusto.
+// blocked — dopełniacz do zdania „panel nie pokazuje ...".
+const DETAIL_SECTIONS = {
+  profile:         { minLevel: 'basic',    blocked: 'profilu zawodnika',  empty: 'Zawodnik nie uzupełnił jeszcze profilu.' },
+  goals:           { minLevel: 'extended', blocked: 'celów zawodnika',    empty: 'Zawodnik nie ma jeszcze żadnego celu.' },
+  journal:         { minLevel: 'full',     blocked: 'dziennika',          empty: 'Zawodnik nie ma jeszcze wpisów w dzienniku.' },
+  injuries:        { minLevel: 'full',     blocked: 'historii urazów',    empty: 'Zawodnik nie zgłosił żadnego urazu.' },
+  matches:         { minLevel: 'full',     blocked: 'zapisów meczowych',  empty: 'Zawodnik nie zapisał jeszcze żadnego meczu.' },
+  recommendations: { minLevel: 'basic',    blocked: 'rekomendacji',       empty: 'Zawodnik nie ma jeszcze żadnej rekomendacji.' },
+  focus_blocks:    { minLevel: 'basic',    blocked: 'Bloków Skupienia',   empty: 'Brak aktywnego Bloku Skupienia.' },
+  thread_signals:  { minLevel: 'basic',    blocked: 'dodatkowych sygnałów', empty: 'Brak dodatkowych sygnałów w tej chwili.' },
+};
+
+function isSectionBlockedByVisibility(sectionKey) {
+  const section = DETAIL_SECTIONS[sectionKey];
+  if (!section || !currentTeam) return false;
+  const level = currentTeam.visibility_level || 'basic';
+  return (VISIBILITY_RANK[level] || 0) < (VISIBILITY_RANK[section.minLevel] || 0);
+}
+
+// Pusto — ale wiemy, DLACZEGO pusto.
+function emptySectionHtml(sectionKey) {
+  const section = DETAIL_SECTIONS[sectionKey];
+  if (!section) return `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`;
+  if (isSectionBlockedByVisibility(sectionKey)) {
+    const level = (currentTeam && currentTeam.visibility_level) || 'basic';
+    return `<div class="gc-empty">Poziom widoczności: ${escapeHtml(VISIBILITY_LEVEL_LABELS[level] || level)} — ` +
+      `panel nie pokazuje ${escapeHtml(section.blocked)}. Zmienisz to w Ustawieniach.</div>`;
+  }
+  return `<div class="gc-empty">${escapeHtml(section.empty)}</div>`;
+}
+
+// Nie udało się wczytać — trzeci stan, świadomie NIE sklejony z pustką.
+function failedSectionHtml() {
+  return '<div class="gc-empty">Nie udało się wczytać tej sekcji. To nie znaczy, że jest pusta.</div>';
+}
+
 async function loadPlayerProfileSection(playerId) {
   const el = document.getElementById('detail-profile');
   try {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/player_profiles?user_id=eq.${playerId}&select=*`, { headers: authHeaders() });
     const rows = await res.json();
     const p = Array.isArray(rows) && rows[0];
-    if (!p) { el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`; return; }
+    if (!p) { el.innerHTML = emptySectionHtml('profile'); return; } // PANEL TRENERA C2 08.08.2026
 
     const parts = [];
     if (p.position_primary) parts.push('Pozycja: ' + p.position_primary + (p.position_secondary ? ' / ' + p.position_secondary : ''));
@@ -1269,9 +1772,9 @@ async function loadPlayerProfileSection(playerId) {
     }
     el.innerHTML = parts.length
       ? parts.map(t => `<div style="margin-bottom:6px;">${escapeHtml(t)}</div>`).join('')
-      : `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`;
+      : emptySectionHtml('profile'); // PANEL TRENERA C2 08.08.2026
   } catch (e) {
-    el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`;
+    el.innerHTML = failedSectionHtml(); // PANEL TRENERA C2 08.08.2026
   }
 }
 
@@ -1283,7 +1786,7 @@ async function loadPlayerGoalsSection(playerId) {
       { headers: authHeaders() }
     );
     const rows = await res.json();
-    if (!Array.isArray(rows) || !rows.length) { el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`; return; }
+    if (!Array.isArray(rows) || !rows.length) { el.innerHTML = emptySectionHtml('goals'); return; } // PANEL TRENERA C2 08.08.2026
 
     el.innerHTML = rows.map(g => {
       const label = SEG_LABELS[g.segment_id] || g.segment_id;
@@ -1307,7 +1810,7 @@ async function loadPlayerGoalsSection(playerId) {
       `;
     }).join('');
   } catch (e) {
-    el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`;
+    el.innerHTML = failedSectionHtml(); // PANEL TRENERA C2 08.08.2026
   } finally {
     renderGoalSuggestForm();
   }
@@ -1550,10 +2053,10 @@ async function loadPlayerJournalSection(playerId) {
       { headers: authHeaders() }
     );
     const rows = await res.json();
-    if (!Array.isArray(rows) || !rows.length) { el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`; return; }
+    if (!Array.isArray(rows) || !rows.length) { el.innerHTML = emptySectionHtml('journal'); return; } // PANEL TRENERA C2 08.08.2026
     el.innerHTML = rows.map(renderJournalRowForCoach).join('');
   } catch (e) {
-    el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`;
+    el.innerHTML = failedSectionHtml(); // PANEL TRENERA C2 08.08.2026
   }
 }
 
@@ -1597,7 +2100,7 @@ async function loadPlayerInjurySection(playerId) {
       { headers: authHeaders() }
     );
     const rows = await res.json();
-    if (!Array.isArray(rows) || !rows.length) { el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`; return; }
+    if (!Array.isArray(rows) || !rows.length) { el.innerHTML = emptySectionHtml('injuries'); return; } // PANEL TRENERA C2 08.08.2026
 
     el.innerHTML = rows.map(row => {
       const status = row.fully_healed ? 'Zagojona' : 'W trakcie leczenia';
@@ -1612,7 +2115,7 @@ async function loadPlayerInjurySection(playerId) {
       `;
     }).join('');
   } catch (e) {
-    el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`;
+    el.innerHTML = failedSectionHtml(); // PANEL TRENERA C2 08.08.2026
   }
 }
 
@@ -1624,29 +2127,99 @@ async function loadPlayerMatchSection(playerId) {
       { headers: authHeaders() }
     );
     const rows = await res.json();
-    if (!Array.isArray(rows) || !rows.length) { el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`; return; }
+    if (!Array.isArray(rows) || !rows.length) { el.innerHTML = emptySectionHtml('matches'); return; } // PANEL TRENERA C2 08.08.2026
 
-    el.innerHTML = rows.map(row => {
-      const dateLabel = new Date(row.created_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', year: 'numeric' });
-      const parts = [];
-      if (row.own_score !== null && row.own_score !== undefined && row.opponent_score !== null && row.opponent_score !== undefined) {
-        parts.push(`wynik: ${row.own_score}:${row.opponent_score}`);
-      }
-      if (row.minutes_played !== null && row.minutes_played !== undefined) parts.push(`${row.minutes_played} min`);
-      if (row.match_rpe !== null && row.match_rpe !== undefined) parts.push(`RPE: ${row.match_rpe}/10`);
-      return `
-        <div class="gc-history-card">
-          <div class="gc-history-top">
-            <span class="gc-history-type">${escapeHtml(row.game_type || '')}</span>
-            <span class="gc-history-date">${dateLabel}</span>
-          </div>
-          <div class="gc-history-detail">${escapeHtml(parts.join(' · ') || '—')}</div>
-        </div>
-      `;
-    }).join('');
+    el.innerHTML = renderMatchSummary(rows); // PANEL TRENERA C2 08.08.2026
   } catch (e) {
-    el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`;
+    el.innerHTML = failedSectionHtml(); // PANEL TRENERA C2 08.08.2026
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// PANEL TRENERA C2 08.08.2026 — sekcja „Mecze" przestaje być surową listą.
+// Werdykt audytu wartości: „2:1 · 70 min · RPE 8/10" ×10 nie zmienia żadnej
+// decyzji trenera. Trener nie potrzebuje dziesięciu wierszy do przeczytania —
+// potrzebuje jednej liczby: ile ten zawodnik ostatnio grał.
+//
+// UCZCIWA GRANICA — czego tu NIE MA i dlaczego:
+// • To NIE JEST „minuty z ostatnich 7 dni". Zapytanie wyżej bierze 10
+//   OSTATNICH wierszy bez okna czasowego, więc podsumowanie dotyczy dokładnie
+//   tych wierszy i mówi to wprost, razem z zakresem dat. Prawdziwe okno
+//   7-dniowe zna tylko baza (flaga match_load w get_pre_match_signals) i nie
+//   oddaje liczby — raport C runda 1, sekcja 11, potwierdził, że
+//   get_pre_match_signals zwraca same boole. Zamiana tej sekcji na „suma minut
+//   z 7 dni" wymagałaby SQL (get_team_load_context, raport C runda 1,
+//   sekcja 7.2). Nie zmyślam wskaźnika, którego baza nie policzyła.
+// • Braki są POKAZANE, nie wyrównane: wiersze bez minut / bez RPE są liczone
+//   osobno i wypisane. Średnia z 3 z 10 meczów nie może wyglądać jak średnia
+//   z 10 — to dokładnie ten sam błąd, przed którym broni plakietka „Za mało
+//   danych" na Składzie.
+// • Surowa lista NIE ZNIKA — ląduje w zwiniętym <details>. Nic nie tracimy,
+//   przestaje tylko zajmować ekran domyślnie. <details> jest natywne, zero JS.
+// ─────────────────────────────────────────────────────────────────────────
+function renderMatchSummary(rows) {
+  const num = (v) => (v === null || v === undefined || v === '' || isNaN(Number(v)) ? null : Number(v));
+
+  const minutes = rows.map(r => num(r.minutes_played)).filter(v => v !== null);
+  const rpes = rows.map(r => num(r.match_rpe)).filter(v => v !== null);
+  const totalMinutes = minutes.reduce((sum, v) => sum + v, 0);
+  const avgRpe = rpes.length ? Math.round((rpes.reduce((sum, v) => sum + v, 0) / rpes.length) * 10) / 10 : null;
+
+  const dates = rows.map(r => new Date(r.created_at)).filter(d => !isNaN(d.getTime())).sort((a, b) => a - b);
+  const fmt = (d) => d.toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' });
+  const rangeLabel = dates.length
+    ? (dates.length > 1 ? `${fmt(dates[0])} – ${fmt(dates[dates.length - 1])}` : fmt(dates[0]))
+    : '';
+
+  // Odmiana „mecz/mecze/meczów". W rundzie 1 dało się ominąć odmianę formą
+  // dopełniaczową („3 z 14 zawodników"), bo rządził nią przyimek — tu nie ma
+  // takiej konstrukcji i „3 meczów" byłoby po prostu błędem. Reguła 2-4 vs
+  // 5+ z wyjątkiem nastek; przy limicie 10 wierszy nastki i tak nie wystąpią,
+  // ale warunek zostaje na wypadek podniesienia limitu.
+  const matchWord = (n) => {
+    if (n === 1) return 'mecz';
+    const last = n % 10, lastTwo = n % 100;
+    return (last >= 2 && last <= 4 && !(lastTwo >= 12 && lastTwo <= 14)) ? 'mecze' : 'meczów';
+  };
+  const headParts = [`${rows.length} ${matchWord(rows.length)}`];
+  if (minutes.length) headParts.push(`${totalMinutes} min łącznie`);
+  if (avgRpe !== null) headParts.push(`śr. RPE ${String(avgRpe).replace('.', ',')}/10`);
+
+  const gaps = [];
+  if (minutes.length < rows.length) gaps.push(`${rows.length - minutes.length} bez zapisanych minut`);
+  if (rpes.length < rows.length) gaps.push(`${rows.length - rpes.length} bez RPE`);
+
+  const detailRows = rows.map(row => {
+    const dateLabel = new Date(row.created_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', year: 'numeric' });
+    const parts = [];
+    if (row.own_score !== null && row.own_score !== undefined && row.opponent_score !== null && row.opponent_score !== undefined) {
+      parts.push(`wynik: ${row.own_score}:${row.opponent_score}`);
+    }
+    if (row.minutes_played !== null && row.minutes_played !== undefined) parts.push(`${row.minutes_played} min`);
+    if (row.match_rpe !== null && row.match_rpe !== undefined) parts.push(`RPE: ${row.match_rpe}/10`);
+    return `
+      <div class="gc-history-card">
+        <div class="gc-history-top">
+          <span class="gc-history-type">${escapeHtml(row.game_type || '')}</span>
+          <span class="gc-history-date">${dateLabel}</span>
+        </div>
+        <div class="gc-history-detail">${escapeHtml(parts.join(' · ') || '—')}</div>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="gc-history-card">
+      <div class="gc-history-detail" style="font-size:15px;">${escapeHtml(headParts.join(' · '))}</div>
+      <div class="gc-history-detail" style="color:var(--muted); font-size:12px; margin-top:4px;">
+        Ostatnie zalogowane mecze${rangeLabel ? ` (${escapeHtml(rangeLabel)})` : ''}, nie okno 7-dniowe.${gaps.length ? ` W tym ${escapeHtml(gaps.join(', '))}.` : ''}
+      </div>
+    </div>
+    <details style="margin-top:8px;">
+      <summary style="font-size:13px; color:var(--muted); cursor:pointer;">Pokaż pojedyncze mecze</summary>
+      <div style="margin-top:8px;">${detailRows}</div>
+    </details>
+  `;
 }
 
 // ══════════════════════════════════════
@@ -1667,6 +2240,14 @@ async function loadPlayerMatchSection(playerId) {
 //  player_insights przez fetchPlayerInsights) o tym "wiedziała". 'w_punkt'
 //  to interpretacja Claude'a dla tej ścieżki (najbliższa etykieta dla
 //  "trener potwierdza ten sam kierunek") — do korekty, jeśli wolisz inaczej.
+//
+//  AUDYT 06.08.2026 — dodane zabezpieczenie przed nadpisaniem. Wcześniej ten
+//  zapis leciał ZAWSZE, więc jeśli trener wcześniej ocenił ten sam segment
+//  jawnie (np. "Nie do końca"), wzmocnienie po cichu podmieniało tę ocenę na
+//  "W punkt" — trener widział w systemie werdykt, którego nigdy nie kliknął,
+//  i nie dostawał o tym żadnej informacji. Teraz jawna ocena trenera wygrywa:
+//  domyślne 'w_punkt' zapisuje się tylko wtedy, gdy dla tego segmentu nie ma
+//  jeszcze żadnej oceny od trenera.
 // ══════════════════════════════════════
 const RECOMMENDATION_TYPE_LABELS = {
   training_focus: 'Priorytet treningowy',
@@ -1702,13 +2283,13 @@ async function loadPlayerRecommendationsSection(playerId) {
       insights.forEach(i => { if (!coachInsightBySegment.has(i.segment_id)) coachInsightBySegment.set(i.segment_id, i.response_value); });
     }
     if (!Array.isArray(rows) || !rows.length) {
-      el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`;
+      el.innerHTML = emptySectionHtml('recommendations'); // PANEL TRENERA C2 08.08.2026
     } else {
       latestTrainingFocus = rows.find(r => r.recommendation_type === 'training_focus') || null;
       el.innerHTML = rows.map(r => renderRecommendationCard(r)).join('');
     }
   } catch (e) {
-    el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`;
+    el.innerHTML = failedSectionHtml(); // PANEL TRENERA C2 08.08.2026
   }
   renderCoachRecommendationForm();
 }
@@ -1870,7 +2451,9 @@ async function submitCoachRecommendation() {
       if (!patchRes.ok) throw new Error(await patchRes.text());
 
       // Naprawa W4 — patrz komentarz na górze tej sekcji.
-      if (u.email) {
+      // AUDYT 06.08.2026: nie nadpisuj jawnej oceny trenera dla tego segmentu.
+      const existingCoachAssessment = coachInsightBySegment.get(segmentId);
+      if (u.email && !existingCoachAssessment) {
         await fetch(`${SUPABASE_URL}/rest/v1/player_insights`, {
           method: 'POST',
           headers: { ...authHeaders(), 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
@@ -1922,7 +2505,7 @@ async function loadPlayerFocusBlocksSection(playerId) {
       { headers: authHeaders() }
     );
     const rows = await res.json();
-    if (!Array.isArray(rows) || !rows.length) { el.innerHTML = `<div class="gc-empty">Brak aktywnego Bloku Skupienia.</div>`; return; }
+    if (!Array.isArray(rows) || !rows.length) { el.innerHTML = emptySectionHtml('focus_blocks'); return; } // PANEL TRENERA C2 08.08.2026
     el.innerHTML = rows.map(b => {
       const label = SEG_LABELS[b.segment_id] || b.segment_id;
       const dateLabel = b.started_at ? new Date(b.started_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }) : '';
@@ -1936,7 +2519,7 @@ async function loadPlayerFocusBlocksSection(playerId) {
       `;
     }).join('');
   } catch (e) {
-    el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`;
+    el.innerHTML = failedSectionHtml(); // PANEL TRENERA C2 08.08.2026
   }
 }
 
@@ -1958,10 +2541,13 @@ async function loadPlayerThreadSignalsSection(playerId) {
       body: JSON.stringify({ action: 'detect_coach_threads', coachUserId: currentUser.id, teamId: currentTeam.id, playerUserId: playerId }),
     });
     const data = await res.json();
-    if (!data.ok) { el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`; return; }
+    // PANEL TRENERA C2 08.08.2026 — !data.ok to BŁĄD detekcji, nie pustka
+    // (najczęstsza przyczyna: brak ANTHROPIC_API_KEY w Vercel, znalezisko
+    // C-N3). Wcześniej wyglądało dokładnie tak samo jak „nic nie wykryto".
+    if (!data.ok) { el.innerHTML = failedSectionHtml(); return; }
 
     const all = [...(data.playerThreads || []), ...(data.teamThreads || [])];
-    if (!all.length) { el.innerHTML = `<div class="gc-empty">Brak dodatkowych sygnałów w tej chwili.</div>`; return; }
+    if (!all.length) { el.innerHTML = emptySectionHtml('thread_signals'); return; } // PANEL TRENERA C2 08.08.2026
 
     el.innerHTML = all.map(t => `
       <div class="gc-tip-card" style="margin-bottom:10px;">
@@ -1969,7 +2555,7 @@ async function loadPlayerThreadSignalsSection(playerId) {
       </div>
     `).join('');
   } catch (e) {
-    el.innerHTML = `<div class="gc-empty">${EMPTY_SECTION_MESSAGE}</div>`;
+    el.innerHTML = failedSectionHtml(); // PANEL TRENERA C2 08.08.2026
   }
 }
 
@@ -2040,8 +2626,10 @@ async function addCoachNote() {
   const u = (currentPlayer && currentPlayer.users) || {};
   if (!u.email) {
     errEl.textContent =
-      'Nie udało się pobrać adresu e-mail zawodnika (wymagany do zapisania notatki). ' +
-      'Sprawdź, czy na bazie wdrożono Domenę 18 (polityka users_coach_select), albo odśwież stronę.';
+      // AUDYT 06.08.2026 — było: 'Sprawdź, czy na bazie wdrożono Domenę 18
+      // (polityka users_coach_select)'. Trener drużyny nie jest administratorem bazy.
+      'Nie udało się pobrać danych tego zawodnika, więc notatki nie da się teraz zapisać. ' +
+      'Odśwież stronę — jeśli to nie pomoże, daj znać Kubie.';
     errEl.classList.remove('gc-hidden');
     return;
   }
@@ -2096,7 +2684,8 @@ function loadAssistantPanel() {
   document.getElementById('tip-error').classList.add('gc-hidden');
   document.getElementById('chat-error').classList.add('gc-hidden');
   document.getElementById('chat-history').innerHTML = '';
-  renderNutritionCard();
+  // PANEL TRENERA C2 08.08.2026 — renderNutritionCard() usunięte razem z kartą
+  // odżywiania (patrz komentarz przy wyciętym bloku HTML zakładki Asystent).
   loadPlannedSessions();
 }
 
@@ -2205,8 +2794,16 @@ async function sendCoachChatQuestion() {
 
     const ex = data.exchange;
     const redirectClass = ex.redirected_to_marketplace ? ' gc-redirect' : '';
-    const marketplaceLink = ex.redirected_to_marketplace
-      ? '<a class="gc-marketplace-link" href="marketplace_index.html">Zobacz specjalistów w Marketplace →</a>'
+    // ⛔ ZAMROŻONE 06.08.2026 (decyzja Kuby po audycie wartości produktu).
+    // Link prowadził do 'marketplace_index.html' — pliku, którego NIE MA w tym
+    // katalogu (404). Był jedynym wyjściem z odmowy odpowiedzi na pytanie
+    // zdrowotne, czyli ślepym zaułkiem w najwrażliwszym momencie rozmowy.
+    // Marketplace jest zamrożony do czasu pierwszego prawdziwego specjalisty
+    // (pk_test w płatnościach, zero podaży) — do tego czasu asystent kończy
+    // zdaniem, a nie linkiem donikąd.
+    const MARKETPLACE_ENABLED = false;
+    const marketplaceLink = (MARKETPLACE_ENABLED && ex.redirected_to_marketplace)
+      ? '<a class="gc-marketplace-link" href="https://gamechange-marketplace.vercel.app/specialist_list.html" target="_blank" rel="noopener">Zobacz specjalistów w Marketplace →</a>'
       : '';
     historyEl.insertAdjacentHTML('afterbegin', `
       <div class="gc-chat-exchange">
@@ -2246,30 +2843,12 @@ Uzupełnienie płynów i węglowodanów jak najszybciej po zakończeniu gry — 
 WAŻNE
 To ogólna edukacja żywieniowa, nie porada medyczna. Przy alergiach, nietolerancjach albo innych indywidualnych ograniczeniach zdrowotnych — skonsultuj się ze specjalistą (Marketplace Gamechange).`;
 
-function renderNutritionCard() {
-  const el = document.getElementById('nutrition-card-content');
-  const blocks = NUTRITION_CARD_TEXT.split('\n\n');
-  el.innerHTML = blocks.map(block => {
-    const lines = block.split('\n');
-    const heading = lines[0];
-    const body = lines.slice(1).join(' ');
-    return `<h4>${escapeHtml(heading)}</h4><p>${escapeHtml(body)}</p>`;
-  }).join('');
-}
-
-async function copyNutritionCard() {
-  const okEl = document.getElementById('nutrition-copy-ok');
-  try {
-    await navigator.clipboard.writeText(NUTRITION_CARD_TEXT);
-    okEl.classList.remove('gc-hidden');
-    setTimeout(() => okEl.classList.add('gc-hidden'), 2500);
-  } catch (e) {
-    // Clipboard API może wymagać interakcji użytkownika/zezwolenia w
-    // niektórych przeglądarkach — świadomie bez zapasowego mechanizmu
-    // document.execCommand('copy') (przestarzały, niespójny między
-    // przeglądarkami); trener może zaznaczyć i skopiować tekst ręcznie.
-  }
-}
+// PANEL TRENERA C2 08.08.2026 — renderNutritionCard() i copyNutritionCard()
+// usunięte razem z kartą odżywiania w zakładce Asystent (uzasadnienie przy
+// wyciętym bloku HTML). Obie były wyłącznie obsługą tamtego widoku i nie
+// miały już do czego się podpiąć — zostawienie ich odwoływałoby się do
+// nieistniejących id (nutrition-card-content / nutrition-copy-ok).
+// Stała NUTRITION_CARD_TEXT wyżej ZOSTAJE — to treść, nie interfejs.
 
 // ══════════════════════════════════════
 //  ZAPLANUJ SESJĘ DRUŻYNY — Pakiet 17, "Zamknięcie pętli: sesja trenera →
@@ -2319,15 +2898,17 @@ async function createPlannedSession() {
   const unitType = document.getElementById('session-unit-type-select').value;
   const sessionDate = document.getElementById('session-date-input').value;
   const title = document.getElementById('session-title-input').value.trim();
-  const coachQuestion = document.getElementById('session-question-input').value.trim();
+  // PANEL TRENERA C2 08.08.2026 — pole „Pytanie do zawodników" wycięte z UI
+  // (uzasadnienie przy wyciętym bloku HTML). RPC dostaje jawne null zamiast
+  // pominiętego parametru: sygnatura create_coach_planned_session zostaje
+  // nietknięta, więc backend nie wymaga żadnej zmiany. Walidacja długości
+  // razem z polem (nie ma czego walidować), stała
+  // MAX_COACH_SESSION_QUESTION_LENGTH zostaje — używa jej jeszcze
+  // saveSessionQuestion().
+  const coachQuestion = null;
 
   if (!isValidSessionDateStr(sessionDate)) {
     errEl.textContent = 'Podaj prawidłową datę sesji.';
-    errEl.classList.remove('gc-hidden');
-    return;
-  }
-  if (coachQuestion.length > MAX_COACH_SESSION_QUESTION_LENGTH) {
-    errEl.textContent = `Pytanie może mieć maksymalnie ${MAX_COACH_SESSION_QUESTION_LENGTH} znaków.`;
     errEl.classList.remove('gc-hidden');
     return;
   }
@@ -2351,7 +2932,6 @@ async function createPlannedSession() {
     if (!res.ok) throw new Error(await res.text());
 
     document.getElementById('session-title-input').value = '';
-    document.getElementById('session-question-input').value = '';
     okEl.textContent = 'Sesja zaplanowana — pojawiła się w kalendarzu każdego aktywnego zawodnika drużyny.';
     okEl.classList.remove('gc-hidden');
     await loadPlannedSessions();
@@ -2406,15 +2986,16 @@ function renderPlannedSessionCard(s) {
         <span class="gc-history-date">${dateLabel}</span>
       </div>
       <div class="gc-history-detail">${escapeHtml(unitLabel)} · ${statusLabel}</div>
-      ${s.coach_question ? `<div class="gc-history-detail">Pytanie: ${escapeHtml(s.coach_question)}</div>` : ''}
+      <!-- PANEL TRENERA C2 08.08.2026 — WYCIĘTE: przycisk „Pytanie do
+           zawodników", edytor pytania i wyświetlanie zapisanego pytania.
+           To druga (i faktyczna „przy zaplanowanej sesji") droga do tego
+           samego pola, którego zawodnik nigdy nie zobaczy — zostawienie jej
+           tutaj zniweczyłoby wycięcie pola z formularza wyżej. Dane w
+           coach_planned_sessions.coach_question NIE SĄ kasowane; wrócą na
+           ekran razem z tym blokiem. -->
       <div class="gc-btn-row" style="margin-top:10px;">
-        <button class="gc-btn gc-btn-secondary" onclick="toggleSessionQuestionEditor('${s.id}')">Pytanie do zawodników</button>
         <button class="gc-btn gc-btn-secondary" onclick="checkSessionQuality('${s.id}')">Sprawdź jakość</button>
         ${cancelBtn}
-      </div>
-      <div id="session-question-editor-${s.id}" class="gc-hidden" style="margin-top:10px;">
-        <textarea class="gc-textarea" id="session-question-edit-input-${s.id}" maxlength="300">${escapeHtml(s.coach_question || '')}</textarea>
-        <button class="gc-btn" onclick="saveSessionQuestion('${s.id}')">Zapisz pytanie</button>
       </div>
       <div id="session-summary-${s.id}" style="margin-top:10px;"></div>
       <div id="session-error-${s.id}" class="gc-error gc-hidden" style="margin-top:8px;"></div>
@@ -2423,6 +3004,13 @@ function renderPlannedSessionCard(s) {
   `;
 }
 
+// PANEL TRENERA C2 08.08.2026 — obie funkcje niżej ZOSTAJĄ, ale od dziś nikt
+// ich nie woła: interfejs pytania do zawodników jest wycięty (uzasadnienie
+// przy karcie zaplanowanej sesji). Świadomie nie kasuję ich razem z UI —
+// backend (set_coach_session_question) jest nietknięty i sprawny, więc
+// przywrócenie funkcji, gdy powstanie strona zawodnika, ma być wklejeniem
+// HTML, a nie pisaniem logiki od nowa. Jeśli ta decyzja nie zapadnie do
+// końca pilotażu, to jest pierwszy kandydat do sprzątnięcia.
 function toggleSessionQuestionEditor(sessionId) {
   const el = document.getElementById(`session-question-editor-${sessionId}`);
   if (el) el.classList.toggle('gc-hidden');
@@ -2666,63 +3254,94 @@ async function loadDigestPreferences() {
   }
 }
 
-async function saveDigestPreferences() {
-  const errEl = document.getElementById('settings-digest-error');
-  const okEl = document.getElementById('settings-digest-ok');
-  errEl.classList.add('gc-hidden');
-  okEl.classList.add('gc-hidden');
+// PANEL TRENERA C2 08.08.2026 — było `saveDigestPreferences()`: ta sama
+// treść zapytania co wcześniej (te same wiersze, ten sam upsert, ta sama
+// tabela), zdjęta z niej wyłącznie obsługa własnego przycisku i własnych
+// komunikatów — bo przycisk jest teraz jeden na całą listę. Rzuca w górę,
+// zamiast łykać błąd, żeby saveEmailPreferences() mogło pokazać jeden
+// komunikat dla obu zapisów.
+async function upsertDigestPreferences() {
+  const nowIso = new Date().toISOString();
+  const payload = DIGEST_SIGNAL_TYPES.map((t) => {
+    const el = document.getElementById(`digest-${t}`);
+    return {
+      coach_user_id: currentUser.id,
+      signal_type: t,
+      enabled: !!(el && el.checked),
+      updated_at: nowIso,
+    };
+  });
 
-  const btn = document.getElementById('settings-digest-save-btn');
-  btn.disabled = true;
-  btn.textContent = 'Zapisuję...';
-
-  try {
-    const nowIso = new Date().toISOString();
-    const payload = DIGEST_SIGNAL_TYPES.map((t) => {
-      const el = document.getElementById(`digest-${t}`);
-      return {
-        coach_user_id: currentUser.id,
-        signal_type: t,
-        enabled: !!(el && el.checked),
-        updated_at: nowIso,
-      };
-    });
-
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/coach_digest_preferences?on_conflict=coach_user_id,signal_type`, {
-      method: 'POST',
-      headers: { ...authHeaders(), 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) throw new Error(await res.text());
-
-    okEl.textContent = 'Zapisano ustawienia Digestu.';
-    okEl.classList.remove('gc-hidden');
-  } catch (e) {
-    errEl.textContent = 'Nie udało się zapisać: ' + e.message;
-    errEl.classList.remove('gc-hidden');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Zapisz';
-  }
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/coach_digest_preferences?on_conflict=coach_user_id,signal_type`, {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await res.text());
 }
 
 // ══════════════════════════════════════
 //  RAPORTY W WYBRANYCH MOMENTACH (Pakiet 20, 04.08.2026) —
 //  coach_scheduled_report_preferences, jeden wiersz per (coach_user_id,
-//  report_type). W ODRÓŻNIENIU od DIGEST_SIGNAL_TYPES wyżej: BRAK WIERSZA
-//  = WYŁĄCZONE (opt-in) — checkboxy startują ODZNACZONE, dopóki backend
-//  nie powie inaczej. Upsert przez ?on_conflict, ten sam wzorzec co
-//  saveDigestPreferences() wyżej. Pełny opis:
+//  report_type). Upsert przez ?on_conflict, ten sam wzorzec co
+//  upsertDigestPreferences() wyżej (do 08.08.2026: saveDigestPreferences()).
+//  Pełny opis:
 //  claude/INTEGRACJA_RAPORTY_KRYTYCZNE_MOMENTY.md /
 //  claude/INTEGRACJA_RAPORTY_KRYTYCZNE_MOMENTY_SQL.md.
+//  PANEL TRENERA C2 08.08.2026 — te dwa typy mają dziś WSPÓLNY interfejs
+//  z Digestem („Kiedy mam Ci napisać"), ale nadal WŁASNĄ tabelę.
+//
+//  ─── PANEL C3 08.08.2026 — DOMYŚLNE UJEDNOLICONE NA WŁĄCZONE (decyzja
+//  B10). ───
+//  Było: BRAK WIERSZA = WYŁĄCZONE (opt-in), odwrotnie niż Digest — czyli
+//  siedem pozycji na jednej liście startowało włączonych, a dwie
+//  wyłączonych, i trzeba to było tłumaczyć zdaniem „Domyślnie wyłączone."
+//  przy tych dwóch. Jest: BRAK WIERSZA = WŁĄCZONE, dokładnie jak
+//  coach_digest_preferences (isSignalEnabled() w lib/coach-digest.js).
+//  Uzasadnienie Kuby: trener, który nie chce maila, wyłączy go po
+//  pierwszym; trener, który nie wie, że coś istnieje, nigdy tego nie
+//  włączy. Stary argument („nowy typ e-maila, o który nikt nie prosił,
+//  wysyłanie wszystkim ryzykuje wrażenie spamu") jest tym rozstrzygnięciem
+//  odrzucony świadomie, nie przeoczony.
+//
+//  UWAGA — to jest zmiana WYŁĄCZNIE reguły dla BRAKU wiersza. Trener, który
+//  ma dziś wiersz z enabled=false, ma go nadal i nadal nic nie dostanie:
+//  `row.enabled !== false` niżej czyta wartość, a nie obecność wiersza.
+//  Prawdziwe przełączenie domyślnej dzieje się po stronie serwera —
+//  isReportEnabled() w lib/coach-scheduled-reports.js. Ten plik tylko
+//  przestaje pokazywać checkboxy odznaczone komuś, komu system i tak
+//  będzie wysyłał.
 // ══════════════════════════════════════
+// Kontrakt backendu — OBA typy, nietknięty (patrz REPORT_TYPES w
+// lib/coach-scheduled-reports.js). NIE jest listą tego, co widać na ekranie.
 const SCHEDULED_REPORT_TYPES = ['pre_match_team_briefing', 'weekly_team_pulse'];
 
+// PANEL C3 08.08.2026 (B11) — TO JEST TEN JEDEN WPIS. Usunięcie
+// 'weekly_team_pulse' z tej listy przywraca pozycję do interfejsu; drugi
+// i ostatni krok to WEEKLY_TEAM_PULSE_ENABLED=true w
+// lib/coach-scheduled-reports.js (plus wklejenie bloku HTML z komentarza
+// w sekcji Ustawień wyżej).
+const SCHEDULED_REPORT_TYPES_HIDDEN_IN_UI = ['weekly_team_pulse'];
+
+// Świadomie WYLICZANE z kontraktu backendu, a nie pisane drugi raz z ręki —
+// dzięki temu lista ekranu nie może po cichu rozjechać się z listą typów
+// w tabeli (dokładnie ten rodzaj rozjazdu, który runda 2 znalazła przy
+// domyślnych). Upsert iteruje po TEJ liście, więc NIE dotyka wierszy
+// weekly_team_pulse: wybór trenera i wybrany dzień tygodnia przeżywają
+// wycięcie nienaruszone w bazie.
+const SCHEDULED_REPORT_TYPES_IN_UI = SCHEDULED_REPORT_TYPES
+  .filter((t) => SCHEDULED_REPORT_TYPES_HIDDEN_IN_UI.indexOf(t) === -1);
+
 async function loadScheduledReportPreferences() {
-  SCHEDULED_REPORT_TYPES.forEach((t) => {
+  SCHEDULED_REPORT_TYPES_IN_UI.forEach((t) => {
     const el = document.getElementById(`sched-report-${t}`);
-    if (el) el.checked = false; // opt-in: domyślnie WYŁĄCZONE, dopóki backend nie powie inaczej
+    // PANEL C3 08.08.2026 — domyślnie WŁĄCZONE (było: false). Musi być zgodne
+    // z isReportEnabled() w lib/coach-scheduled-reports.js, inaczej panel
+    // pokazywałby odznaczony checkbox komuś, kto te maile dostaje.
+    if (el) el.checked = true;
   });
+  // Selecta dnia tygodnia nie ma w interfejsie od 08.08.2026 (B11) — `if`
+  // zostaje, bo wraca razem z blokiem HTML. Ta sama ostrożność co if (navBtn).
   const daySelect = document.getElementById('sched-report-weekly-day-select');
   if (daySelect) daySelect.value = 'MON';
 
@@ -2731,11 +3350,11 @@ async function loadScheduledReportPreferences() {
       `${SUPABASE_URL}/rest/v1/coach_scheduled_report_preferences?coach_user_id=eq.${currentUser.id}&select=report_type,enabled,weekly_day_of_week`,
       { headers: authHeaders() }
     );
-    if (!res.ok) return; // cicha degradacja -- zostaje bezpieczny domyślny stan (wszystko wyłączone)
+    if (!res.ok) return; // cicha degradacja -- zostaje bezpieczny domyślny stan (wszystko włączone, jak Digest)
     const rows = await res.json();
     (rows || []).forEach((row) => {
       const el = document.getElementById(`sched-report-${row.report_type}`);
-      if (el) el.checked = row.enabled !== false;
+      if (el) el.checked = row.enabled !== false; // wartość, nie obecność wiersza
       if (row.report_type === 'weekly_team_pulse' && row.weekly_day_of_week && daySelect) {
         daySelect.value = row.weekly_day_of_week;
       }
@@ -2745,46 +3364,95 @@ async function loadScheduledReportPreferences() {
   }
 }
 
-async function saveScheduledReportPreferences() {
-  const errEl = document.getElementById('settings-sched-report-error');
-  const okEl = document.getElementById('settings-sched-report-ok');
+// PANEL TRENERA C2 08.08.2026 — było `saveScheduledReportPreferences()`,
+// ta sama zmiana co przy Digeście wyżej: zapytanie nietknięte, zdjęta
+// obsługa własnego przycisku i komunikatów.
+// PANEL C3 08.08.2026 — iteracja po SCHEDULED_REPORT_TYPES_IN_UI zamiast po
+// SCHEDULED_REPORT_TYPES (B11). Skutek: upsert nie wysyła już wiersza
+// weekly_team_pulse, więc istniejące wiersze tego typu (razem z wybranym
+// dniem tygodnia) zostają w bazie NIETKNIĘTE, zamiast być nadpisane
+// enabled=false przez ekran, na którym tej pozycji już nie ma. Odczyt
+// selecta dnia jest teraz warunkowy — element nie istnieje w DOM.
+async function upsertScheduledReportPreferences() {
+  const nowIso = new Date().toISOString();
+  const daySelectEl = document.getElementById('sched-report-weekly-day-select');
+  const dayCode = daySelectEl ? daySelectEl.value : null;
+  const payload = SCHEDULED_REPORT_TYPES_IN_UI.map((t) => {
+    const el = document.getElementById(`sched-report-${t}`);
+    return {
+      coach_user_id: currentUser.id,
+      report_type: t,
+      enabled: !!(el && el.checked),
+      weekly_day_of_week: t === 'weekly_team_pulse' ? dayCode : null,
+      updated_at: nowIso,
+    };
+  });
+  if (!payload.length) return; // nic do zapisania — cała sekcja wycięta z UI
+
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/coach_scheduled_report_preferences?on_conflict=coach_user_id,report_type`, {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await res.text());
+}
+
+// PANEL TRENERA C2 08.08.2026 — jeden przycisk „Zapisz" na całą listę
+// „Kiedy mam Ci napisać". Dwa zapytania do DWÓCH tabel lecą dalej osobno
+// (backend nietknięty), ale trener widzi jeden zapis i jedno potwierdzenie.
+//
+// Świadomie równolegle (Promise.all) i świadomie BEZ transakcji: to dwie
+// niezależne tabele preferencji, nie ma między nimi spójności do utrzymania.
+// Jeśli jeden zapis padnie, drugi zostaje zapisany, a komunikat mówi wprost,
+// że nie wszystko się udało — zamiast udawać atomowość, której tu nie ma.
+//
+// Uwaga na skutek uboczny scalenia: od teraz pierwsze kliknięcie „Zapisz"
+// tworzy wiersze RÓWNIEŻ w coach_scheduled_report_preferences (wcześniej
+// powstawały dopiero przy zapisie tamtej sekcji). Zachowanie się nie zmienia:
+// oba raporty są domyślnie wyłączone, a brak wiersza znaczył dokładnie to
+// samo co wiersz z enabled=false.
+//
+// PANEL C3 08.08.2026 — SPROSTOWANIE do akapitu wyżej, bo po decyzji B10
+// przestał być prawdziwy i jest teraz DOKŁADNIE ODWROTNIE. Brak wiersza
+// znaczy WŁĄCZONE, więc wiersz z enabled=false NIE jest już tym samym co
+// jego brak — jest jedynym sposobem, w jaki trener może się wypisać.
+// Praktyczna konsekwencja, którą trzeba znać przed wdrożeniem: kliknięcie
+// „Zapisz" zapisuje stan checkboxów DOKŁADNIE tak, jak wyglądają na ekranie.
+// Dlatego loadScheduledReportPreferences() musi startować z `checked = true`
+// (i od tej rundy startuje) — inaczej trener, który wszedł w Ustawienia,
+// zmienił jedną rzecz i zapisał, wypisałby się z briefingu przedmeczowego
+// nigdy tego nie chcąc. To była realna pułapka między rundą 2 a 3; opisana
+// w raporcie C runda 3, sekcja 11.
+async function saveEmailPreferences() {
+  const errEl = document.getElementById('settings-email-error');
+  const okEl = document.getElementById('settings-email-ok');
   errEl.classList.add('gc-hidden');
   okEl.classList.add('gc-hidden');
 
-  const btn = document.getElementById('settings-sched-report-save-btn');
+  const btn = document.getElementById('settings-email-save-btn');
   btn.disabled = true;
   btn.textContent = 'Zapisuję...';
 
-  try {
-    const nowIso = new Date().toISOString();
-    const dayCode = document.getElementById('sched-report-weekly-day-select').value;
-    const payload = SCHEDULED_REPORT_TYPES.map((t) => {
-      const el = document.getElementById(`sched-report-${t}`);
-      return {
-        coach_user_id: currentUser.id,
-        report_type: t,
-        enabled: !!(el && el.checked),
-        weekly_day_of_week: t === 'weekly_team_pulse' ? dayCode : null,
-        updated_at: nowIso,
-      };
-    });
+  const results = await Promise.allSettled([
+    upsertDigestPreferences(),
+    upsertScheduledReportPreferences(),
+  ]);
+  const failed = results.filter(r => r.status === 'rejected');
 
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/coach_scheduled_report_preferences?on_conflict=coach_user_id,report_type`, {
-      method: 'POST',
-      headers: { ...authHeaders(), 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) throw new Error(await res.text());
-
-    okEl.textContent = 'Zapisano ustawienia raportów.';
+  if (!failed.length) {
+    okEl.textContent = 'Zapisano.';
     okEl.classList.remove('gc-hidden');
-  } catch (e) {
-    errEl.textContent = 'Nie udało się zapisać: ' + e.message;
+  } else if (failed.length === results.length) {
+    errEl.textContent = 'Nie udało się zapisać: ' + (failed[0].reason && failed[0].reason.message);
     errEl.classList.remove('gc-hidden');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Zapisz';
+  } else {
+    errEl.textContent = 'Zapisano częściowo — część ustawień się nie zapisała: '
+      + (failed[0].reason && failed[0].reason.message);
+    errEl.classList.remove('gc-hidden');
   }
+
+  btn.disabled = false;
+  btn.textContent = 'Zapisz';
 }
 
 // ══════════════════════════════════════

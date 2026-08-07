@@ -2229,9 +2229,23 @@ async function loadProfile() {
 // Pakiet 11/K2 (04.08.2026) — status subskrypcji + przycisk "Przejdź na wersję płatną".
 // Pełny opis: api/stripe-checkout.js, nagłówek pliku, punkt "CO ŚWIADOMIE NIE JEST TU
 // ZROBIONE" #1 — ten blok jest dokładnie tym brakującym elementem.
+//
+// ⚠️ PILOT_HIDE_PURCHASE (05.08.2026) — na czas pilotażu z pierwszą prawdziwą drużyną
+// (Parasol Wrocław U12) Stripe działa na kluczach LIVE, bez trybu testowego. Kuba
+// zdecydował: ukryć przycisk zakupu, żeby nikt z pilotażu przypadkiem nie zapłacił
+// prawdziwymi pieniędzmi, zanim wszystko zostanie w pełni sprawdzone. Żeby przywrócić
+// normalny zakup po pilotażu: zmień na `false` — reszta logiki (status/checkout) jest
+// całkowicie nietknięta, nic więcej nie trzeba cofać.
+const PILOT_HIDE_PURCHASE = true;
+
 async function loadSubscriptionStatus() {
   const statusEl = document.getElementById('subscription-status');
   const btn = document.getElementById('subscription-upgrade-btn');
+  if (PILOT_HIDE_PURCHASE) {
+    btn.classList.add('gc-hidden');
+    statusEl.textContent = 'Płatności w appce są chwilowo wyłączone na czas pilotażu — szczegóły u trenera.';
+    return;
+  }
   try {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/subscriptions?subscriber_user_id=eq.${currentUser.id}&select=status,pricing_tier,current_period_end,team_id`, {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${currentUser.accessToken}` }
@@ -2274,6 +2288,9 @@ async function loadSubscriptionStatus() {
 async function startCheckout() {
   const errEl = document.getElementById('subscription-error');
   const btn = document.getElementById('subscription-upgrade-btn');
+  if (PILOT_HIDE_PURCHASE) {
+    return; // przycisk jest i tak ukryty (patrz loadSubscriptionStatus) — dodatkowe zabezpieczenie.
+  }
   errEl.classList.add('gc-hidden');
   btn.disabled = true;
   btn.textContent = 'Przekierowuję...';
