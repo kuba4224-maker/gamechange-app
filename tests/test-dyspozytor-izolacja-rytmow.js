@@ -639,14 +639,29 @@ async function scenario(name, fn) {
       'dawka powstała i jest w bazie niezależnie od pusha — brak tokenu nie może cofnąć kadencji');
   });
 
-  await scenario('Z dawką -> data pusha bez zmian (pas B czyta type/focusBlockId/checkinId)', async () => {
+  // DEEPLINK R8 08.08.2026 — kontrakt z sekcji 12 raportu C rundy 6 wykonany:
+  // przy NOWEJ dawce data dostaje czwarte pole `contentDose: true` (czyta je
+  // appka mobilna, lib/pushDeepLink.ts). Bez dawki data ma NADAL dokładnie
+  // trzy klucze — to jest pilnowane osobno niżej.
+  await scenario('Z dawką -> data pusha ma CZWARTE pole contentDose:true (deep-link pasa B)', async () => {
     zerujLiczniki();
     generateCheckinImpl = async () => ({ ok: true, question: 'Pytanie', contentDose: true, stageAtDose: 2 });
     const supabase = bazaBlokow();
     await runFocusBlockCheckins(supabase, { hour: 10, minute: 0, day: 15, dateStr: '2026-08-15', weekday: 6 }, { focus_block_checkins: 0 });
-    assert.deepStrictEqual(Object.keys(sendPushCalls[0].opts.data).sort(), ['checkinId', 'focusBlockId', 'type']);
+    assert.deepStrictEqual(Object.keys(sendPushCalls[0].opts.data).sort(), ['checkinId', 'contentDose', 'focusBlockId', 'type']);
     assert.strictEqual(sendPushCalls[0].opts.data.type, 'focus_block_checkin');
+    assert.strictEqual(sendPushCalls[0].opts.data.contentDose, true);
     assert.strictEqual(sendPushCalls[0].opts.title, 'Gamechange');
+  });
+
+  await scenario('BEZ dawki -> data pusha bez zmian: trzy klucze, ZERO pola contentDose', async () => {
+    zerujLiczniki();
+    generateCheckinImpl = async () => ({ ok: true, question: 'Pytanie' });
+    const supabase = bazaBlokow();
+    await runFocusBlockCheckins(supabase, { hour: 10, minute: 0, day: 15, dateStr: '2026-08-15', weekday: 6 }, { focus_block_checkins: 0 });
+    assert.deepStrictEqual(Object.keys(sendPushCalls[0].opts.data).sort(), ['checkinId', 'focusBlockId', 'type'],
+      'bez nowej dawki kształt data ma być CO DO ZNAKU jak przed rundą 8 — starszy odbiorca nie może dostać pola-widma');
+    assert.strictEqual(sendPushCalls[0].opts.data.type, 'focus_block_checkin');
   });
 
   await scenario('dopisek jest JEDNĄ stałą, nie wpisanym w dwóch miejscach napisem', async () => {
@@ -757,6 +772,53 @@ async function scenario(name, fn) {
     for (const etykieta of ['Technika fundamentalna', 'Technika specjalistyczna', 'Tolerancja obciążeń', 'Szybkość decyzji']) {
       assert.strictEqual(ile(`'${etykieta}'`), 1, `etykieta ${etykieta} (wyrównana w rundzie 5) musi zostać dokładnie raz`);
     }
+  });
+
+  // ══════════════════════════════════════════════════════════
+  console.log('\n7. BUDZET R8 — budżet czasu dyspozytora (M25, projekt C6-N3)');
+
+  await scenario('straznik: przed budżetem NIC nie pomija i NIE tworzy pola pominiete', async () => {
+    const { zbudujStraznikaBudzetu } = handler._internal;
+    const results = {};
+    let ms = 0;
+    const czasWyczerpany = zbudujStraznikaBudzetu(0, 240000, results, () => ms);
+    ms = 239999;
+    assert.strictEqual(czasWyczerpany('morning_readiness'), false);
+    assert.ok(!('pominiete' in results),
+      'reguła R5 w drugą stronę: brak pominięć = BRAK pola, nie pusta lista — przebieg w budżecie ma odpowiedź co do znaku jak przed rundą 8');
+  });
+
+  await scenario('straznik: po budżecie pomija i zapisuje klucze W KOLEJNOŚCI wywołań', async () => {
+    const { zbudujStraznikaBudzetu } = handler._internal;
+    const results = {};
+    let ms = 0;
+    const czasWyczerpany = zbudujStraznikaBudzetu(0, 1000, results, () => ms);
+    ms = 500;
+    assert.strictEqual(czasWyczerpany('morning_readiness'), false, 'w budżecie — rytm ma się wykonać');
+    ms = 1000;
+    assert.strictEqual(czasWyczerpany('post_training'), true, 'równo na granicy budżet jest wyczerpany');
+    assert.strictEqual(czasWyczerpany('pre_match'), true);
+    assert.deepStrictEqual(results.pominiete, ['post_training', 'pre_match'],
+      'pominięte mają być wymienione z klucza i w kolejności — inaczej nie wiadomo, co nadrobi następne wywołanie');
+  });
+
+  await scenario('każdy z 15 rytmów ma strażnika, w kolejności 1–15 (odczyt źródła)', async () => {
+    const fs = require('fs');
+    const kod = fs.readFileSync(require.resolve('../api/cron-send-notifications.js'), 'utf8');
+    const guardy = [...kod.matchAll(/if \(!czasWyczerpany\('([a-z_]+)'\)\)/g)].map((m) => m[1]);
+    assert.deepStrictEqual(guardy, [
+      'morning_readiness', 'post_training', 'pre_match', 'weekly_summary', 'contextual_insight',
+      'focus_block_checkins', 'focus_block_maintenance', 'focus_block_adaptation',
+      'trial_expiry', 'parental_consent_expiry', 'coach_digest',
+      'retention_check', 'training_focus_rotation', 'coach_scheduled_reports', 'parent_reports',
+    ], 'strażnik ma stać przy KAŻDYM rytmie i w tej samej kolejności co kolejka — rytm bez strażnika to dziura w budżecie');
+  });
+
+  await scenario('budżet domyślny = 240 000 ms (300 s Hobby minus 60 s bufora), nadpisywalny env-em', async () => {
+    const fs = require('fs');
+    const kod = fs.readFileSync(require.resolve('../api/cron-send-notifications.js'), 'utf8');
+    assert.strictEqual(handler._internal.DOMYSLNY_BUDZET_MS, 240000);
+    assert.match(kod, /process\.env\.CRON_BUDZET_MS/, 'zmiana budżetu ma nie wymagać deployu');
   });
 
   console.log(failed === 0 ? `\nWSZYSTKIE TESTY PRZESZŁY (${passed}).` : `\n${failed} TEST(ÓW) NIE PRZESZŁO (${passed} ok).`);

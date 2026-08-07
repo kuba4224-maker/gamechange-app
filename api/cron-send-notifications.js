@@ -614,7 +614,20 @@ async function runFocusBlockCheckins(supabase, warsawNow, results) {
       await sendPush(tokens, {
         title: 'Gamechange',
         body: bodyPusha,
-        data: { type: 'focus_block_checkin', focusBlockId: block.id, checkinId: inserted.id },
+        // DEEPLINK R8 08.08.2026 — czwarte pole `contentDose` WYŁĄCZNIE przy
+        // nowej dawce (ten sam warunek co dopisek i zegar kadencji wyżej).
+        // Kontrakt: raport C rundy 6, sekcja 12 — pole obiecane „w tej samej
+        // rundzie, w której appka je odczyta"; appka czyta je od rundy 8
+        // (lib/pushDeepLink.ts: dotknięcie pusha z dawką otwiera ekran Cele
+        // z Blokiem i sekcją dawki). Bez dawki `data` jest CO DO ZNAKU jak
+        // przed rundą — trzy klucze, żadnych nowych pól.
+        // UWAGA kształt: send-push.js stringifikuje wartości data dla FCM
+        // (Record<string,string>, api/send-push.js ~linia 92, stan 08.08.2026)
+        // — appka dostaje 'true', nie true; odczyt akceptuje oba.
+        data: {
+          type: 'focus_block_checkin', focusBlockId: block.id, checkinId: inserted.id,
+          ...(generated.contentDose ? { contentDose: true } : {}),
+        },
       });
       results.focus_block_checkins++;
     } catch (e) {
@@ -873,6 +886,34 @@ async function runParentalConsentExpiry(supabase, results) {
 // `last_sent_at`, log deduplikacji), więc dyspozytor jest wołany 12x
 // dziennie i trzynaste wywołanie niczego nie dubluje.
 // ------------------------------------------------------------
+// BUDZET R8 08.08.2026 (M25, projekt C6-N3) — budzet czasu dyspozytora.
+// Po izolacji rytmow (C6) jedyna pozostala droga cichego urwania kolejki to
+// limit czasu funkcji: Vercel ubija instancje bez wyjatku, wiec try/catch
+// nic nie widzi, a odpowiedz w ogole nie powstaje. Straznik ponizej wybiera
+// mniejsze zlo: gdy budzet sie konczy, POMIJA kolejne rytmy i mowi to wprost
+// (results.pominiete, w kolejnosci 1-15), zamiast dac sie ubic w polowie.
+//
+// Wartosc domyslna 240 000 ms: limit czasu funkcji na planie Hobby przy
+// fluid compute to DOMYSLNIE I MAKSYMALNIE 300 s (dokumentacja Vercela
+// /docs/functions/configuring-functions/duration, stan 2026-07-01, odczyt
+// 08.08.2026) - minus 60 s bufora na wysylki w locie (push/e-mail rytmu,
+// ktory wlasnie biegnie) i serializacje odpowiedzi. Nadpisywalne przez
+// CRON_BUDZET_MS bez deployu. Pominiecie NIE jest bledem (status zostaje
+// 200, jesli zaden rytm nie rzucil): kazdy rytm ma wlasna bramke
+// deduplikacji, wiec nadrobi przy nastepnym wywolaniu (12x dziennie);
+// linia console.error robi to widocznym w logu Vercela.
+const DOMYSLNY_BUDZET_MS = 240000;
+
+function zbudujStraznikaBudzetu(startMs, budzetMs, results, teraz = () => Date.now()) {
+  return function czasWyczerpany(klucz) {
+    if (teraz() - startMs < budzetMs) return false;
+    if (!results.pominiete) results.pominiete = [];
+    results.pominiete.push(klucz);
+    console.error(`cron-send-notifications: BUDZET CZASU WYCZERPANY (${budzetMs} ms) - rytm ${klucz} POMINIETY, nadrobi przy nastepnym wywolaniu.`);
+    return true;
+  };
+}
+
 function zapiszBladRytmu(results, klucz, nazwaFunkcji, e) {
   // Do odpowiedzi HTTP idzie WYŁĄCZNIE `e.message` — nigdy `e.stack`.
   // Stack ma trafić do logu Vercela (linia niżej), gdzie jest przydatny,
@@ -927,52 +968,56 @@ module.exports = async (req, res) => {
     const supabase = getAdminClient();
     const warsawNow = getWarsawNow();
 
+    // BUDZET R8 08.08.2026 — start budzetu liczony od wejscia w kolejke rytmow.
+    const budzetMs = Number(process.env.CRON_BUDZET_MS || DOMYSLNY_BUDZET_MS);
+    const czasWyczerpany = zbudujStraznikaBudzetu(Date.now(), budzetMs, results);
+
     // DYSPOZYTOR C6 08.08.2026 — piętnaście rytmów, piętnaście osobnych
     // `try/catch`. Świadomie rozpisane jeden po drugim zamiast pętli po
     // tablicy: kolejność 1–15 jest tu ustaleniem projektowym (raport
     // rodzica ostatni), a lista widoczna wprost w kodzie jest jedynym
     // miejscem, w którym tę kolejność da się przeczytać i sprawdzić
     // `grep`em. Pętla po tablicy schowałaby ją o jeden poziom głębiej.
-    try { await runMorningReadiness(supabase, warsawNow, results); }
+    try { if (!czasWyczerpany('morning_readiness')) await runMorningReadiness(supabase, warsawNow, results); }
     catch (e) { zapiszBladRytmu(results, 'morning_readiness', 'runMorningReadiness', e); }
 
-    try { await runPostTraining(supabase, warsawNow, results); }
+    try { if (!czasWyczerpany('post_training')) await runPostTraining(supabase, warsawNow, results); }
     catch (e) { zapiszBladRytmu(results, 'post_training', 'runPostTraining', e); }
 
-    try { await runPreMatch(supabase, warsawNow, results); }
+    try { if (!czasWyczerpany('pre_match')) await runPreMatch(supabase, warsawNow, results); }
     catch (e) { zapiszBladRytmu(results, 'pre_match', 'runPreMatch', e); }
 
-    try { await runWeeklySummary(supabase, warsawNow, results); }
+    try { if (!czasWyczerpany('weekly_summary')) await runWeeklySummary(supabase, warsawNow, results); }
     catch (e) { zapiszBladRytmu(results, 'weekly_summary', 'runWeeklySummary', e); }
 
-    try { await runContextualInsight(supabase, results); }
+    try { if (!czasWyczerpany('contextual_insight')) await runContextualInsight(supabase, results); }
     catch (e) { zapiszBladRytmu(results, 'contextual_insight', 'runContextualInsight', e); }
 
-    try { await runFocusBlockCheckins(supabase, warsawNow, results); }
+    try { if (!czasWyczerpany('focus_block_checkins')) await runFocusBlockCheckins(supabase, warsawNow, results); }
     catch (e) { zapiszBladRytmu(results, 'focus_block_checkins', 'runFocusBlockCheckins', e); }
 
-    try { await runFocusBlockMaintenance(supabase, warsawNow, results); }
+    try { if (!czasWyczerpany('focus_block_maintenance')) await runFocusBlockMaintenance(supabase, warsawNow, results); }
     catch (e) { zapiszBladRytmu(results, 'focus_block_maintenance', 'runFocusBlockMaintenance', e); }
 
-    try { await runFocusBlockAdaptation(supabase, results); }
+    try { if (!czasWyczerpany('focus_block_adaptation')) await runFocusBlockAdaptation(supabase, results); }
     catch (e) { zapiszBladRytmu(results, 'focus_block_adaptation', 'runFocusBlockAdaptation', e); }
 
-    try { await runTrialExpiry(supabase, warsawNow, results); }
+    try { if (!czasWyczerpany('trial_expiry')) await runTrialExpiry(supabase, warsawNow, results); }
     catch (e) { zapiszBladRytmu(results, 'trial_expiry', 'runTrialExpiry', e); }
 
-    try { await runParentalConsentExpiry(supabase, results); }
+    try { if (!czasWyczerpany('parental_consent_expiry')) await runParentalConsentExpiry(supabase, results); }
     catch (e) { zapiszBladRytmu(results, 'parental_consent_expiry', 'runParentalConsentExpiry', e); }
 
-    try { await runCoachDigestCheck(supabase, results); }
+    try { if (!czasWyczerpany('coach_digest')) await runCoachDigestCheck(supabase, results); }
     catch (e) { zapiszBladRytmu(results, 'coach_digest', 'runCoachDigestCheck', e); }
 
-    try { await runRetentionCheck(supabase, results); }
+    try { if (!czasWyczerpany('retention_check')) await runRetentionCheck(supabase, results); }
     catch (e) { zapiszBladRytmu(results, 'retention_check', 'runRetentionCheck', e); }
 
-    try { await runTrainingFocusRotation(supabase, warsawNow, results); }
+    try { if (!czasWyczerpany('training_focus_rotation')) await runTrainingFocusRotation(supabase, warsawNow, results); }
     catch (e) { zapiszBladRytmu(results, 'training_focus_rotation', 'runTrainingFocusRotation', e); }
 
-    try { await runCoachScheduledReportsCheck(supabase, warsawNow, results); }
+    try { if (!czasWyczerpany('coach_scheduled_reports')) await runCoachScheduledReportsCheck(supabase, warsawNow, results); }
     catch (e) { zapiszBladRytmu(results, 'coach_scheduled_reports', 'runCoachScheduledReportsCheck', e); }
 
     // ZRODLO C5 08.08.2026 — raport rodzica. ŚWIADOMIE OSTATNI w kolejce:
@@ -985,7 +1030,7 @@ module.exports = async (req, res) => {
     // DYSPOZYTOR C6 08.08.2026 — od tej rundy jest jeszcze trzeci pas:
     // własny `try/catch`. Kolejność i tak zostaje ostatnia, bo powód powyżej
     // (poczta poza system) nie zniknął.
-    try { await runParentReportsCheck(supabase, results); }
+    try { if (!czasWyczerpany('parent_reports')) await runParentReportsCheck(supabase, results); }
     catch (e) { zapiszBladRytmu(results, 'parent_reports', 'runParentReportsCheck', e); }
 
     // DYSPOZYTOR C6 08.08.2026 — jawny stan „coś się nie wykonało" (reguła R5).
@@ -1044,4 +1089,6 @@ module.exports._internal = {
   runCoachScheduledReportsCheck,
   runParentReportsCheck, // ZRODLO C5 08.08.2026
   SEGMENT_DISPLAY_NAME,
+  zbudujStraznikaBudzetu, // BUDZET R8 08.08.2026
+  DOMYSLNY_BUDZET_MS, // BUDZET R8 08.08.2026
 };
