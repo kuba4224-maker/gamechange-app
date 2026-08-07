@@ -210,4 +210,9 @@ module.exports = async (req, res) => {
 };
 
 module.exports.validateGoalRefinement = validateGoalRefinement;
-module.exports._internal = { SEG_NAMES, buildSystemPrompt, buildUserPrompt };
+// TERMINARZ A7 08.08.2026 (porzadek, sesja glowna) — test tego pliku od poczatku
+// wymaga `stripMarkdownJsonFence` w _internal (jego naglowek twierdzi, ze zostala
+// "dopisana dzis"), ale eksportu nigdy tu nie bylo — 3 scenariusze byly czerwone
+// od ~01.08.2026 i nikt ich nie widzial, bo nikt nie uruchamial calej suity.
+// Zero zmian w zachowaniu endpointu; sam eksport istniejacej funkcji.
+module.exports._internal = { SEG_NAMES, buildSystemPrompt, buildUserPrompt, stripMarkdownJsonFence };

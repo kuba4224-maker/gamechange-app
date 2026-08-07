@@ -251,6 +251,12 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--i
       <button class="gc-nav-btn" id="nav-assistant" onclick="switchCoachPanel('assistant')">Asystent</button>
       <button class="gc-nav-btn" id="nav-settings" onclick="switchCoachPanel('settings')">Ustawienia</button>
       <button class="gc-nav-btn" id="nav-aggregate" onclick="switchCoachPanel('aggregate')">Agregat drużynowy</button>
+      <!-- DRUZYNA C7 08.08.2026 — wejście do widoku „Diagnozy drużyny": zastępstwo
+           za widok drużyny po kodzie z lejka (gamechange-diagnoza/index.html,
+           loadTeamView), zdjęty razem z polityką RLS `anon can read diagnostics`
+           (luka P0). Dane wyłącznie przez politykę diagnostics_coach_select —
+           pełny opis w nagłówku sekcji JS „DIAGNOZY DRUŻYNY" niżej. -->
+      <button class="gc-nav-btn" id="nav-teamdiag" onclick="switchCoachPanel('teamdiag')">Diagnozy drużyny</button>
       <!-- ⛔ ZAMROŻONE 06.08.2026 (decyzja Kuby po audycie wartości produktu).
            Zakładka jest dziś nieosiągalna produktowo: ekran ZAWODNIKA, na którym
            można dodać prywatnego trenera, nie istnieje (patrz stopka pliku, pkt 4),
@@ -592,6 +598,18 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--i
            statystyka, więc renderuje się zawsze, patrz
            renderGroupGoalSuggestPanel(). ─── -->
       <div id="aggregate-goal-suggest"></div>
+    </div>
+
+    <!-- ─── DRUZYNA C7 08.08.2026 — Diagnozy drużyny (zastępstwo za widok drużyny
+         po kodzie w lejku, zdjęty razem z polityką RLS `anon can read diagnostics`).
+         Dane wyłącznie przez zwykły select za RLS diagnostics_coach_select —
+         pełne uzasadnienie i granice w nagłówku sekcji JS „DIAGNOZY DRUŻYNY". ─── -->
+    <div id="panel-teamdiag" class="gc-hidden">
+      <div class="gc-signals-banner">
+        Diagnozy zawodników Twojej drużyny — wyłącznie te wykonane na zalogowanym koncie zawodnika.
+        Diagnozy zrobione bez konta nie są tu widoczne (ochrona danych zawodników).
+      </div>
+      <div id="teamdiag-body"></div>
     </div>
 
     <!-- ─── Zawodnicy prywatni (coach_player_relationships, Kontekst 1 z Funkcji 9 —
@@ -1171,7 +1189,7 @@ async function enterApp() {
 // ══════════════════════════════════════
 //  NAWIGACJA W PANELU GŁÓWNYM
 // ══════════════════════════════════════
-const COACH_PANELS = ['roster', 'assistant', 'settings', 'aggregate', 'private'];
+const COACH_PANELS = ['roster', 'assistant', 'settings', 'aggregate', 'teamdiag', 'private']; // DRUZYNA C7 08.08.2026 — dodane 'teamdiag'
 function switchCoachPanel(name) {
   COACH_PANELS.forEach(p => {
     // AUDYT 06.08.2026 — odporne na brak przycisku w nawigacji. Zakładka
@@ -1188,6 +1206,7 @@ function switchCoachPanel(name) {
   if (name === 'assistant') loadAssistantPanel();
   if (name === 'settings') loadSettingsPanel();
   if (name === 'aggregate') updateAggregateAvailability();
+  if (name === 'teamdiag') loadTeamDiagnosesPanel(); // DRUZYNA C7 08.08.2026
   if (name === 'private') loadPrivateRoster();
 }
 
@@ -3632,6 +3651,298 @@ function renderAggregate() {
       per segment — świadome uproszczenie, patrz plik SQL Domeny 18).
     </div>
   `;
+}
+
+// ══════════════════════════════════════
+//  DRUZYNA C7 08.08.2026 — DIAGNOZY DRUŻYNY.
+//
+//  KONTEKST: 08.08.2026 zdjęto politykę RLS `anon can read diagnostics`
+//  (luka P0 — każdy bez logowania czytał diagnozy nieletnich po team_code).
+//  Razem z nią umarł widok drużyny po kodzie w lejku
+//  (gamechange-diagnoza/index.html, loadTeamView/renderTeamTable/
+//  renderTeamStats/renderTeamDeficits/renderTeamHeatmap). TA sekcja jest
+//  zastępstwem: żyje za logowaniem trenera i czerpie WYŁĄCZNIE ze zwykłych
+//  selectów przechodzących przez politykę `diagnostics_coach_select`
+//  ((user_id IS NOT NULL) AND coach_has_any_access(user_id, created_at)) —
+//  zero service-keys, zero nowych endpointów.
+//
+//  KONSEKWENCJA, świadoma: wiersze diagnostics z user_id NULL (diagnoza
+//  wykonana w lejku bez konta) są dla trenera NIEWIDOCZNE. To nie jest błąd
+//  do "naprawienia" po stronie klienta — to granica bezpieczeństwa. Widok
+//  mówi o niej trenerowi wprost (stan pustki (b) i stopka pod sekcjami),
+//  zamiast udawać, że drużyna nie zrobiła diagnoz.
+//
+//  Trzy ROZŁĄCZNE stany pustki (wymóg zlecenia, celowo nie sklejone):
+//   (a) zero aktywnych zawodników powiązanych z drużyną,
+//   (b) zawodnicy są, ale żaden nie ma diagnozy powiązanej z kontem,
+//   (c) błąd odczytu (sieć/RLS) — nigdy nie udaje pustki danych; inaczej
+//       niż loadLatestDiagnoses() w Składzie, gdzie błąd jest celowo cichy.
+//
+//  Prezentacja przeniesiona z lejka jako LOGIKA, nie kod 1:1:
+//   • progi kolorów 35/50/65 + te same kolory i etykiety co heatColor()
+//     z lejka — tu: teamDiagHeatLevel(). Odstępstwo: JEDNA skala dla tabeli
+//     i heatmapy (lejek miał 40/55/70 dla wyniku ogólnego zawodnika i
+//     35/50/65 dla mapy — dwa różne progi w jednym widoku mylą; ujednolicone
+//     na progi mapy),
+//   • wąskie gardło liczone względem WŁASNEJ mediany zawodnika
+//     (getRelativeDeficits() z lejka: wynik < mediana − 0,5·odchylenie ORAZ
+//     mediana − wynik ≥ 9 pkt), nie po surowym minimum — przy wyrównanym
+//     profilu najniższy segment w normie fałszywie "wygrywałby" ranking
+//     (dokładnie ten sam argument co przy _coachHintForPlayer w lejku).
+//     Świadomie NIE czytamy kolumny diagnostics.top_deficits — to tekst
+//     sklejany przez lejek z jego (bywa, że starszymi) etykietami; liczenie
+//     ze scores trzyma jedno źródło etykiet (SEG_LABELS) w całym panelu.
+//
+//  E-MAIL ZAWODNIKA ŚWIADOMIE NIE JEST ANI POBIERANY, ANI POKAZYWANY —
+//  select bierze users(full_name) BEZ email (inaczej niż loadRoster(),
+//  który używa e-maila jako fallbacku nazwy). Pilnowane testem
+//  tests/test-coach-team-view.js (brak wycieku e-maili do HTML widoku).
+//
+//  Świadomie BEZ progu TEAM_AGGREGATE_MIN_SIZE: tamten próg chroni przed
+//  odczytaniem wyniku jednostki ze statystyki ZBIORCZEJ, a tu wyniki
+//  jednostkowe są w tej samej zakładce legalnie widoczne per zawodnik
+//  (RLS daje trenerowi dostęp per wiersz — jak w Składzie i Szczegółach),
+//  więc próg niczego by nie chronił, a uśmiercałby widok dla drużyn
+//  pilotażowych mniejszych niż 8 osób.
+// ══════════════════════════════════════
+const TEAMDIAG_SEGMENT_IDS = SEGMENTS_BY_PILLAR.flatMap(([, segs]) => segs.map(([id]) => id)); // 13 kluczy w kolejności filarów
+
+// Skróty WYŁĄCZNIE do nagłówka tabeli (13 kolumn nie pomieści pełnych nazw).
+// Pełne nazwy (SEG_LABELS — jedno źródło etykiet panelu) zostają w heatmapie
+// i wąskich gardłach; to skróty typograficzne, nie nowe nazewnictwo.
+const TEAMDIAG_SHORT_LABELS = {
+  moc: 'Moc', wytrzymalosc: 'Wytrz.', fizycznosc: 'Fizycz.',
+  techFund: 'Tech. fund.', techSpec: 'Tech. spec.',
+  tolerancja: 'Tol. obc.', regeneracja: 'Regen.', odpornosc: 'Odporn.',
+  odzywianie: 'Odżyw.', koncentracja: 'Konc.', mental: 'Odwaga',
+  percepcja: 'Percep.', decyzja: 'Decyzja',
+};
+
+// Progi i kolory 1:1 z heatColor() lejka (logika prezentacji, nie kod).
+function teamDiagHeatLevel(val) {
+  if (val < 35) return { bg: '#FDEBEB', border: '#C0392B', text: '#8B1A1A', label: 'Wymaga uwagi' };
+  if (val < 50) return { bg: '#fff3e0', border: '#e08020', text: '#c06010', label: 'Do pracy' };
+  if (val < 65) return { bg: '#fffde0', border: '#c8b820', text: '#9a8c10', label: 'Przeciętny' };
+  return { bg: '#e8f5e9', border: '#2a7a3a', text: '#1a5a2a', label: 'Dobry' };
+}
+
+// NIGDY e-mail — patrz nagłówek sekcji. Celowo INNY fallback niż w
+// renderRosterCard() (tam e-mail wchodzi do nazwy zawodnika).
+function teamDiagPlayerName(u) {
+  return (u && u.full_name) ? u.full_name : 'Zawodnik bez nazwy w systemie';
+}
+
+// getRelativeDeficits() z lejka — przeniesiona logika deficytu względem
+// WŁASNEJ mediany zawodnika (oba warunki naraz), limit 4 najniższych.
+function teamDiagRelativeDeficits(scores, limit) {
+  const entries = Object.entries(scores || {}).filter(([, v]) => typeof v === 'number' && !isNaN(v));
+  const values = entries.map(([, v]) => v).sort((a, b) => a - b);
+  const n = values.length;
+  if (!n) return [];
+  const median = n % 2 === 0 ? (values[n / 2 - 1] + values[n / 2]) / 2 : values[(n - 1) / 2];
+  const stdDev = Math.sqrt(values.reduce((sum, v) => sum + Math.pow(v - median, 2), 0) / n);
+  const deficits = entries.filter(([, score]) => (score < median - 0.5 * stdDev) && (median - score >= 9));
+  deficits.sort((a, b) => a[1] - b[1]);
+  return deficits.slice(0, limit || 4).map(([id]) => id);
+}
+
+// ── Trzy rozłączne stany pustki — każde z INNYM zdaniem (rozróżnialne testem) ──
+function renderTeamDiagEmptyNoPlayers() {
+  return '<div class="gc-empty">Brak aktywnych zawodników powiązanych z drużyną. ' +
+    'Diagnozy pojawią się tu, gdy zawodnicy dołączą do drużyny i wykonają diagnozę na zalogowanym koncie.</div>';
+}
+
+function renderTeamDiagEmptyNoDiagnoses(playerCount) {
+  return '<div class="gc-empty">Aktywnych zawodników w drużynie: ' + Number(playerCount) + ' — ale żaden nie ma ' +
+    'diagnozy powiązanej ze swoim kontem. Diagnozy wykonane bez zalogowania (sam formularz diagnozy, bez konta) ' +
+    'są w tym panelu niewidoczne — to celowa ochrona danych zawodników, nie błąd. ' +
+    'Poproś zawodników, aby wykonali diagnozę będąc zalogowanymi w aplikacji.</div>';
+}
+
+function renderTeamDiagError() {
+  return '<div class="gc-empty">Nie udało się wczytać diagnoz drużyny. ' +
+    'Odśwież stronę albo spróbuj ponownie za chwilę.</div>';
+}
+
+async function loadTeamDiagnosesPanel() {
+  const bodyEl = document.getElementById('teamdiag-body');
+  if (!bodyEl) return;
+  bodyEl.innerHTML = '<div class="gc-empty">Wczytuję diagnozy drużyny...</div>';
+
+  // Ten sam wzorzec zapytania co loadRoster() (embed users przez FK,
+  // polityka users_coach_select) — ale BEZ kolumny email (patrz nagłówek).
+  let members;
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/team_memberships?team_id=eq.${currentTeam.id}&status=eq.active&order=joined_at.asc&select=player_user_id,users(full_name)`,
+      { headers: authHeaders() }
+    );
+    if (!res.ok) throw new Error(await res.text());
+    const rows = await res.json();
+    members = Array.isArray(rows) ? rows : [];
+  } catch (e) {
+    bodyEl.innerHTML = renderTeamDiagError();
+    return;
+  }
+  if (!members.length) {
+    bodyEl.innerHTML = renderTeamDiagEmptyNoPlayers();
+    return;
+  }
+
+  // Ten sam filtr "ukończona diagnoza" co loadLatestDiagnoses() (event=
+  // email_submitted + scores niepuste + najnowszy wiersz per zawodnik).
+  // Zwykły select przez RLS diagnostics_coach_select — wiersze z user_id
+  // NULL odfiltrowuje sama polityka, panel ich nigdy nie zobaczy.
+  let diagRows;
+  try {
+    const ids = members.map(m => m.player_user_id);
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/diagnostics?user_id=in.(${ids.join(',')})&event=eq.email_submitted&scores=not.is.null&order=created_at.desc&select=user_id,scores,created_at`,
+      { headers: authHeaders() }
+    );
+    if (!res.ok) throw new Error(await res.text());
+    const rows = await res.json();
+    diagRows = Array.isArray(rows) ? rows : [];
+  } catch (e) {
+    bodyEl.innerHTML = renderTeamDiagError();
+    return;
+  }
+
+  const latestByUser = new Map();
+  diagRows.forEach(row => {
+    if (!latestByUser.has(row.user_id)) latestByUser.set(row.user_id, row);
+  });
+
+  const entries = members.map(m => ({
+    playerId: m.player_user_id,
+    name: teamDiagPlayerName(m.users),
+    diag: latestByUser.get(m.player_user_id) || null,
+  }));
+  bodyEl.innerHTML = renderTeamDiagnosesBody(entries);
+}
+
+// Czysta funkcja składająca cały widok — testowana na atrapie DOM bez sieci.
+function renderTeamDiagnosesBody(entries) {
+  const enriched = entries.map(e => Object.assign({}, e, { scores: e.diag ? parseScores(e.diag.scores) : null }));
+  const withDiag = enriched.filter(e => e.scores);
+  const withoutDiag = enriched.filter(e => !e.scores);
+  if (!withDiag.length) return renderTeamDiagEmptyNoDiagnoses(enriched.length);
+  return renderTeamDiagTable(withDiag, withoutDiag)
+    + renderTeamDiagHeatmap(withDiag)
+    + renderTeamDiagBottlenecks(withDiag)
+    + '<div class="gc-goal-meta" style="margin-top:18px;">'
+    + 'Widok obejmuje wyłącznie diagnozy wykonane na zalogowanym koncie zawodnika Twojej drużyny. '
+    + 'Diagnozy zrobione bez konta (przez sam formularz diagnozy) są tu niewidoczne — celowa ochrona danych zawodników.'
+    + '</div>';
+}
+
+function renderTeamDiagTable(withDiag, withoutDiag) {
+  const thStyle = 'padding:6px 4px;font-size:10px;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted);font-weight:500;text-align:center;border-bottom:1px solid var(--rule);';
+  const head = '<th style="' + thStyle + 'text-align:left;">Zawodnik</th>'
+    + '<th style="' + thStyle + '">Data</th>'
+    + '<th style="' + thStyle + '">Ogólny</th>'
+    + TEAMDIAG_SEGMENT_IDS.map(id => '<th style="' + thStyle + '">' + escapeHtml(TEAMDIAG_SHORT_LABELS[id] || id) + '</th>').join('');
+
+  const rows = withDiag.map(e => {
+    const avg = averageScore(e.scores);
+    const dateLabel = e.diag.created_at
+      ? new Date(e.diag.created_at).toLocaleDateString('pl-PL')
+      : '—';
+    let avgCell;
+    if (avg === null) {
+      avgCell = '<td style="padding:6px 4px;text-align:center;font-size:11px;color:var(--muted);">—</td>';
+    } else {
+      const lvl = teamDiagHeatLevel(avg);
+      avgCell = '<td style="padding:6px 4px;text-align:center;font-size:11px;background:' + lvl.bg + ';color:' + lvl.text + ';border:1px solid ' + lvl.border + ';white-space:nowrap;">'
+        + avg + ' · ' + lvl.label + '</td>';
+    }
+    const segCells = TEAMDIAG_SEGMENT_IDS.map(id => {
+      const v = e.scores[id];
+      if (typeof v !== 'number' || isNaN(v)) {
+        return '<td style="padding:6px 4px;text-align:center;font-size:11px;color:var(--muted);">—</td>';
+      }
+      const lvl = teamDiagHeatLevel(v);
+      return '<td style="padding:6px 4px;text-align:center;font-size:11px;background:' + lvl.bg + ';color:' + lvl.text + ';border:1px solid ' + lvl.border + ';">' + Math.round(v) + '</td>';
+    }).join('');
+    return '<tr>'
+      + '<td style="padding:6px 8px 6px 0;font-size:12px;white-space:nowrap;">' + escapeHtml(e.name) + '</td>'
+      + '<td style="padding:6px 4px;text-align:center;font-size:11px;color:var(--muted);white-space:nowrap;">' + escapeHtml(dateLabel) + '</td>'
+      + avgCell + segCells + '</tr>';
+  }).join('');
+
+  const missing = withoutDiag.length
+    ? '<div class="gc-goal-meta" style="margin-top:10px;">Bez diagnozy na koncie: '
+      + withoutDiag.map(e => escapeHtml(e.name)).join(', ')
+      + '. Diagnoza zrobiona bez zalogowania jest tu niewidoczna.</div>'
+    : '';
+
+  return '<div class="gc-label">Wyniki diagnoz — segmenty</div>'
+    + '<div style="overflow-x:auto;">'
+    + '<table style="border-collapse:collapse;width:100%;min-width:760px;">'
+    + '<thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table></div>'
+    + missing;
+}
+
+function renderTeamDiagHeatmap(withDiag) {
+  const totals = {};
+  const counts = {};
+  withDiag.forEach(e => {
+    TEAMDIAG_SEGMENT_IDS.forEach(id => {
+      const v = e.scores[id];
+      if (typeof v === 'number' && !isNaN(v)) {
+        totals[id] = (totals[id] || 0) + v;
+        counts[id] = (counts[id] || 0) + 1;
+      }
+    });
+  });
+  const avgs = TEAMDIAG_SEGMENT_IDS
+    .filter(id => counts[id])
+    .map(id => ({ id, avg: Math.round(totals[id] / counts[id]), n: counts[id] }));
+  if (!avgs.length) return '';
+  avgs.sort((a, b) => a.avg - b.avg); // od najsłabszego — jak mapa w lejku
+
+  const tiles = avgs.map(s => {
+    const lvl = teamDiagHeatLevel(s.avg);
+    return '<div style="border:1px solid ' + lvl.border + ';background:' + lvl.bg + ';padding:10px 12px;text-align:center;">'
+      + '<div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);margin-bottom:4px;">' + escapeHtml(SEG_LABELS[s.id] || s.id) + '</div>'
+      + '<div style="font-size:20px;font-weight:600;color:' + lvl.text + ';">' + s.avg + '</div>'
+      + '<div style="font-size:10px;color:' + lvl.text + ';">' + lvl.label + ' · n=' + s.n + '</div>'
+      + '</div>';
+  }).join('');
+
+  return '<div class="gc-label" style="margin-top:28px;">Mapa segmentów drużyny</div>'
+    + '<div class="gc-goal-meta" style="margin-bottom:10px;">Średnie drużyny per segment, od najsłabszego. n = liczba zawodników z wynikiem w tym segmencie.</div>'
+    + '<div id="teamdiag-heatmap-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;">' + tiles + '</div>';
+}
+
+function renderTeamDiagBottlenecks(withDiag) {
+  const counts = {};
+  withDiag.forEach(e => {
+    teamDiagRelativeDeficits(e.scores, 4).forEach(id => {
+      counts[id] = (counts[id] || 0) + 1;
+    });
+  });
+  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const total = withDiag.length;
+  let inner;
+  if (!sorted.length) {
+    inner = '<div class="gc-goal-meta">U żadnego zawodnika żaden segment nie odstaje istotnie w dół ' +
+      'od reszty jego własnego profilu — brak wspólnych wąskich gardeł do pokazania.</div>';
+  } else {
+    inner = sorted.map(([id, count]) => {
+      const pct = Math.round((count / total) * 100);
+      return '<div style="border:1px solid var(--rule);padding:12px 14px;margin-bottom:8px;">'
+        + '<div style="font-size:13px;font-weight:500;margin-bottom:6px;">' + escapeHtml(SEG_LABELS[id] || id) + '</div>'
+        + '<div style="display:flex;align-items:center;gap:8px;">'
+        + '<div style="flex:1;height:4px;background:#e8e4dd;"><div style="height:4px;background:var(--red);width:' + pct + '%;"></div></div>'
+        + '<div style="font-size:12px;color:var(--red);font-weight:500;min-width:40px;">' + count + '/' + total + '</div>'
+        + '</div></div>';
+    }).join('');
+  }
+  return '<div class="gc-label" style="margin-top:28px;">Najczęstsze wąskie gardła</div>'
+    + '<div class="gc-goal-meta" style="margin-bottom:10px;">U ilu zawodników segment odstaje w dół od ich własnej mediany ' +
+      '(logika lejka: poniżej mediana − 0,5·odchylenie i różnica ≥ 9 pkt) — to nie ranking surowych minimów.</div>'
+    + inner;
 }
 
 // ══════════════════════════════════════
