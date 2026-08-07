@@ -151,6 +151,20 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--i
    wybranego dziś — świadomie ten sam wizualny język co gc-roster-card
    (wybór, nie ocena — nie ma tu żadnego koloru "dobry/zły"). */
 .gc-roster-card-chosen { border-color: var(--ink); background: #faf8f4; }
+
+/* ZRODLO C5 08.08.2026 — „Na czym stoi ta rekomendacja".
+   decision_recommendations.source_hint (pas A, runda 4; kontrakt:
+   RAPORT_ZWROTNY_A_RUNDA_4.md sekcja 11). Cytat z materiałów Kuby, który
+   silnik faktycznie podał modelowi — z tytułem materiału i numerem strony.
+   Świadomie WYGLĄDA INACZEJ niż treść rekomendacji: to nie jest zdanie
+   systemu, tylko cudzy cytat, i trener ma to widzieć na pierwszy rzut oka.
+   Kreska po lewej zamiast ramki — żeby nie konkurowała wagą z kartą
+   rekomendacji, w której siedzi. Zero koloru oceniającego (ten sam duch co
+   gc-roster-card-chosen: to informacja o pochodzeniu, nie ocena). */
+.gc-source-hint { border-left: 2px solid var(--rule); padding: 2px 0 2px 12px; margin-top: 10px; }
+.gc-source-hint-label { font-family: 'Bebas Neue', sans-serif; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 3px; }
+.gc-source-hint-text { font-size: 13px; color: var(--ink2); line-height: 1.5; }
+.gc-source-hint-origin { font-size: 12px; color: var(--muted); margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -733,11 +747,17 @@ const SEGMENTS_BY_PILLAR = [
     ['fizycznosc', 'Fizyczność'],
   ]],
   ['Filar 2 — Efektywność techniczna', [
-    ['techFund', 'Technika Fundamentalna'],
-    ['techSpec', 'Technika Specjalistyczna'],
+    // ZRODLO C5 08.08.2026 — wyrównanie czterech etykiet do lib/labels.ts
+    // (znalezisko C4-N3). UWAGA: raport C rundy 4 zakładał, że coach.html już
+    // się z labels.ts zgadza — NIE zgadzał się; panel trenera miał dokładnie te
+    // same cztery rozjechane nazwy co asystent_app.html. Rozstrzygnięcie Kuby
+    // 08.08.2026: wchodzą w obu plikach naraz. Zmieniona WYŁĄCZNIE etykieta
+    // widoczna dla człowieka; klucze segmentów nietknięte.
+    ['techFund', 'Technika fundamentalna'],
+    ['techSpec', 'Technika specjalistyczna'],
   ]],
   ['Filar 3 — Trwałość organizmu', [
-    ['tolerancja', 'Tolerancja (Obciążeń)'],
+    ['tolerancja', 'Tolerancja obciążeń'], // ZRODLO C5 08.08.2026 — jw.
     ['regeneracja', 'Regeneracja'],
     ['odpornosc', 'Odporność'],
     ['odzywianie', 'Odżywienie'],
@@ -763,7 +783,7 @@ const SEGMENTS_BY_PILLAR = [
   ]],
   ['Filar 5 — Boiskowa mądrość', [
     ['percepcja', 'Percepcja'],
-    ['decyzja', 'Szybkość Decyzji'],
+    ['decyzja', 'Szybkość decyzji'], // ZRODLO C5 08.08.2026 — jw.
   ]],
 ];
 const SEG_LABELS = Object.fromEntries(SEGMENTS_BY_PILLAR.flatMap(([, segs]) => segs));
@@ -2294,6 +2314,83 @@ async function loadPlayerRecommendationsSection(playerId) {
   renderCoachRecommendationForm();
 }
 
+// ── ZRODLO C5 08.08.2026 ──────────────────────────────────────────────
+// „NA CZYM STOI TA REKOMENDACJA" — pokazanie pola
+// decision_recommendations.source_hint, które silnik zapisuje od rundy 4
+// (pas A), a ten panel dotąd ignorował: zapytanie wyżej idzie przez
+// `select=*`, więc pole PRZYCHODZI do przeglądarki i było wyrzucane.
+//
+// Po co to jest: dziś trener czyta rekomendację i nie ma jak odróżnić
+// zdania opartego na materiałach Kuby od ogólnej wiedzy modelu. To pole
+// niesie konkretne zdanie z materiału, z tytułem i numerem strony — czyli
+// jedyny w tym panelu dowód, że system nie zmyśla. Dlatego cytat jest
+// pokazany DOSŁOWNIE, w postaci, w jakiej trafił do promptu, a nie
+// streszczony: streszczenie nie jest dowodem.
+//
+// TRZY ZASADY Z KONTRAKTU PASA A (RAPORT_ZWROTNY_A_RUNDA_4.md, sekcja 11),
+// każda pilnowana testem w tests/test-coach-source-hint.js:
+//  1. NIE pokazujemy pól `celowanie` ani `wybor` — to diagnostyka silnika
+//     (jak precyzyjnie podpowiedź trafiła w cel, i czy wskazał ją model czy
+//     silnik), nie treść dla człowieka. Pas A prosi o to wprost.
+//  2. NIGDY „s. null". Jeden wiersz w korpusie (podpowiedź systemowa
+//     z decyzji A9) nie ma strony — i to jest poprawny stan, nie brak
+//     danych. Bez strony pokazujemy sam tytuł; bez tytułu nie pokazujemy
+//     przypisu w ogóle.
+//  3. `tresc` jest gotowa — nie skracamy, nie dopisujemy „Wskazówka:",
+//     nie ruszamy pierwszej litery. Te zdania przeszły już test 15-latka.
+//
+// source_hint = NULL znaczy „nie ma czego pokazać" (brak tabeli
+// component_hints, rekomendacja bez segmentu, nic nie przeszło filtrów albo
+// kolumna nie istniała w chwili zapisu) — wtedy sekcji NIE MA. Świadomie
+// zero komunikatu „brak źródła": to normalny stan dla każdej rekomendacji
+// sprzed rundy 4, a plakietka „nie wiem" przy każdej starej rekomendacji
+// byłaby szumem, nie informacją.
+const SOURCE_HINT_KIND_LABELS = { zrobic: 'do zrobienia', zrozumiec: 'do zrozumienia' };
+// Wartości, które w praktyce znaczą „nie ma strony". `null` to stan
+// kontraktowy, reszta to obrona przed tym, żeby numer strony przepisany
+// gdzieś po drodze na tekst nie wylądował trenerowi na ekranie jako „s. —".
+const SOURCE_HINT_BLANK = new Set(['', 'null', 'undefined', '—', '–', '-', 'brak']);
+
+function parseSourceHint(raw) {
+  if (!raw) return null;
+  let h = raw;
+  // PostgREST oddaje jsonb jako obiekt, ale gdyby kiedykolwiek przyszedł
+  // jako tekst (inny klient/proxy), wolę to obsłużyć niż pokazać „[object
+  // Object]" albo nic bez powodu.
+  if (typeof h === 'string') { try { h = JSON.parse(h); } catch (e) { return null; } }
+  if (!h || typeof h !== 'object' || Array.isArray(h)) return null;
+  const tresc = typeof h.tresc === 'string' ? h.tresc.trim() : '';
+  if (!tresc) return null; // brak zdania = nie ma czego pokazać, nie renderuj pustej ramki
+  if (typeof h.wersja === 'number' && h.wersja > 1) {
+    // R5 — nie po cichu. Renderujemy dalej (tresc/material/strona to trzon
+    // wersji 1 i pas A deklaruje go jako stabilny), ale ktokolwiek otworzy
+    // konsolę, dowie się, że kontrakt pojechał do przodu bez tego pliku.
+    console.warn('coach.html: source_hint w wersji', h.wersja, '— sprawdź kontrakt (RAPORT_ZWROTNY_A_RUNDA_4.md, sekcja 11).');
+  }
+  return { ...h, tresc };
+}
+
+function sourceHintOriginText(h) {
+  const material = typeof h.material === 'string' ? h.material.trim() : '';
+  if (!material) return ''; // bez tytułu nie ma przypisu — zasada 1 kontraktu
+  const strona = h.strona == null ? '' : String(h.strona).trim();
+  if (!strona || SOURCE_HINT_BLANK.has(strona.toLowerCase())) return material;
+  return `${material}, s. ${strona}`;
+}
+
+function renderSourceHint(raw) {
+  const h = parseSourceHint(raw);
+  if (!h) return '';
+  const kind = SOURCE_HINT_KIND_LABELS[h.rodzaj] || '';
+  const origin = sourceHintOriginText(h);
+  return `
+    <div class="gc-source-hint">
+      <div class="gc-source-hint-label">Na czym stoi ta rekomendacja${kind ? ' · ' + escapeHtml(kind) : ''}</div>
+      <div class="gc-source-hint-text">${escapeHtml(h.tresc)}</div>
+      ${origin ? `<div class="gc-source-hint-origin">${escapeHtml(origin)}</div>` : ''}
+    </div>`;
+}
+
 function renderRecommendationCard(r) {
   const dateLabel = new Date(r.created_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' });
   const typeLabel = RECOMMENDATION_TYPE_LABELS[r.recommendation_type] || r.recommendation_type;
@@ -2329,6 +2426,7 @@ function renderRecommendationCard(r) {
         <span class="gc-history-date">${dateLabel}</span>
       </div>
       ${text ? `<div class="gc-history-detail">${escapeHtml(text)}</div>` : ''}
+      ${renderSourceHint(r.source_hint)}
       ${reinforcedHtml}
       ${ratingHtml}
     </div>

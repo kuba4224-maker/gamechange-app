@@ -54,12 +54,23 @@ const handler = require('../api/cron-send-parent-reports.js');
 Module._resolveFilename = originalResolveFilename;
 
 // --- 3. Atrapa Supabase dla parent_report_subscriptions + rpc get_parent_report ---
-function makeFakeSupabase({ dueSubs = [], fetchError = null, reportsByToken = {}, updateErrorForIds = [] } = {}) {
-  const state = { subs: dueSubs.map((s) => ({ ...s })) };
+// RODZIC C4 08.08.2026 — atrapa rozszerzona o dwie rzeczy, które doszły
+// w tej rundzie: RPC `get_parent_report_extras` (warstwa materiałów dla
+// rodzica + migawka poprzedniego raportu) oraz `insert` do
+// `parent_report_snapshots`. `extrasByToken = null` udaje bazę SPRZED
+// migracji — i to jest osobny, ważny przypadek testowy: cron ma wtedy
+// nadal wysyłać, tylko policzyć brak.
+function makeFakeSupabase({
+  dueSubs = [], fetchError = null, reportsByToken = {}, updateErrorForIds = [],
+  extrasByToken = null, snapshotError = null,
+} = {}) {
+  const state = { subs: dueSubs.map((s) => ({ ...s })), snapshots: [] };
   const orCalls = [];
+  const rpcCalls = [];
   return {
     _state: state,
     _orCalls: orCalls,
+    _rpcCalls: rpcCalls,
     from(table) {
       const filters = [];
       let mode = 'select';
@@ -69,6 +80,11 @@ function makeFakeSupabase({ dueSubs = [], fetchError = null, reportsByToken = {}
         eq(col, val) { filters.push((r) => r[col] === val); return builder; },
         or(expr) { orCalls.push(expr); return builder; },
         update(payload) { mode = 'update'; updatePayload = payload; return builder; },
+        insert(payload) {
+          if (snapshotError) return Promise.resolve({ error: snapshotError });
+          state.snapshots.push(Object.assign({ _table: table }, payload));
+          return Promise.resolve({ error: null });
+        },
         then(resolve, reject) {
           if (mode === 'update') {
             const rows = state.subs.filter((r) => filters.every((f) => f(r)));
@@ -85,8 +101,20 @@ function makeFakeSupabase({ dueSubs = [], fetchError = null, reportsByToken = {}
       return builder;
     },
     rpc(fnName, params) {
+      rpcCalls.push({ fnName, params });
       if (fnName === 'get_parent_report') {
         const entry = reportsByToken[params.p_token];
+        if (!entry) return Promise.resolve({ data: null, error: null });
+        if (entry.error) return Promise.resolve({ data: null, error: entry.error });
+        return Promise.resolve({ data: entry.data, error: null });
+      }
+      // RODZIC C4 08.08.2026
+      if (fnName === 'get_parent_report_extras') {
+        if (extrasByToken === null) {
+          // baza sprzed migracji z tej rundy — funkcja po prostu nie istnieje
+          return Promise.resolve({ data: null, error: { message: 'function public.get_parent_report_extras does not exist' } });
+        }
+        const entry = extrasByToken[params.p_token];
         if (!entry) return Promise.resolve({ data: null, error: null });
         if (entry.error) return Promise.resolve({ data: null, error: entry.error });
         return Promise.resolve({ data: entry.data, error: null });
@@ -240,6 +268,133 @@ async function scenario(name, fn) {
     await handler(req, res);
     assert.match(sendEmailCalls[0].html, /Priorytetowy cel/);
     assert.match(sendEmailCalls[0].subject, /Kasia/);
+  });
+
+  // ============================================================
+  // RODZIC C4 08.08.2026 — warstwa materiałów + migawka raportu
+  // ============================================================
+  console.log('\nRODZIC C4 — warstwa materiałów dla rodzica i migawka raportu');
+
+  const RAPORT = {
+    player_name: 'Antek',
+    priority_goal: { segment_id: 'regeneracja', horizon_weeks: 6 },
+    active_goals_count: 2, recent_training_sessions_7d: 3, recent_matches_30d: 1,
+  };
+  const EXTRAS = {
+    segment_id: 'regeneracja',
+    hints_available: true,
+    hints: [
+      { hint: 'Dawka bazowa dla zawodnika ok. 70 kg: 200–400 mg magnezu elementarnego dziennie.', odbiorca: 'rodzic', min_age: 16, rodzaj: 'zrobic', zrodlo: 'Regeneracja — System Gamechange (pełny)', strony: '5, 13', pozycja: 8 },
+      { hint: 'Wyznacz stałą godzinę snu i trzymaj się jej codziennie.', odbiorca: 'oba', min_age: null, rodzaj: 'zrobic', zrodlo: 'Regeneracja — System Gamechange (pełny)', strony: '2', pozycja: 2 },
+    ],
+    previous_report: null, previous_report_at: null, last_log_at: '2026-08-06T18:00:00Z',
+  };
+
+  await scenario('extras dostępne -> podpowiedzi z dawkami realnie w wysłanym e-mailu (bramka A9, strona rodzica)', async () => {
+    sendEmailCalls.length = 0;
+    const { req, res, json } = makeReqRes();
+    currentFakeSupabase = makeFakeSupabase({
+      dueSubs: [{ id: 's8', access_token: 'tok-extras', parent_email: 'r8@example.com' }],
+      reportsByToken: { 'tok-extras': { data: RAPORT } },
+      extrasByToken: { 'tok-extras': { data: EXTRAS } },
+    });
+    await handler(req, res);
+    assert.strictEqual(json().results.missingExtras, 0);
+    assert.match(sendEmailCalls[0].html, /200–400 mg magnezu elementarnego/);
+    assert.match(sendEmailCalls[0].html, /Regeneracja — System Gamechange \(pełny\), s\. 5, 13/);
+  });
+
+  await scenario('extras wołane TYM SAMYM tokenem co get_parent_report i z segmentem z raportu (mechanizm tokenu nietknięty)', async () => {
+    const { req, res } = makeReqRes();
+    currentFakeSupabase = makeFakeSupabase({
+      dueSubs: [{ id: 's9', access_token: 'tok-segment', parent_email: 'r9@example.com' }],
+      reportsByToken: { 'tok-segment': { data: RAPORT } },
+      extrasByToken: { 'tok-segment': { data: EXTRAS } },
+    });
+    await handler(req, res);
+    const wywolania = currentFakeSupabase._rpcCalls;
+    assert.strictEqual(wywolania[0].fnName, 'get_parent_report');
+    assert.strictEqual(wywolania[1].fnName, 'get_parent_report_extras');
+    assert.strictEqual(wywolania[1].params.p_token, 'tok-segment');
+    assert.strictEqual(wywolania[1].params.p_segment_id, 'regeneracja');
+  });
+
+  await scenario('MIGRACJA NIEWKLEJONA -> e-mail i tak wychodzi, a brak jest POLICZONY, nie cichy (R5)', async () => {
+    sendEmailCalls.length = 0;
+    const { req, res, json } = makeReqRes();
+    currentFakeSupabase = makeFakeSupabase({
+      dueSubs: [{ id: 's10', access_token: 'tok-bez-migracji', parent_email: 'r10@example.com' }],
+      reportsByToken: { 'tok-bez-migracji': { data: RAPORT } },
+      extrasByToken: null, // funkcja nie istnieje
+    });
+    await handler(req, res);
+    const r = json();
+    assert.strictEqual(r.results.sent, 1, 'brak nowej warstwy NIE może wstrzymać raportu');
+    assert.strictEqual(r.results.missingExtras, 1, 'ma być widoczne w wyniku, nie tylko w logu');
+    assert.match(sendEmailCalls[0].html, /Biblioteka wskazówek dla rodzica nie jest jeszcze podłączona/);
+  });
+
+  await scenario('migawka wysłanego raportu zapisana PO udanej wysyłce, z tym samym ciałem raportu', async () => {
+    sendEmailCalls.length = 0;
+    const { req, res, json } = makeReqRes();
+    currentFakeSupabase = makeFakeSupabase({
+      dueSubs: [{ id: 's11', access_token: 'tok-migawka', parent_email: 'r11@example.com' }],
+      reportsByToken: { 'tok-migawka': { data: RAPORT } },
+      extrasByToken: { 'tok-migawka': { data: EXTRAS } },
+    });
+    await handler(req, res);
+    const migawki = currentFakeSupabase._state.snapshots;
+    assert.strictEqual(migawki.length, 1);
+    assert.strictEqual(migawki[0]._table, 'parent_report_snapshots');
+    assert.strictEqual(migawki[0].subscription_id, 's11');
+    assert.deepStrictEqual(migawki[0].sent_report, RAPORT);
+    assert.strictEqual(json().results.snapshotFailed, 0);
+  });
+
+  await scenario('nieudana wysyłka -> ŻADNEJ migawki (migawka ma odpowiadać temu, co rodzic realnie zobaczył)', async () => {
+    sendEmailImpl = async () => { throw new Error('dostawca padł'); };
+    const { req, res, json } = makeReqRes();
+    currentFakeSupabase = makeFakeSupabase({
+      dueSubs: [{ id: 's12', access_token: 'tok-padnie-2', parent_email: 'r12@example.com' }],
+      reportsByToken: { 'tok-padnie-2': { data: RAPORT } },
+      extrasByToken: { 'tok-padnie-2': { data: EXTRAS } },
+    });
+    await handler(req, res);
+    assert.strictEqual(currentFakeSupabase._state.snapshots.length, 0);
+    assert.strictEqual(json().results.failed, 1);
+    sendEmailImpl = async () => {};
+  });
+
+  await scenario('błąd zapisu migawki -> policzony, ale NIE psuje wysyłki', async () => {
+    sendEmailCalls.length = 0;
+    const { req, res, json } = makeReqRes();
+    currentFakeSupabase = makeFakeSupabase({
+      dueSubs: [{ id: 's13', access_token: 'tok-migawka-padnie', parent_email: 'r13@example.com' }],
+      reportsByToken: { 'tok-migawka-padnie': { data: RAPORT } },
+      extrasByToken: { 'tok-migawka-padnie': { data: EXTRAS } },
+      snapshotError: { message: 'brak tabeli parent_report_snapshots' },
+    });
+    await handler(req, res);
+    assert.strictEqual(json().results.sent, 1);
+    assert.strictEqual(json().results.snapshotFailed, 1);
+    assert.strictEqual(sendEmailCalls.length, 1);
+  });
+
+  await scenario('migawka poprzedniego raportu -> e-mail mówi, co się zmieniło, zamiast „pierwszy raport"', async () => {
+    sendEmailCalls.length = 0;
+    const { req, res } = makeReqRes();
+    const extrasZMigawka = Object.assign({}, EXTRAS, {
+      previous_report: Object.assign({}, RAPORT, { recent_training_sessions_7d: 1 }),
+      previous_report_at: '2026-07-08T10:00:00Z',
+    });
+    currentFakeSupabase = makeFakeSupabase({
+      dueSubs: [{ id: 's14', access_token: 'tok-delta', parent_email: 'r14@example.com' }],
+      reportsByToken: { 'tok-delta': { data: RAPORT } },
+      extrasByToken: { 'tok-delta': { data: extrasZMigawka } },
+    });
+    await handler(req, res);
+    assert.match(sendEmailCalls[0].html, /Zapisanych sesji w ostatnich 7 dniach: 3 — poprzednio 1\./);
+    assert.ok(!sendEmailCalls[0].html.includes('To pierwszy raport'));
   });
 
   console.log(failed === 0 ? `\nWSZYSTKIE TESTY PRZESZŁY (${passed}).` : `\n${failed} TEST(ÓW) NIE PRZESZŁO (${passed} ok).`);

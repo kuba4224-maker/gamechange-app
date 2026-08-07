@@ -20,6 +20,32 @@
   Świadomie: żadnego klienta Supabase Auth (@supabase/supabase-js) — zwykłe
   REST/RPC z kluczem publicznym `anon`, dokładnie jak specialist_list.html
   przed dodaniem mostu sesji. Ta strona nigdy nie potrzebuje sesji Auth.
+
+  ── RODZIC C4 08.08.2026 ─────────────────────────────────────────────
+  Audyt wartości produktu ocenił tę stronę tak: „prywatność wzorowa,
+  treść uboga". Ta runda zostawia pierwsze bez jednego dotknięcia
+  i naprawia drugie. Doszły trzy bloki:
+
+  1. WSKAZÓWKI Z MATERIAŁÓW dla rodzica, powiązane z obszarem, nad którym
+     pracuje dziecko, każda ze wskazanym źródłem (materiał + strona).
+     ⚠️ Bramka wiekowa (decyzja A9) działa tu ODWROTNIE niż w appce
+     zawodnika: rodzic widzi wskazówki z dawkami ZAWSZE, niezależnie
+     od wieku dziecka — bo to on kupuje i on odpowiada. Zawodnik poniżej
+     16 lat nie widzi ich nigdy. Szczegóły przy `selectParentHints()`.
+  2. UCZCIWY STAN KONTA (reguła R5): zero wpisów znaczy „nie zapisuje",
+     a nie „nie trenuje". To dwie różne wiadomości dla rodzica i strona
+     przestaje je mylić.
+  3. CO SIĘ ZMIENIŁO OD OSTATNIEGO RAPORTU — porównanie z migawką
+     ostatniego wysłanego raportu (`parent_report_snapshots`).
+
+  Czego ta runda ŚWIADOMIE NIE ZROBIŁA: żadnego paywalla, żadnego
+  przycisku „kup teraz", żadnej zmiany mechanizmu tokenu dostępu.
+  `PILOT_HIDE_PURCHASE` zostaje w mocy.
+
+  Nowe dane pochodzą z jednej, ADDYTYWNEJ funkcji `get_parent_report_extras`
+  (migracja w raporcie zwrotnym C rundy 4). `get_parent_report`
+  NIE JEST RUSZANA. Jeśli migracja nie została wklejona, strona działa
+  jak przed tą rundą, a każdy z trzech bloków mówi wprost, czego nie wie.
 -->
 <style>
 :root {
@@ -112,6 +138,32 @@ body {
 }
 
 .gc-hidden { display: none; }
+
+/* RODZIC C4 08.08.2026 — style trzech nowych bloków: stan konta, zmiana
+   od ostatniego raportu, wskazówki z materiałów. Ta sama paleta i ta sama
+   siatka co reszta karty — zero nowych kolorów. */
+.gc-section-label {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin: 26px 0 8px 0;
+}
+.gc-state-box {
+  margin: 18px 0;
+  padding: 14px 16px;
+  background: var(--bg);
+  border-left: 3px solid var(--accent);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink2);
+}
+.gc-state-box strong { display: block; color: var(--ink); margin-bottom: 4px; }
+.gc-list { margin: 0; padding-left: 18px; font-size: 14px; line-height: 1.7; color: var(--ink2); }
+.gc-list li { margin-bottom: 10px; }
+.gc-hint-src { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }
+.gc-small { font-size: 12px; color: var(--muted); margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -140,10 +192,26 @@ body {
     <div class="gc-title" id="gc-report-title">Raport postępów</div>
     <p class="gc-intro" id="gc-report-intro"></p>
 
+    <!-- RODZIC C4 08.08.2026 — uczciwy stan konta (reguła R5). Pokazywany
+         TYLKO wtedy, gdy liczby niżej mogłyby wprowadzić w błąd: przy zerze
+         wpisów rodzic musi wiedzieć, że to jest brak ZAPISU, a nie dowód
+         braku treningu. Przy aktywnym koncie ten blok się nie pojawia. -->
+    <div id="gc-activity-box" class="gc-state-box gc-hidden">
+      <strong id="gc-activity-headline"></strong>
+      <span id="gc-activity-body"></span>
+    </div>
+
     <div id="gc-goal-row" class="gc-row"></div>
     <div class="gc-row">Aktywnych celów: <strong id="gc-active-goals"></strong></div>
     <div class="gc-row">Sesji treningowych zalogowanych w ostatnich 7 dniach: <strong id="gc-sessions-7d"></strong></div>
     <div class="gc-row">Meczów w ostatnich 30 dniach: <strong id="gc-matches-30d"></strong></div>
+
+    <!-- RODZIC C4 08.08.2026 — „co się zmieniło od ostatniego raportu".
+         Powód, żeby wrócić, zbudowany bez naciskania: żadnego paywalla,
+         żadnego „kup teraz". PILOT_HIDE_PURCHASE zostaje w mocy. -->
+    <div class="gc-section-label">Co się zmieniło od ostatniego raportu</div>
+    <ul id="gc-change-list" class="gc-list gc-hidden"></ul>
+    <p id="gc-change-note" class="gc-small"></p>
 
     <div id="gc-growth-age-note" class="gc-note gc-hidden">
       W tym wieku (11–16 lat) organizm często przechodzi naturalny okres szybszego wzrostu —
@@ -157,6 +225,23 @@ body {
       zjawisko w tym okresie, nie powód do niepokoju, ale dobry moment, żeby razem z dzieckiem
       zadbać o sen i regenerację.
     </div>
+
+    <!-- RODZIC C4 08.08.2026 — warstwa materiałów dla rodzica (decyzje A3,
+         A9, C3). To jest odpowiedź na „prywatność wzorowa, treść uboga"
+         z audytu wartości produktu: konkret do zrobienia w domu, powiązany
+         z obszarem, nad którym pracuje dziecko, każda pozycja ze źródłem. -->
+    <div class="gc-section-label">Co możesz zrobić w domu w tym tygodniu</div>
+    <p id="gc-hints-intro" class="gc-intro" style="margin-bottom:12px;"></p>
+    <ul id="gc-hints-do" class="gc-list gc-hidden"></ul>
+    <div id="gc-hints-know-label" class="gc-section-label gc-hidden">Warto, żebyś to wiedział</div>
+    <ul id="gc-hints-know" class="gc-list gc-hidden"></ul>
+    <div id="gc-hints-doses" class="gc-note gc-hidden">
+      Wskazówki z konkretnymi dawkami widzisz Ty, nie dziecko. Aplikacja nie podaje dawek
+      suplementów zawodnikom poniżej 16 lat — o tym decyduje dorosły, który kupuje i odpowiada.
+      Jeśli cokolwiek tu budzi Twoją wątpliwość, to jest rozmowa z lekarzem albo dietetykiem,
+      nie z aplikacją.
+    </div>
+    <p id="gc-hints-cap" class="gc-small gc-hidden"></p>
 
     <p class="gc-footer-text" id="gc-detail-note"></p>
     <p class="gc-footer-text">
@@ -222,7 +307,244 @@ function escapeHtml(value) {
   return div.innerHTML;
 }
 
-function renderReport(report, token) {
+// ============================================================
+// RODZIC C4 08.08.2026 — WARSTWA MATERIAŁÓW DLA RODZICA
+// ============================================================
+// Trzy funkcje niżej są ŚWIADOMĄ, dosłowną kopią funkcji o tych samych
+// nazwach z `lib/email-templates.js` (`selectParentHints`,
+// `describeParentActivity`, `describeParentChange`). Ten sam wzorzec
+// akceptowanej duplikacji małego, stabilnego bloku, co SEG_NAMES,
+// który w tym projekcie żyje już w trzech plikach — z tego samego
+// powodu: strona nie ma jak zrobić `require()` do `lib/`, a nie chcę
+// dokładać kroku budowania ani trzynastego pliku do `api/` (limit
+// Vercel Hobby, 12 z 12).
+//
+// ⚠️ ZMIENIASZ TU COŚ → ZMIEŃ TAK SAMO W lib/email-templates.js.
+// Rozjazd między tymi dwoma miejscami znaczy, że e-mail i strona mówią
+// rodzicowi dwie różne rzeczy o tych samych danych.
+//
+// ⚠️ BRAMKA WIEKOWA — decyzja A9 działa tu ODWROTNIE niż w appce:
+//   • zawodnik poniżej 16 lat NIE dostaje podpowiedzi z dawkami — nigdy;
+//   • rodzic dostaje je ZAWSZE, niezależnie od wieku dziecka.
+// Dlatego `selectParentHints` NIE PRZYJMUJE WIEKU i nie ma tu ani jednego
+// odwołania do `min_age` jako warunku. `min_age` jest czytane WYŁĄCZNIE
+// po to, żeby dopisać rodzicowi zdanie „to widzisz Ty, nie dziecko".
+// Nie dodawaj tu parametru wieku. Pomyłka w tę stronę oznacza podanie
+// dawek suplementów jedenastolatkowi.
+// ============================================================
+const PARENT_HINT_RECIPIENTS = ['rodzic', 'oba'];
+const PARENT_HINT_LIMIT_DO = 6;
+const PARENT_HINT_LIMIT_WIEDZA = 4;
+
+function selectParentHints(rows) {
+  const empty = { doZrobienia: [], wartoWiedziec: [], razem: 0, zDawkami: 0, pominietych: 0, dostepnych: 0 };
+  if (!Array.isArray(rows) || rows.length === 0) return empty;
+
+  const kandydaci = rows.filter(
+    (r) => r && r.hint && PARENT_HINT_RECIPIENTS.indexOf(r.odbiorca) !== -1
+  );
+  if (kandydaci.length === 0) return empty;
+
+  const kolejnosc = (a, b) => {
+    const wagaA = a.odbiorca === 'rodzic' ? 0 : 1;
+    const wagaB = b.odbiorca === 'rodzic' ? 0 : 1;
+    if (wagaA !== wagaB) return wagaA - wagaB;
+    return (Number(a.pozycja) || 0) - (Number(b.pozycja) || 0);
+  };
+
+  const wszystkieDo = kandydaci.filter((r) => r.rodzaj !== 'zrozumiec').sort(kolejnosc);
+  const wszystkieWiedza = kandydaci.filter((r) => r.rodzaj === 'zrozumiec').sort(kolejnosc);
+  const doZrobienia = wszystkieDo.slice(0, PARENT_HINT_LIMIT_DO);
+  const wartoWiedziec = wszystkieWiedza.slice(0, PARENT_HINT_LIMIT_WIEDZA);
+  const wybrane = doZrobienia.concat(wartoWiedziec);
+
+  return {
+    doZrobienia,
+    wartoWiedziec,
+    razem: wybrane.length,
+    zDawkami: wybrane.filter((r) => r.min_age !== null && r.min_age !== undefined).length,
+    pominietych: kandydaci.length - wybrane.length,
+    dostepnych: kandydaci.length,
+  };
+}
+
+function parentHintSource(hint) {
+  if (!hint || !hint.zrodlo) return '';
+  const strony = hint.strony && String(hint.strony).trim() && String(hint.strony).trim() !== '—'
+    ? `, s. ${String(hint.strony).trim()}`
+    : '';
+  return `${hint.zrodlo}${strony}`;
+}
+
+function describeParentActivity(opts) {
+  const o = opts || {};
+  const r = o.report || {};
+  const sesje = Number(r.recent_training_sessions_7d) || 0;
+  const mecze = Number(r.recent_matches_30d) || 0;
+  const cele = Number(r.active_goals_count) || 0;
+  const maDiagnoze = !!r.last_diagnosis_at;
+
+  let dniOdWpisu = null;
+  if (o.lastLogAt) {
+    const t = new Date(o.lastLogAt).getTime();
+    if (!Number.isNaN(t)) dniOdWpisu = Math.max(0, Math.floor((Date.now() - t) / 86400000));
+  }
+  const kiedykolwiekZapisal = dniOdWpisu !== null;
+
+  if (sesje > 0 || mecze > 0) {
+    return {
+      state: 'aktywny', daysSinceLastLog: dniOdWpisu,
+      headline: 'Zapisuje na bieżąco',
+      body: 'Liczby niżej pochodzą z tego, co dziecko samo zapisało w aplikacji.',
+    };
+  }
+  if (cele > 0 || maDiagnoze || kiedykolwiekZapisal) {
+    const kiedy = dniOdWpisu === null
+      ? 'Do tej pory nie zapisało ani jednego wpisu'
+      : (dniOdWpisu === 0
+        ? 'Ostatni wpis jest z dzisiaj'
+        : `Ostatni wpis jest sprzed ${dniOdWpisu} ${dniOdWpisu === 1 ? 'dnia' : 'dni'}`);
+    return {
+      state: 'cisza', daysSinceLastLog: dniOdWpisu,
+      headline: 'Konto działa, ale od jakiegoś czasu cisza',
+      body: `${kiedy}. To nie znaczy, że dziecko nie trenuje — znaczy, że nie zapisuje. `
+        + 'Ta aplikacja widzi wyłącznie to, co ktoś do niej wpisze; tego, co dzieje się na treningu, nie widzi wcale. '
+        + 'Jeśli chcesz wiedzieć, czy trenuje, to jest pytanie do dziecka albo do trenera, nie do tego raportu.',
+    };
+  }
+  return {
+    state: 'niezaczete', daysSinceLastLog: null,
+    headline: 'Praca w aplikacji jeszcze się nie zaczęła',
+    body: 'Nie ma wypełnionej diagnozy, nie ma celu, nie ma ani jednego wpisu. '
+      + 'Ten raport nie mówi więc nic o tym, jak dziecko trenuje — mówi tylko, że nie zaczęło jeszcze korzystać z aplikacji. '
+      + 'Pierwszy krok to diagnoza; zajmuje kilkanaście minut i to od niej zależy cała reszta.',
+  };
+}
+
+function describeParentChange(opts) {
+  const o = opts || {};
+  const cur = o.report || {};
+  if (!o.previousReport) {
+    return {
+      hasPrevious: false, lines: [],
+      note: 'To pierwszy raport, więc nie mam go jeszcze z czym porównać. W następnym pokażę, co się zmieniło.',
+    };
+  }
+  const prev = o.previousReport;
+  const lines = [];
+  const segTeraz = cur.priority_goal && cur.priority_goal.segment_id;
+  const segWtedy = prev.priority_goal && prev.priority_goal.segment_id;
+  const nazwa = (s) => (s ? (SEG_NAMES[s] || s) : null);
+
+  if (segTeraz && segWtedy && segTeraz !== segWtedy) {
+    lines.push(`Zmienił się główny obszar pracy: było „${nazwa(segWtedy)}”, jest „${nazwa(segTeraz)}”.`);
+  } else if (segTeraz && !segWtedy) {
+    lines.push(`Pojawił się główny obszar pracy: „${nazwa(segTeraz)}”.`);
+  } else if (!segTeraz && segWtedy) {
+    lines.push(`Nie ma już wybranego głównego obszaru pracy (poprzednio: „${nazwa(segWtedy)}”).`);
+  } else if (segTeraz) {
+    lines.push(`Główny obszar pracy bez zmian: „${nazwa(segTeraz)}”.`);
+  }
+
+  const porownaj = (etykieta, kluczem) => {
+    const a = Number(cur[kluczem]) || 0;
+    const b = Number(prev[kluczem]) || 0;
+    lines.push(a === b ? `${etykieta}: ${a} — tyle samo co poprzednio.` : `${etykieta}: ${a} — poprzednio ${b}.`);
+  };
+  porownaj('Zapisanych sesji w ostatnich 7 dniach', 'recent_training_sessions_7d');
+  porownaj('Meczów w ostatnich 30 dniach', 'recent_matches_30d');
+  porownaj('Aktywnych celów', 'active_goals_count');
+
+  let note = '';
+  if (o.previousReportAt) {
+    const d = new Date(o.previousReportAt);
+    if (!Number.isNaN(d.getTime())) note = `Porównanie z raportem z ${d.toLocaleDateString('pl-PL')}.`;
+  }
+  return { hasPrevious: true, lines, note };
+}
+
+// RODZIC C4 08.08.2026 — trzy funkcje rysujące nowe bloki.
+function renderActivity(report, extras) {
+  const stan = describeParentActivity({ report, lastLogAt: extras && extras.last_log_at });
+  if (stan.state === 'aktywny') return; // liczby mówią same za siebie, nie dokładamy pudełka
+  document.getElementById('gc-activity-headline').textContent = stan.headline;
+  document.getElementById('gc-activity-body').textContent = stan.body;
+  show('gc-activity-box');
+}
+
+function renderChange(report, extras) {
+  const zmiana = describeParentChange({
+    report,
+    previousReport: extras && extras.previous_report,
+    previousReportAt: extras && extras.previous_report_at,
+  });
+  const listEl = document.getElementById('gc-change-list');
+  const noteEl = document.getElementById('gc-change-note');
+
+  if (!extras) {
+    // Uczciwie: nie „brak zmian", tylko „nie wiem". To jest dokładnie ta
+    // różnica, przez którą blok 3 nazwał wzorzec „cichy brak".
+    noteEl.textContent = 'Nie mam jeszcze zapisanego poprzedniego raportu, więc nie porównuję. Pojawi się to przy kolejnym raporcie.';
+    return;
+  }
+  if (!zmiana.hasPrevious) {
+    noteEl.textContent = zmiana.note;
+    return;
+  }
+  listEl.innerHTML = zmiana.lines.map((l) => `<li>${escapeHtml(l)}</li>`).join('');
+  show('gc-change-list');
+  noteEl.textContent = zmiana.note || '';
+}
+
+function renderHints(report, extras) {
+  const introEl = document.getElementById('gc-hints-intro');
+
+  if (!extras || !extras.hints_available) {
+    introEl.textContent = 'Biblioteka wskazówek dla rodzica nie jest jeszcze podłączona do tego raportu. '
+      + 'Nie pokazuję nic zamiast pokazywać coś wymyślonego — treść pojawi się tu, gdy tylko zostanie wgrana.';
+    return;
+  }
+
+  const wybor = selectParentHints(extras.hints);
+  const segId = extras.segment_id || (report.priority_goal && report.priority_goal.segment_id) || null;
+  const segNazwa = segId ? (SEG_NAMES[segId] || segId) : null;
+
+  if (wybor.razem === 0) {
+    introEl.textContent = segNazwa
+      ? `Dla obszaru „${segNazwa}” nie mamy jeszcze wskazówek napisanych dla rodzica — materiał do tego obszaru jest pisany do zawodnika. Nie dokładam tu treści na siłę.`
+      : 'Nie mamy jeszcze wskazówek dopasowanych do tego, nad czym pracuje dziecko. Pojawią się, gdy pojawi się wybrany obszar pracy.';
+    return;
+  }
+
+  introEl.textContent = segNazwa
+    ? `Dziecko pracuje teraz nad obszarem „${segNazwa}”. To są rzeczy, które możesz zrobić w domu, żeby ta praca miała warunki zadziałać.`
+    : 'To są rzeczy, które możesz zrobić w domu niezależnie od tego, nad czym dziecko akurat pracuje — podstawy rytmu dnia.';
+
+  const pozycja = (h) => {
+    const zrodlo = parentHintSource(h);
+    return `<li>${escapeHtml(h.hint)}`
+      + (zrodlo ? `<span class="gc-hint-src">${escapeHtml(zrodlo)}</span>` : '')
+      + '</li>';
+  };
+
+  if (wybor.doZrobienia.length) {
+    document.getElementById('gc-hints-do').innerHTML = wybor.doZrobienia.map(pozycja).join('');
+    show('gc-hints-do');
+  }
+  if (wybor.wartoWiedziec.length) {
+    document.getElementById('gc-hints-know').innerHTML = wybor.wartoWiedziec.map(pozycja).join('');
+    show('gc-hints-know-label');
+    show('gc-hints-know');
+  }
+  if (wybor.zDawkami > 0) show('gc-hints-doses');
+  if (wybor.pominietych > 0) {
+    const capEl = document.getElementById('gc-hints-cap');
+    capEl.textContent = `Pokazuję ${wybor.razem} z ${wybor.dostepnych} wskazówek, żeby ta strona dała się przeczytać na raz. Reszta wróci w kolejnych raportach.`;
+    show('gc-hints-cap');
+  }
+}
+
+function renderReport(report, token, extras) {
   const playerName = report.player_name || 'Twoje dziecko';
   document.getElementById('gc-report-title').textContent = `Raport postępów — ${playerName}`;
   document.getElementById('gc-report-intro').textContent =
@@ -249,6 +571,13 @@ function renderReport(report, token) {
 
   document.getElementById('gc-detail-note').textContent =
     `To zwięzły, ogólny obraz — szczegóły (dziennik, samopoczucie, rozmowy z asystentem AI) widzi wyłącznie ${playerName} w swoim koncie, zgodnie z zasadą, że to Jego/Jej narzędzie do samodzielnej pracy nad formą.`;
+
+  // RODZIC C4 08.08.2026 — trzy nowe bloki. `extras` może być `null`
+  // (migracja z tej rundy jeszcze niewklejona) i wtedy KAŻDY z nich mówi
+  // wprost, czego nie wie, zamiast po cichu zniknąć.
+  renderActivity(report, extras);
+  renderChange(report, extras);
+  renderHints(report, extras);
 
   document.getElementById('gc-unsubscribe-link').onclick = (e) => {
     e.preventDefault();
@@ -292,7 +621,32 @@ async function init() {
       show('gc-not-found');
       return;
     }
-    renderReport(report, token);
+
+    // RODZIC C4 08.08.2026 — druga, ADDYTYWNA funkcja: wskazówki
+    // z materiałów, migawka poprzedniego raportu i data ostatniego wpisu.
+    //
+    // Świadomie NIE rozszerzam `get_parent_report`: ta funkcja żyje na
+    // produkcji w wersji bogatszej niż jakakolwiek jej kopia w repo,
+    // a `create or replace` z niepełnym ciałem skasowałoby działającą
+    // logikę (ten sam wzorzec, który raz już uratował `get_pre_match_signals`).
+    //
+    // MECHANIZM TOKENU NIETKNIĘTY: nowa funkcja czyta token dokładnie tak
+    // samo jak stara (aktywna subskrypcja w `parent_report_subscriptions`),
+    // nie zapisuje niczego i nie zwraca żadnego nowego pola osobowego.
+    //
+    // Awaria tej funkcji NIE psuje raportu — rodzic dostaje wersję sprzed
+    // tej rundy, a każdy z trzech nowych bloków mówi wprost, czego nie wie.
+    let extras = null;
+    try {
+      extras = await callRpc('get_parent_report_extras', {
+        p_token: token,
+        p_segment_id: (report.priority_goal && report.priority_goal.segment_id) || null,
+      });
+    } catch (extrasError) {
+      console.log('raport-rodzica: get_parent_report_extras niedostępne:', extrasError);
+    }
+
+    renderReport(report, token, extras);
   } catch (e) {
     console.log('raport-rodzica init error:', e);
     hideAllStates();

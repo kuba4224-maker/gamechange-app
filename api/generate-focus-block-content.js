@@ -27,9 +27,59 @@
 // stripMarkdownJsonFence skopiowany 1:1 z api/generate-recommendation.js
 // / api/validate-goal-refinement.js (żywo zweryfikowane przed napisaniem
 // tego pliku, 31.07.2026).
+//
+// ------------------------------------------------------------
+// PRAKTYKA A5 08.08.2026 — dawka przestaje być ulotna + podpowiedzi
+// ------------------------------------------------------------
+// DWIE ZMIANY, obie wyłącznie w ścieżce `action: 'checkin'` (Faza 2):
+//
+// 1. DAWKA TREŚCI JEST TERAZ ZAPISYWANA I ODCZYTYWANA.
+//    Do tej pory `contentDose` wracał stąd do wołającego i przepadał —
+//    `api/cron-send-notifications.js` (rytm 6) wstawiał do
+//    `focus_block_checkins` sam `question_text`, a treść dawki nie miała
+//    kolumny, w której mogłaby usiąść. Audyt nazywa to "dawka generowana
+//    i gubiona" od bloku 1. Teraz `generateCheckin()`:
+//      - CZYTA magazyn (`focus_blocks.content_doses`) ZANIM zawoła model,
+//      - jeśli dawka dla TEGO etapu już jest i jest świeższa niż 14 dni,
+//        NIE prosi modelu o nową — oddaje zapamiętaną,
+//      - a świeżo wygenerowaną zapisuje, żeby zawodnik mógł do niej wrócić.
+//    Wzorzec oszczędności 1:1 z `checkTrainingFocusCadence()` w
+//    api/generate-recommendation.js — patrz lib/focus-block-content-store.js.
+//
+// 2. PROMPT FAZY 2 DOSTAJE PODPOWIEDZI Z MATERIAŁÓW KUBY.
+//    `component_hints` (214 wierszy, runda 3) czytał dotąd wyłącznie
+//    silnik rekomendacji. Blok Skupienia ma przewagę, której rekomendacja
+//    nie ma: zna konkretny Element (`focus_blocks.component_id`) — więc
+//    to TUTAJ po raz pierwszy zadziała 63 podpowiedzi przypiętych do
+//    Elementu (znalezisko B24 z rundy 4). Bramka wiekowa A9 i filtr
+//    odbiorcy działają przez TE SAME funkcje co w rundzie 4, nie kopie.
+//    Podpowiedzi wchodzą do promptu WYŁĄCZNIE w turze, w której powstaje
+//    dawka — tura z samym pytaniem kontrolnym ma prompt bez zmian, bo
+//    nie ma w niej treści, którą można by na materiale oprzeć.
+//
+// ⚠️ CZEGO TE ZMIANY NIE RUSZAJĄ (sprawdzone pomiarem, nie założeniem —
+//    raport rundy 5, sekcja 10): przy braku dawki w magazynie i braku
+//    podpowiedzi prompt systemowy jest IDENTYCZNY CO DO ZNAKU z tym
+//    sprzed tej rundy, a pola `contentDose` i `stageAtDose` w wyniku mają
+//    dokładnie to samo znaczenie co dotąd — dlatego `api/cron-*` (pas C)
+//    nie wymaga ani jednej zmiany. Nowe informacje jadą w NOWYCH polach,
+//    które dzisiejszy wołający po prostu ignoruje.
 // ============================================================
 
 const { createClient } = require('@supabase/supabase-js');
+// PRAKTYKA A5 08.08.2026 — magazyn dawki + podpowiedzi. Cała nowa logika
+// mieszka w lib/ (ograniczenie O1: api/ ma 12 z 12 plików, trzynasty
+// zablokowałby deploy całego repo appki).
+const {
+  fetchDoseEnvelope,
+  checkContentDoseCadence,
+  normalizeDose,
+  saveContentDose,
+  describeDoseState,
+  loadHintsForFocusBlock,
+  buildHintPromptBlock,
+  pickShowcaseHint,
+} = require('../lib/focus-block-content-store');
 
 function getAdminClient() {
   const url = process.env.SUPABASE_URL;
@@ -148,10 +198,53 @@ function stripMarkdownJsonFence(text) {
 }
 
 // ------------------------------------------------------------
-// action: checkin — Faza 2a (pytanie kontrolne) + Faza 2b (dawka treści)
+// PRAKTYKA A5 08.08.2026 — prompt systemowy wydzielony z ciała
+// generateCheckin() do osobnej, czystej funkcji. Powód: bez tego nie da
+// się ZMIERZYĆ, że ścieżka bez podpowiedzi jest identyczna co do znaku
+// z tą sprzed rundy — a to jedyny twardy dowód, że nic się nie zepsuło
+// dla zawodników, dla których podpowiedzi jeszcze nie ma (ten sam dowód,
+// który runda 4 dała dla silnika rekomendacji).
+//
+// ⚠️ Przy `hintBlock === ''` treść tej funkcji jest ZNAK W ZNAK tym, co
+// stało tu przed 08.08.2026. Test `test-generate-focus-block-content.js`
+// trzyma oczekiwaną długość i kształt obu wariantów.
 // ------------------------------------------------------------
-async function generateCheckin({ focusBlockId }) {
-  const supabase = getAdminClient();
+function buildCheckinSystemPrompt({ elementName, segmentId, stage, dueForContentDose, hintBlock = '' }) {
+  const czyPodpowiedzi = typeof hintBlock === 'string' && hintBlock.length > 0;
+  // Pole dokładane WYŁĄCZNIE wtedy, gdy podpowiedzi w ogóle poszły —
+  // dokładnie ten sam warunek co przy `used_hint_klucz` w rundzie 4,
+  // dzięki czemu ścieżka bez podpowiedzi zostaje bajt w bajt dzisiejsza.
+  const formatDodatek = czyPodpowiedzi
+    ? ', "used_hint_klucz": "klucz podpowiedzi z sekcji PODPOWIEDZI, na której oparłeś dawkę — dokładnie taki, jaki jest w nawiasie na początku linii; pomiń to pole, jeśli nie użyłeś żadnej"'
+    : '';
+
+  return `Jesteś asystentem sportowym systemu Gamechange. Piszesz krótkie,
+konkretne pytanie kontrolne po polsku do zawodnika pracującego nad elementem
+"${elementName}" (segment: ${segmentId}, etap progresji: ${stage}) w ramach
+jego Bloku Skupienia. Pytanie MUSI dotyczyć WYŁĄCZNIE tego elementu — nie ogólnego
+samopoczucia, nie innych celów. Ton rzeczowy, krótki (1 zdanie, max 2).
+${dueForContentDose
+    ? 'Dołącz też krótką dawkę treści edukacyjnej (2-4 zdania): "praktyczny krok" (zawsze) oraz opcjonalnie "dla chętnych" (głębsze wyjaśnienie, może być null jeśli wiedza źródłowa na to nie pozwala). Bazuj WYŁĄCZNIE na dostarczonej wiedzy źródłowej, nie zmyślaj.'
+    : 'NIE dołączaj żadnej treści edukacyjnej w tej turze — zwróć contentDose: null.'}
+${hintBlock}Zwróć WYŁĄCZNIE poprawny JSON (bez markdown, bez bloków kodu) w formacie:
+{"question": "...", "contentDose": null lub {"practicalStep": "...", "forCurious": "..." lub null}${formatDodatek}}`;
+}
+
+// ------------------------------------------------------------
+// action: checkin — Faza 2a (pytanie kontrolne) + Faza 2b (dawka treści)
+//
+// PRAKTYKA A5 08.08.2026: drugi parametr `deps` jest OPCJONALNY i służy
+// wyłącznie testom (wstrzyknięcie atrapy Supabase i atrapy wywołania
+// modelu) — dokładnie ten sam wzorzec co `injectedSupabase` w
+// generateFocusBlockDosing()/generateRecommendation(). Wołający z crona
+// (`generateCheckin({ focusBlockId })`) nie zmienia ani znaku i dostaje
+// dokładnie to samo zachowanie co dotąd.
+// ------------------------------------------------------------
+async function generateCheckin({ focusBlockId }, deps = {}) {
+  const supabase = deps.supabase || getAdminClient();
+  const callModel = deps.callModel || callAnthropic;
+  const now = deps.now || new Date();
+
   const block = await fetchFocusBlock(supabase, focusBlockId);
   const elementName = await fetchElementDescription(supabase, block);
   const knowledge = await fetchKnowledgeSnippet(supabase, block.segment_id);
@@ -162,33 +255,123 @@ async function generateCheckin({ focusBlockId }) {
   // Prosty, deterministyczny warunek liczony TUTAJ — AI dostaje już gotową
   // decyzję "czy dołączyć treść", nie liczy dat samo.
   const daysSinceLastDose = block.last_content_dose_at
-    ? (Date.now() - new Date(block.last_content_dose_at).getTime()) / (24 * 60 * 60 * 1000)
+    ? (now.getTime() - new Date(block.last_content_dose_at).getTime()) / (24 * 60 * 60 * 1000)
     : Infinity;
   const stageChanged = block.last_content_dose_stage !== block.stage;
-  const dueForContentDose = stageChanged || daysSinceLastDose >= 14;
+  const dueRaw = stageChanged || daysSinceLastDose >= 14;
 
-  const systemPrompt = `Jesteś asystentem sportowym systemu Gamechange. Piszesz krótkie,
-konkretne pytanie kontrolne po polsku do zawodnika pracującego nad elementem
-"${elementName}" (segment: ${block.segment_id}, etap progresji: ${block.stage}) w ramach
-jego Bloku Skupienia. Pytanie MUSI dotyczyć WYŁĄCZNIE tego elementu — nie ogólnego
-samopoczucia, nie innych celów. Ton rzeczowy, krótki (1 zdanie, max 2).
-${dueForContentDose
-    ? 'Dołącz też krótką dawkę treści edukacyjnej (2-4 zdania): "praktyczny krok" (zawsze) oraz opcjonalnie "dla chętnych" (głębsze wyjaśnienie, może być null jeśli wiedza źródłowa na to nie pozwala). Bazuj WYŁĄCZNIE na dostarczonej wiedzy źródłowej, nie zmyślaj.'
-    : 'NIE dołączaj żadnej treści edukacyjnej w tej turze — zwróć contentDose: null.'}
-Zwróć WYŁĄCZNIE poprawny JSON (bez markdown, bez bloków kodu) w formacie:
-{"question": "...", "contentDose": null lub {"practicalStep": "...", "forCurious": "..." lub null}}`;
+  // PRAKTYKA A5 08.08.2026 — ODCZYT PRZED WYWOŁANIEM MODELU.
+  // To jest ta sama oszczędność, którą daje checkTrainingFocusCadence()
+  // w silniku rekomendacji: zanim zapłacimy za wygenerowanie, sprawdzamy,
+  // czy już tego nie mamy. Nigdy nie przerywa pytania kontrolnego —
+  // magazyn niedostępny znaczy "zachowaj się dokładnie jak przed rundą 5".
+  let magazyn = { envelope: { wersja: 1, dawki: [] }, stanKolumny: 'nie_sprawdzano', stanKoperty: 'pusta' };
+  let kadencja = { allowed: true, reason: 'magazyn_niedostepny' };
+  try {
+    magazyn = await fetchDoseEnvelope(supabase, block.id);
+    kadencja = checkContentDoseCadence({ envelope: magazyn.envelope, stage: block.stage, now });
+  } catch (e) {
+    console.error('[dawka] odczyt magazynu nieudany, generuję jak przed rundą 5:', e.message);
+  }
+  const dawkaZMagazynu = kadencja.allowed ? null : (kadencja.dawka || null);
+  const dueForContentDose = dueRaw && !dawkaZMagazynu;
+
+  // PRAKTYKA A5 08.08.2026 — podpowiedzi z materiałów, TYLKO w turze,
+  // w której powstaje dawka. Blok Skupienia celuje w konkretny Element
+  // (`focus_blocks.component_id`), nie tylko w segment — to jest ta
+  // przewaga, której nie ma silnik rekomendacji (znalezisko B24).
+  // Nigdy nie rzuca: brak tabeli/kolumny to stan, nie awaria.
+  let hinty = null;
+  if (dueForContentDose) {
+    try {
+      hinty = await loadHintsForFocusBlock(supabase, {
+        segmentId: block.segment_id,
+        componentId: block.component_id,
+        userId: block.user_id,
+        now,
+      });
+      console.log(hinty.log);
+    } catch (e) {
+      console.error('[podpowiedzi] odczyt nieudany, prompt bez podpowiedzi:', e.message);
+      hinty = null;
+    }
+  }
+  const hintBlock = hinty ? buildHintPromptBlock(hinty.selection) : '';
+
+  const systemPrompt = buildCheckinSystemPrompt({
+    elementName,
+    segmentId: block.segment_id,
+    stage: block.stage,
+    dueForContentDose,
+    hintBlock,
+  });
 
   const userPrompt = `Element: ${elementName}
 Wiedza źródłowa (może być pusta): ${knowledge || '(brak)'}
 Ostatnie odpowiedzi zawodnika na wcześniejsze pytania kontrolne: ${JSON.stringify(recentCheckins.map((c) => c.answer_text).filter(Boolean))}`;
 
-  const result = await callAnthropic(systemPrompt, userPrompt);
+  const result = await callModel(systemPrompt, userPrompt);
+
+  // PRAKTYKA A5 08.08.2026 — ZAPIS. Bez tego kroku wszystko powyżej jest
+  // tylko lepszym promptem, a dawka nadal ginie (reguła R1: zadanie nie
+  // jest skończone, dopóki człowiek tego nie widzi).
+  let nowaDawka = null;
+  let zapis = { stan: 'nic_do_zapisania' };
+  if (dueForContentDose && result && result.contentDose) {
+    const sourceHint = hinty
+      ? pickShowcaseHint(hinty.selection, result.used_hint_klucz || null)
+      : null;
+    nowaDawka = normalizeDose(result.contentDose, {
+      focusBlockId: block.id,
+      stage: block.stage,
+      segmentId: block.segment_id,
+      componentId: block.component_id,
+      sourceHint,
+      now,
+    });
+    if (nowaDawka) {
+      try {
+        zapis = await saveContentDose(supabase, { focusBlockId: block.id, dose: nowaDawka });
+      } catch (e) {
+        zapis = { stan: 'blad', blad: e.message };
+        console.error('[dawka] zapis nieudany:', e.message);
+      }
+    }
+  }
+  console.log(describeDoseState({
+    stanKolumny: magazyn.stanKolumny,
+    stanKoperty: magazyn.stanKoperty,
+    kadencja,
+    zapis: zapis.stan,
+    liczbaDawek: (magazyn.envelope.dawki || []).length,
+  }));
 
   return {
     ok: true,
     question: result.question,
+    // --- POLA O NIEZMIENIONYM ZNACZENIU ---
+    // `contentDose` nadal znaczy dokładnie jedno: "w TEJ turze powstała
+    // NOWA dawka". Cron (pas C) opiera się na tym, żeby zaktualizować
+    // last_content_dose_stage/at — dawka odczytana z magazynu NIE może
+    // tu wejść, bo zresetowałaby zegar kadencji za coś, czego nie było.
     contentDose: dueForContentDose ? (result.contentDose || null) : null,
     stageAtDose: dueForContentDose ? block.stage : block.last_content_dose_stage,
+    // --- PRAKTYKA A5 08.08.2026: NOWE POLA, tylko dokładane ---
+    // Dzisiejszy wołający ich nie zna i po prostu je ignoruje.
+    contentDoseZrodlo: nowaDawka ? 'model' : (dawkaZMagazynu ? 'magazyn' : 'brak'),
+    contentDoseZapisana: nowaDawka,
+    contentDoseZapamietana: dawkaZMagazynu,
+    zapisDawki: zapis.stan,
+    podpowiedzi: hinty
+      ? {
+        wstrzykniete: hinty.selection.hints.length,
+        stanTabeli: hinty.stanTabeli,
+        stanCelowania: hinty.stanCelowania,
+        wycelowaneWElement: hinty.selection.wycelowaneWCel,
+        wiekNieznany: hinty.selection.wiekNieznany,
+        ukryteZPowoduWieku: hinty.selection.ukryteZPowoduWieku,
+      }
+      : null,
   };
 }
 
@@ -263,4 +446,10 @@ module.exports._internal = {
   fetchElementDescription,
   stripMarkdownJsonFence,
   SEG_PILLAR,
+  // PRAKTYKA A5 08.08.2026 — wystawione, żeby dało się ZMIERZYĆ, że
+  // prompt bez podpowiedzi jest identyczny co do znaku ze stanem sprzed
+  // tej rundy (dowód, nie deklaracja — raport rundy 5, sekcja 10 i 12).
+  buildCheckinSystemPrompt,
+  fetchKnowledgeSnippet,
+  fetchRecentCheckins,
 };

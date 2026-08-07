@@ -40,6 +40,11 @@ const {
   parentalPaymentConsentEmail,
   preMatchTeamBriefingEmail,
   weeklyTeamPulseEmail,
+  // RODZIC C4 08.08.2026 — warstwa materiałów dla rodzica.
+  selectParentHints,
+  describeParentActivity,
+  describeParentChange,
+  parentHintSource,
 } = require('../lib/email-templates.js');
 
 let passed = 0;
@@ -460,6 +465,298 @@ scenario('XSS-owy ładunek w goalsAchievedCount/riskSignalsCount (obronnie, mimo
   });
   assert.ok(!r.html.includes(XSS_PAYLOAD));
   assert.ok(r.html.includes(XSS_ESCAPED));
+});
+
+// ============================================================
+// 7. RODZIC C4 08.08.2026 — WARSTWA MATERIAŁÓW DLA RODZICA
+// ============================================================
+// Ta sekcja istnieje z jednego powodu, ważniejszego niż pokrycie kodu:
+// **bramka wiekowa decyzji A9 jest jedyną rzeczą w tej rundzie, której
+// pomyłka ma realny koszt zdrowotny.** Pomyłka w jedną stronę = dawki
+// suplementów podane jedenastolatkowi. Pomyłka w drugą = rodzic, który
+// za suplement płaci i za dawkę odpowiada, nie dostaje liczby.
+//
+// Dowód konstrukcyjny (mocniejszy niż jakikolwiek test): `selectParentHints`
+// NIE PRZYJMUJE WIEKU. Nie da się przekazać jej złego progu, bo nie da się
+// przekazać jej żadnego. Testy niżej pilnują, żeby ten stan się utrzymał.
+console.log('\n7. RODZIC C4 — warstwa materiałów dla rodzica (bramka wiekowa A9)');
+
+// Realne wiersze z PODPOWIEDZI_Z_MATERIALOW_A.md, segment `regeneracja`
+// (jedyny, który ma i podpowiedzi z dawkami, i wspólne) — przepisane
+// dosłownie, żeby test sprawdzał treść, którą rodzic realnie dostanie.
+const HINTS_REGENERACJA = [
+  { klucz: 'regeneracja-segment-08', hint: 'Dawka bazowa dla zawodnika ok. 70 kg: 200–400 mg magnezu elementarnego dziennie, wieczorem przed snem. W okresach dużych obciążeń 300–500 mg.', odbiorca: 'rodzic', min_age: 16, rodzaj: 'zrobic', zrodlo: 'Regeneracja — System Gamechange (pełny)', strony: '5, 13', pozycja: 8 },
+  { klucz: 'regeneracja-segment-09', hint: 'Wybieraj diglicynian albo cytrynian magnezu, unikaj tlenku.', odbiorca: 'rodzic', min_age: 16, rodzaj: 'zrobic', zrodlo: 'Regeneracja — System Gamechange (pełny)', strony: '5, 13–14', pozycja: 9 },
+  { klucz: 'regeneracja-segment-12', hint: 'L-treonian magnezu to dodatek na funkcje mózgu, nie baza.', odbiorca: 'rodzic', min_age: 16, rodzaj: 'zrobic', zrodlo: 'Regeneracja — System Gamechange (pełny)', strony: '12, 13', pozycja: 12 },
+  { klucz: 'regeneracja-segment-10', hint: 'Przy zdrowych nerkach przedawkowanie magnezu jest mało prawdopodobne.', odbiorca: 'rodzic', min_age: 16, rodzaj: 'zrozumiec', zrodlo: 'Regeneracja — System Gamechange (pełny)', strony: '11', pozycja: 10 },
+  { klucz: 'regeneracja-wyduzenie-snu-nocnego-o-46-113-minut-02', hint: 'Wyznacz stałą godzinę snu i trzymaj się jej codziennie, także w weekendy.', odbiorca: 'oba', min_age: null, rodzaj: 'zrobic', zrodlo: 'Regeneracja — System Gamechange (pełny)', strony: '2', pozycja: 2 },
+  { klucz: 'regeneracja-segment-01', hint: 'W ciągu 30–60 minut po treningu zjedz posiłek z węglowodanami i białkiem.', odbiorca: 'oba', min_age: null, rodzaj: 'zrobic', zrodlo: 'Regeneracja — System Gamechange (pełny)', strony: '3', pozycja: 1 },
+  // Ten wiersz NIE MOŻE trafić do rodzica — jest pisany do zawodnika.
+  { klucz: 'regeneracja-segment-07', hint: 'Magnez to sprawa do ustalenia z rodzicem — to on kupuje i pilnuje dawki.', odbiorca: 'zawodnik', min_age: null, rodzaj: 'zrozumiec', zrodlo: 'decyzja A9 (tekst systemowy — nie z materiału)', strony: '—', pozycja: 7 },
+];
+
+const RAPORT_12LAT = {
+  player_name: 'Antek',
+  priority_goal: { segment_id: 'regeneracja', horizon_weeks: 6 },
+  active_goals_count: 2,
+  recent_training_sessions_7d: 3,
+  recent_matches_30d: 1,
+  growth_spurt_typical_age_range: true,
+  height_growth_rate_elevated: false,
+  last_diagnosis_at: '2026-07-20T10:00:00Z',
+};
+const RAPORT_17LAT = Object.assign({}, RAPORT_12LAT, {
+  player_name: 'Marcel',
+  growth_spurt_typical_age_range: false,
+});
+
+// ---- 7a. BRAMKA WIEKOWA ----
+scenario('A9 / DOWÓD KONSTRUKCYJNY: selectParentHints nie przyjmuje wieku (arność 1)', () => {
+  assert.strictEqual(selectParentHints.length, 1,
+    'Jeśli ten test padł, ktoś dodał do funkcji parametr — najpewniej wiek. To jest dokładnie ta zmiana, której nie wolno zrobić.');
+});
+
+scenario('A9 / dziecko 12 lat: rodzic DOSTAJE wszystkie trzy podpowiedzi z dawkami', () => {
+  const w = selectParentHints(HINTS_REGENERACJA);
+  const klucze = w.doZrobienia.concat(w.wartoWiedziec).map((h) => h.klucz);
+  assert.ok(klucze.includes('regeneracja-segment-08'), 'dawka bazowa magnezu musi trafić do rodzica');
+  assert.ok(klucze.includes('regeneracja-segment-09'), 'forma magnezu musi trafić do rodzica');
+  assert.ok(klucze.includes('regeneracja-segment-12'), 'L-treonian musi trafić do rodzica');
+  assert.strictEqual(w.zDawkami, 4, 'wszystkie cztery wiersze z min_age=16 są policzone');
+});
+
+scenario('A9 / dziecko 17 lat: dokładnie ten sam zestaw co dla 12-latka (wiek nie ma tu wpływu)', () => {
+  const a = selectParentHints(HINTS_REGENERACJA);
+  const b = selectParentHints(HINTS_REGENERACJA);
+  assert.deepStrictEqual(
+    a.doZrobienia.concat(a.wartoWiedziec).map((h) => h.klucz),
+    b.doZrobienia.concat(b.wartoWiedziec).map((h) => h.klucz)
+  );
+});
+
+scenario('A9 / treść pisana DO ZAWODNIKA nigdy nie trafia do rodzica', () => {
+  const w = selectParentHints(HINTS_REGENERACJA);
+  const klucze = w.doZrobienia.concat(w.wartoWiedziec).map((h) => h.klucz);
+  assert.ok(!klucze.includes('regeneracja-segment-07'), 'odbiorca=zawodnik musi wypaść');
+  assert.strictEqual(w.dostepnych, 6, '7 wierszy wejściowych minus jeden dla zawodnika');
+});
+
+scenario('A9 / podpowiedzi z dawkami NIE mogą wypaść przez limit (są sortowane przed wspólne)', () => {
+  // Regresja na realny błąd, który miałaby wersja sortująca wyłącznie po
+  // `pozycja`: dawki mają pozycje 8–12, wspólne 1–2, więc przy limicie 6
+  // dawki wypadłyby jako ostatnie — czyli rodzic NIE dostałby dokładnie
+  // tego, co A9 każe mu dać.
+  const duzoWspolnych = [];
+  for (let i = 1; i <= 20; i++) {
+    duzoWspolnych.push({ klucz: `oba-${i}`, hint: `Wspólna ${i}`, odbiorca: 'oba', min_age: null, rodzaj: 'zrobic', zrodlo: 'X', strony: '1', pozycja: i });
+  }
+  const w = selectParentHints(duzoWspolnych.concat(HINTS_REGENERACJA));
+  const doKlucze = w.doZrobienia.map((h) => h.klucz);
+  assert.ok(doKlucze.includes('regeneracja-segment-08'));
+  assert.ok(doKlucze.includes('regeneracja-segment-09'));
+  assert.ok(doKlucze.includes('regeneracja-segment-12'));
+  assert.strictEqual(w.doZrobienia[0].odbiorca, 'rodzic', 'treść wprost dla rodzica idzie pierwsza');
+});
+
+scenario('A9 / w e-mailu dla 12-latka realnie widać liczbę „200–400 mg" i zdanie o tym, że dziecko tego nie widzi', () => {
+  const r = parentReportEmail({
+    report: RAPORT_12LAT,
+    unsubscribeUrl: 'https://x/raport-rodzica.html?token=t&action=unsubscribe',
+    extras: { hints_available: true, hints: HINTS_REGENERACJA, segment_id: 'regeneracja' },
+  });
+  assert.match(r.html, /200–400 mg magnezu elementarnego/);
+  assert.match(r.text, /200–400 mg magnezu elementarnego/);
+  assert.match(r.html, /nie podaje dawek suplementów zawodnikom poniżej 16 lat/);
+});
+
+scenario('A9 / e-mail dla 17-latka zawiera dokładnie tę samą treść dawkową', () => {
+  const r = parentReportEmail({
+    report: RAPORT_17LAT,
+    unsubscribeUrl: 'https://x/?token=t',
+    extras: { hints_available: true, hints: HINTS_REGENERACJA, segment_id: 'regeneracja' },
+  });
+  assert.match(r.html, /200–400 mg magnezu elementarnego/);
+});
+
+scenario('A9 / brak wierszy z min_age -> zdanie o dawkach NIE pojawia się (nie straszymy bez powodu)', () => {
+  const bezDawek = HINTS_REGENERACJA.filter((h) => h.min_age == null);
+  const r = parentReportEmail({
+    report: RAPORT_12LAT, unsubscribeUrl: '',
+    extras: { hints_available: true, hints: bezDawek, segment_id: 'regeneracja' },
+  });
+  assert.ok(!r.html.includes('nie podaje dawek suplementów'));
+});
+
+// ---- 7b. ŹRÓDŁO PRZY KAŻDEJ PODPOWIEDZI ----
+scenario('każda pokazana podpowiedź ma źródło: materiał + strona', () => {
+  const r = parentReportEmail({
+    report: RAPORT_12LAT, unsubscribeUrl: '',
+    extras: { hints_available: true, hints: HINTS_REGENERACJA, segment_id: 'regeneracja' },
+  });
+  assert.match(r.html, /Regeneracja — System Gamechange \(pełny\), s\. 5, 13/);
+  assert.match(r.text, /Regeneracja — System Gamechange \(pełny\), s\. 2/);
+});
+
+scenario('źródło bez sensownej strony („—") nie produkuje „s. —"', () => {
+  assert.strictEqual(parentHintSource({ zrodlo: 'decyzja A9', strony: '—' }), 'decyzja A9');
+  assert.strictEqual(parentHintSource({ zrodlo: 'Moc', strony: '3' }), 'Moc, s. 3');
+  assert.strictEqual(parentHintSource(null), '');
+});
+
+// ---- 7c. TRZY UCZCIWE STANY PUSTKI (R5) ----
+scenario('R5 / są wpisy -> stan „aktywny", żadnego pudełka wyjaśniającego', () => {
+  const s = describeParentActivity({ report: RAPORT_12LAT, lastLogAt: '2026-08-06T18:00:00Z', now: '2026-08-08T10:00:00Z' });
+  assert.strictEqual(s.state, 'aktywny');
+});
+
+scenario('R5 / zero wpisów, ale konto żyje -> stan „cisza" i JAWNE rozróżnienie „nie zapisuje" od „nie trenuje"', () => {
+  const raport = Object.assign({}, RAPORT_12LAT, { recent_training_sessions_7d: 0, recent_matches_30d: 0 });
+  const s = describeParentActivity({ report: raport, lastLogAt: '2026-07-25T10:00:00Z', now: '2026-08-08T10:00:00Z' });
+  assert.strictEqual(s.state, 'cisza');
+  assert.strictEqual(s.daysSinceLastLog, 14, 'dwa tygodnie ciszy policzone dokładnie');
+  assert.match(s.body, /sprzed 14 dni/);
+  assert.match(s.body, /nie znaczy, że dziecko nie trenuje — znaczy, że nie zapisuje/);
+});
+
+scenario('R5 / zero wszystkiego (brak diagnozy, celu i wpisów) -> stan „niezaczete", inna wiadomość niż „cisza"', () => {
+  const raport = {
+    player_name: 'Nikt', priority_goal: null, active_goals_count: 0,
+    recent_training_sessions_7d: 0, recent_matches_30d: 0, last_diagnosis_at: null,
+  };
+  const s = describeParentActivity({ report: raport, lastLogAt: null, now: '2026-08-08T10:00:00Z' });
+  assert.strictEqual(s.state, 'niezaczete');
+  assert.match(s.body, /nie zaczęło jeszcze korzystać z aplikacji/);
+  assert.ok(!s.body.includes('nie zapisuje'), 'to inna wiadomość niż stan „cisza"');
+});
+
+scenario('R5 / trzy stany dają trzy RÓŻNE teksty (nie jeden komunikat na wszystko)', () => {
+  const aktywny = describeParentActivity({ report: RAPORT_12LAT, lastLogAt: '2026-08-08T09:00:00Z', now: '2026-08-08T10:00:00Z' });
+  const cisza = describeParentActivity({ report: Object.assign({}, RAPORT_12LAT, { recent_training_sessions_7d: 0, recent_matches_30d: 0 }), lastLogAt: '2026-07-01T10:00:00Z', now: '2026-08-08T10:00:00Z' });
+  const niezaczete = describeParentActivity({ report: { active_goals_count: 0, recent_training_sessions_7d: 0, recent_matches_30d: 0 }, lastLogAt: null, now: '2026-08-08T10:00:00Z' });
+  const teksty = new Set([aktywny.body, cisza.body, niezaczete.body]);
+  assert.strictEqual(teksty.size, 3);
+});
+
+scenario('R5 / stan „cisza" bez daty ostatniego wpisu (daily_logs nieczytelne) -> mówi „nie zapisało ani jednego wpisu", nie zmyśla liczby', () => {
+  const raport = Object.assign({}, RAPORT_12LAT, { recent_training_sessions_7d: 0, recent_matches_30d: 0 });
+  const s = describeParentActivity({ report: raport, lastLogAt: null, now: '2026-08-08T10:00:00Z' });
+  assert.strictEqual(s.state, 'cisza');
+  assert.match(s.body, /nie zapisało ani jednego wpisu/);
+  assert.ok(!/sprzed \d+ dni/.test(s.body));
+});
+
+scenario('R5 / e-mail dla dziecka od dwóch tygodni bez wpisu zawiera pudełko wyjaśniające, a dla aktywnego NIE zawiera', () => {
+  const cichy = parentReportEmail({
+    report: Object.assign({}, RAPORT_12LAT, { recent_training_sessions_7d: 0, recent_matches_30d: 0 }),
+    unsubscribeUrl: '',
+    extras: { hints_available: true, hints: HINTS_REGENERACJA, segment_id: 'regeneracja', last_log_at: '2026-01-01T10:00:00Z' },
+  });
+  const aktywny = parentReportEmail({
+    report: RAPORT_12LAT, unsubscribeUrl: '',
+    extras: { hints_available: true, hints: HINTS_REGENERACJA, segment_id: 'regeneracja' },
+  });
+  assert.match(cichy.html, /znaczy, że nie zapisuje/);
+  assert.ok(!aktywny.html.includes('znaczy, że nie zapisuje'));
+});
+
+// ---- 7d. CO SIĘ ZMIENIŁO OD OSTATNIEGO RAPORTU ----
+scenario('zmiana / brak migawki -> uczciwe „to pierwszy raport", nie „bez zmian"', () => {
+  const z = describeParentChange({ report: RAPORT_12LAT, previousReport: null });
+  assert.strictEqual(z.hasPrevious, false);
+  assert.match(z.note, /pierwszy raport/);
+  assert.strictEqual(z.lines.length, 0);
+});
+
+scenario('zmiana / zmieniony obszar pracy nazwany obiema nazwami PL', () => {
+  const z = describeParentChange({
+    report: RAPORT_12LAT,
+    previousReport: Object.assign({}, RAPORT_12LAT, { priority_goal: { segment_id: 'mental' } }),
+    previousReportAt: '2026-07-08T10:00:00Z',
+  });
+  assert.ok(z.lines.some((l) => l.includes('„Odwaga w grze”') && l.includes('„Regeneracja”')),
+    'nazwa segmentu mental musi brzmieć „Odwaga w grze" także tutaj (decyzja A1)');
+});
+
+scenario('zmiana / liczby porównane z poprzednim raportem, także gdy spadły', () => {
+  const z = describeParentChange({
+    report: Object.assign({}, RAPORT_12LAT, { recent_training_sessions_7d: 1 }),
+    previousReport: Object.assign({}, RAPORT_12LAT, { recent_training_sessions_7d: 4 }),
+  });
+  assert.ok(z.lines.some((l) => /Zapisanych sesji w ostatnich 7 dniach: 1 — poprzednio 4\./.test(l)));
+});
+
+scenario('zmiana / identyczne liczby -> „tyle samo co poprzednio", nie milczenie', () => {
+  const z = describeParentChange({ report: RAPORT_12LAT, previousReport: RAPORT_12LAT });
+  assert.ok(z.lines.some((l) => /tyle samo co poprzednio/.test(l)));
+});
+
+// ---- 7e. UCZCIWA DEGRADACJA, GDY MIGRACJA NIEWKLEJONA ----
+scenario('brak extras -> e-mail nadal się buduje, mówi wprost o braku biblioteki i o braku porównania', () => {
+  const r = parentReportEmail({ report: RAPORT_12LAT, unsubscribeUrl: '' });
+  assert.match(r.html, /Biblioteka wskazówek dla rodzica nie jest jeszcze podłączona/);
+  assert.match(r.html, /pierwszy raport/);
+  assert.ok(!r.html.includes('undefined'));
+  assert.ok(!r.text.includes('undefined'));
+});
+
+scenario('hints_available=true, ale zero wierszy dla tego obszaru -> uczciwe „nie mamy jeszcze", nie pusta sekcja', () => {
+  const r = parentReportEmail({
+    report: Object.assign({}, RAPORT_12LAT, { priority_goal: { segment_id: 'moc' } }),
+    unsubscribeUrl: '', extras: { hints_available: true, hints: [], segment_id: 'moc' },
+  });
+  assert.match(r.html, /Dla obszaru „Moc” nie mamy jeszcze wskazówek napisanych dla rodzica/);
+});
+
+scenario('limit wskazówek jest WIDOCZNY, nigdy cichy', () => {
+  const duzo = [];
+  for (let i = 1; i <= 30; i++) {
+    duzo.push({ hint: `Wspólna ${i}`, odbiorca: 'oba', min_age: null, rodzaj: 'zrobic', zrodlo: 'X', strony: '1', pozycja: i });
+  }
+  const r = parentReportEmail({
+    report: RAPORT_12LAT, unsubscribeUrl: '',
+    extras: { hints_available: true, hints: duzo, segment_id: 'regeneracja' },
+  });
+  assert.match(r.html, /Pokazuję 6 z 30 wskazówek/);
+});
+
+// ---- 7f. NIC SIĘ NIE ZEPSUŁO I NIC NIE PRZECIEKA ----
+scenario('XSS w treści podpowiedzi i w źródle -> uciecznięte', () => {
+  const r = parentReportEmail({
+    report: RAPORT_12LAT, unsubscribeUrl: '',
+    extras: {
+      hints_available: true, segment_id: 'regeneracja',
+      hints: [{ hint: XSS_PAYLOAD, odbiorca: 'rodzic', min_age: 16, rodzaj: 'zrobic', zrodlo: XSS_PAYLOAD, strony: '1', pozycja: 1 }],
+    },
+  });
+  assert.ok(!r.html.includes(XSS_PAYLOAD));
+  assert.ok(r.html.includes(XSS_ESCAPED));
+});
+
+scenario('ŻADNA nowa sekcja nie mówi o płatności, cenie ani zakupie (PILOT_HIDE_PURCHASE w mocy)', () => {
+  const r = parentReportEmail({
+    report: RAPORT_12LAT, unsubscribeUrl: 'https://x/?token=t',
+    extras: { hints_available: true, hints: HINTS_REGENERACJA, segment_id: 'regeneracja', previous_report: RAPORT_17LAT, previous_report_at: '2026-07-08T10:00:00Z' },
+  });
+  // Świadomie WĄSKIE wzorce: chodzi o wezwanie do zakupu, nie o samo słowo
+  // „kupuje" — to ostatnie występuje w uczciwym zdaniu o tym, kto odpowiada
+  // za dawkę suplementu, i ma tam zostać.
+  [/kup teraz/i, /przejdź na (wersję|plan)/i, /cennik/i, /zapłać/i, /abonament/i,
+   /\bpłatnoś/i, /\d+\s*zł/, /subskrypcj/i, /stripe/i, /checkout/i].forEach((wzorzec) => {
+    assert.ok(!wzorzec.test(r.html), `raport rodzica nie może zawierać ${wzorzec}`);
+    assert.ok(!wzorzec.test(r.text), `wersja tekstowa też nie może zawierać ${wzorzec}`);
+  });
+});
+
+scenario('stare pola raportu nadal działają dokładnie tak samo (zero regresji)', () => {
+  const r = parentReportEmail({
+    report: RAPORT_12LAT, unsubscribeUrl: 'https://x/?token=t',
+    extras: { hints_available: true, hints: HINTS_REGENERACJA, segment_id: 'regeneracja' },
+  });
+  assert.match(r.subject, /Raport Gamechange — Antek/);
+  assert.match(r.html, /Priorytetowy cel tego okresu/);
+  assert.match(r.html, /Aktywnych celów: <strong>2<\/strong>/);
+  assert.match(r.html, /W tym wieku \(11–16 lat\)/);
+  assert.match(r.html, /Wypisz się jednym kliknięciem/);
 });
 
 console.log(failed === 0 ? `\nWSZYSTKIE TESTY PRZESZŁY (${passed}).` : `\n${failed} TEST(ÓW) NIE PRZESZŁO (${passed} ok).`);

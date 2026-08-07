@@ -21,6 +21,20 @@
 //      (Czwarty ekran — Centrum Decyzji w asystent_app.html).
 //
 // ------------------------------------------------------------
+// PODPOWIEDZI SILNIK A4 (08.08.2026, runda 4, pas A) — silnik przestaje
+// opierać się wyłącznie na ogólnej wiedzy modelu i jednym akapicie z
+// `knowledge_base_entries`. Doszła trzecia warstwa: `component_hints`
+// (214 podpowiedzi z materiałów Kuby, każda z numerem strony), czytana
+// przez `lib/recommendation-hints.js` i wstrzykiwana jako OSOBNA, nazwana
+// sekcja promptu obok bazy wiedzy. Jedna wybrana podpowiedź jedzie razem
+// z rekomendacją do `decision_recommendations.source_hint`, żeby zawodnik
+// zobaczył ją na ekranie (reguła R1) — pas B buduje wyświetlanie.
+// Domyka lukę 4e z `claude/AUDYT_BAZY_WIEDZY_REKOMENDACJI.md`.
+// Przy braku tabeli / rocznika / Elementu celu silnik zachowuje się
+// DOKŁADNIE tak jak przed tą zmianą, ale każdy taki stan ma własną nazwę
+// w logu (reguła R5 — bez cichej pustki).
+//
+// ------------------------------------------------------------
 // POPRAWKA (25.07.2026, wieczór — decyzja Kuby ws. ankiety jako wejścia
 // do systemu): "jeżeli da się zbudować diagnozę... to chciałbym to
 // zrobić... ankieta niech się stanie na razie gotowym wejściem do
@@ -123,6 +137,18 @@
 
 const { createClient } = require('@supabase/supabase-js');
 
+// PODPOWIEDZI SILNIK A4 08.08.2026 — trzecia warstwa wiedzy obok
+// `knowledge_base_entries` (akapit na segment) i `segment_components`
+// (taksonomia dla UI): 214 atomowych podpowiedzi z materiałów Kuby, każda
+// z numerem strony. Domyka lukę 4e z AUDYT_BAZY_WIEDZY_REKOMENDACJI.md.
+// Cała logika mieszka w lib/ — ograniczenie O1 (api/ ma 12 z 12 plików).
+const {
+  loadHintsForRecommendation,
+  buildHintPromptBlock,
+  pickShowcaseHint,
+  isMissingColumnError,
+} = require('../lib/recommendation-hints.js');
+
 // ------------------------------------------------------------
 // KONFIGURACJA — zmienne środowiskowe Vercel, ta sama konwencja
 // nazewnicza co w Marketplace (patrz MARKETPLACE_CHECKLISTA_WDROZENIA.md,
@@ -210,6 +236,50 @@ const INJURY_MODE_OVERRIDE_CATEGORY = {
   tolerancja: 'orthopedics',
   odpornosc: 'orthopedics',
 };
+
+// ------------------------------------------------------------
+// DOZOWANIE A6 08.08.2026 — CZY W OGÓLE SIĘGAĆ PO PODPOWIEDZI
+// ------------------------------------------------------------
+// DECYZJA PRODUKTOWA SESJI GŁÓWNEJ z 08.08.2026
+// (`claude/AUDYT_PO_BLOKU_4_08_08_2026.md`, sekcja 5, "Rozstrzygnięte przez
+// sesję główną, bez pytania"): **`specialist_referral` bez segmentu NIE
+// sięga po `tolerancja`.**
+//
+// SKĄD SIĘ WZIĘŁA: znalezisko A24 z rundy 4 zauważyło, że skierowanie do
+// specjalisty z powodu wzorca bólu (`pain_pattern_match`) nie ma segmentu,
+// więc nigdy nie dostanie ani jednej podpowiedzi — choć segment
+// `tolerancja` ma 18 podpowiedzi wprost o bólu i powrocie po przerwie.
+// Kuszące było podstawić `tolerancja` domyślnie. Sesja główna to
+// ODRZUCIŁA i ta funkcja jest miejscem, w którym ta decyzja jest ZAPISANA
+// W KODZIE, a nie tylko w dokumencie.
+//
+// DLACZEGO ODRZUCONA — powód, żeby nikt tego nie „naprawił" za pół roku:
+// wzorzec bólu w kolanie nie znaczy, że problemem jest tolerancja
+// obciążeń. Podstawienie segmentu zrobiłoby z DOMYSŁU DANE: model
+// dostałby 18 konkretnych zdań o tolerancji obciążeń, oparł na nich
+// ostrożne skierowanie, a `pickShowcaseHint()` przykleiłby do niego
+// podpowiedź z tytułem materiału i numerem strony. Zawodnik zobaczyłby
+// przypis "Tolerancja obciążeń — System Gamechange, s. 4" pod
+// skierowaniem, którego nikt nigdy nie powiązał z tolerancją. To nie jest
+// brak funkcji — to byłby fałszywy dowód, a przy skierowaniu do
+// specjalisty fałszywy dowód jest gorszy niż jego brak.
+//
+// DODATKOWO (mierzalne, nie kosmetyczne): dziś przy braku segmentu ścieżka
+// i tak kończy się pustką, ale DOPIERO PO wykonaniu zapytania o rocznik
+// zawodnika (`fetchPlayerBirthYear`) — potrzebnego wyłącznie do bramki
+// wiekowej, którą i tak nie ma czego przepuszczać. Ta funkcja pozwala
+// odciąć to o krok wcześniej i powiedzieć w logu, że to WYBÓR, a nie
+// przypadek (reguła R5: pusty wynik i "świadomie nie pytaliśmy" to dwie
+// różne rzeczy).
+//
+// Funkcja CZYSTA — zero I/O, w całości testowalna.
+function shouldLoadHints({ recommendationType, segmentId } = {}) {
+  if (segmentId) return { load: true, powod: 'segment_znany' };
+  if (recommendationType === 'specialist_referral') {
+    return { load: false, powod: 'specialist_referral_bez_segmentu_swiadomie_bez_podpowiedzi' };
+  }
+  return { load: false, powod: 'brak_segmentu' };
+}
 
 function resolveSuggestedSpecialistCategory(segmentId, injuryModeActive) {
   if (!segmentId) return null;
@@ -841,7 +911,13 @@ async function resolveGoalSegment(supabase, goalId) {
 // PROMPT — filozofia i format wprost z Funkcji 3 dokumentu koncepcyjnego
 // (ASYSTENT_SPORTOWCA_PROJEKT.md), nie wymyślone od nowa.
 // ------------------------------------------------------------
-function buildSystemPrompt({ recommendationType, knowledgeBaseContent, confidenceTone }) {
+// PODPOWIEDZI SILNIK A4 08.08.2026 — doszedł czwarty, OPCJONALNY parametr
+// `hintSelection` (wynik selectHintsForPrompt() z lib/recommendation-hints.js).
+// Gdy go nie ma albo nie niesie ani jednej podpowiedzi, prompt jest
+// generowany DOKŁADNIE tak jak przed tą zmianą, co do bajta — dlatego
+// wszystkie 55 istniejących scenariuszy w tests/test-generate-recommendation.js
+// przechodzą bez modyfikacji.
+function buildSystemPrompt({ recommendationType, knowledgeBaseContent, confidenceTone, hintSelection }) {
   const toneInstruction = confidenceTone === 'questioning'
     ? 'Zawodnik ostatnio kilka razy z rzędu odrzucił podobne sugestie jako "nie miało sensu". Złagodź ton — sformułuj rekomendację jako pytanie/hipotezę, nie stanowcze stwierdzenie (np. "czy coś w Twojej sytuacji sprawia że X się nie sprawdza?"), zamiast być w pełni asertywnym.'
     : 'Formułuj rekomendację asertywnie i wprost, na podstawie danych.';
@@ -850,9 +926,25 @@ function buildSystemPrompt({ recommendationType, knowledgeBaseContent, confidenc
     ? `BAZA WIEDZY GAMECHANGE dla tego segmentu (źródło prawdy — nigdy jej nie neguj, nigdy nie proponuj czegoś sprzecznego z nią):\n${knowledgeBaseContent}\n\n`
     : '';
 
+  // PODPOWIEDZI SILNIK A4 08.08.2026 — osobna, NAZWANA sekcja promptu,
+  // OBOK bazy wiedzy, nigdy zamiast niej. Pusty string, gdy podpowiedzi
+  // nie ma — wtedy prompt jest identyczny z dzisiejszym.
+  const hintsBlock = buildHintPromptBlock(hintSelection);
+  const hasHints = hintsBlock.length > 0;
+
+  // Dodatkowe pole `used_hint_klucz` wchodzi do formatu odpowiedzi WYŁĄCZNIE
+  // wtedy, gdy podpowiedzi faktycznie poszły do promptu. Model mówi nim,
+  // na której podpowiedzi oparł rekomendację — dzięki temu to, co zawodnik
+  // zobaczy na ekranie, zgadza się z tym, czego model naprawdę użył
+  // (reguła R1). Pole jest opcjonalne: brak nie psuje niczego, silnik
+  // spada wtedy na podpowiedź najlepiej wycelowaną.
+  const usedHintField = hasHints
+    ? ', "used_hint_klucz": "klucz podpowiedzi z sekcji PODPOWIEDZI, na której oparłeś rekomendację (dokładnie ten ciąg z nawiasu, np. moc-segment-01) — albo pusty string, jeśli żadna nie pasowała"'
+    : '';
+
   const formatBlock = recommendationType === 'training_focus'
-    ? '{"weekly_focus_text": "krótki nagłówek priorytetu tygodnia", "recommendation_text": "konkretna, wykonalna rekomendacja działania", "rationale_text": "krótkie uzasadnienie oparte na danych zawodnika podanych niżej"}'
-    : '{"recommendation_text": "rzeczowa, ostrożna sugestia rozmowy ze specjalistą", "rationale_text": "krótkie wyjaśnienie dlaczego, oparte na danych"}';
+    ? `{"weekly_focus_text": "krótki nagłówek priorytetu tygodnia", "recommendation_text": "konkretna, wykonalna rekomendacja działania", "rationale_text": "krótkie uzasadnienie oparte na danych zawodnika podanych niżej"${usedHintField}}`
+    : `{"recommendation_text": "rzeczowa, ostrożna sugestia rozmowy ze specjalistą", "rationale_text": "krótkie wyjaśnienie dlaczego, oparte na danych"${usedHintField}}`;
 
   // Stała zasada edukacyjna (Gotowość, próg B1) — NIEZALEŻNA od danych
   // konkretnego zawodnika, dlatego żyje tutaj a nie w computeReadinessSignals().
@@ -865,7 +957,7 @@ function buildSystemPrompt({ recommendationType, knowledgeBaseContent, confidenc
 
 FILOZOFIA (nienaruszalna, wprost z dokumentu koncepcyjnego Funkcji 3): Centrum Decyzji jest NAWIGATOREM, nie planistą. Nie piszesz dokładnego planu treningowego — kierunkujesz i uzasadniasz. Zawodnik samodzielnie realizuje szczegóły (albo korzysta ze specjalisty z Marketplace).
 
-${kbBlock}TON: ${toneInstruction}
+${kbBlock}${hintsBlock}TON: ${toneInstruction}
 
 ${sleepContextBlock}
 
@@ -1100,8 +1192,54 @@ async function generateRecommendation(params, injectedSupabase) {
     if (streak >= 2) confidenceTone = 'questioning';
   }
 
+  // --- 3b. PODPOWIEDZI SILNIK A4 08.08.2026 — podpowiedzi z materiałów ---
+  // NIGDY nie przerywa generowania. Brak tabeli (Kuba nie wkleił jeszcze
+  // migracji), brak rocznika, brak Elementu celu — każdy z tych stanów
+  // zostawia silnik w dzisiejszym zachowaniu, ale ZAWSZE ląduje w logu
+  // pod własną nazwą (reguła R5 — żadnej cichej pustki).
+  //
+  // DOZOWANIE A6 08.08.2026 — bramka `shouldLoadHints()` PRZED wywołaniem.
+  // Decyzja produktowa: `specialist_referral` bez segmentu świadomie NIE
+  // sięga po `tolerancja` (pełne uzasadnienie przy definicji funkcji).
+  // Nie podstawiamy segmentu i nie wykonujemy zapytań, które nie mają
+  // czego przefiltrować — ale mówimy to WPROST, zamiast zostawić pustkę
+  // wyglądającą jak "sprawdziłem i nic nie było".
+  let hintLoad = null;
+  const bramkaPodpowiedzi = shouldLoadHints({ recommendationType, segmentId });
+  if (!bramkaPodpowiedzi.load) {
+    console.log(`[podpowiedzi] pominiete=tak powod=${bramkaPodpowiedzi.powod}`);
+    if (bramkaPodpowiedzi.powod === 'specialist_referral_bez_segmentu_swiadomie_bez_podpowiedzi') {
+      console.log('[podpowiedzi] skierowanie do specjalisty bez segmentu NIE dostaje podpowiedzi i NIE podstawiamy za nie segmentu "tolerancja" — decyzja produktowa sesji głównej z 08.08.2026 (AUDYT_PO_BLOKU_4_08_08_2026.md, sekcja 5; znalezisko A24). Podpowiedź z tytułem materiału i numerem strony pod skierowaniem, którego nikt z tym segmentem nie powiązał, byłaby fałszywym dowodem.');
+    }
+  }
+  if (bramkaPodpowiedzi.load) {
+    try {
+      hintLoad = await loadHintsForRecommendation(supabase, {
+        segmentId, userId, goalId: recommendationType === 'training_focus' ? goalId : null,
+      });
+      console.log(hintLoad.log);
+      if (hintLoad.stanTabeli === 'brak_tabeli') {
+        console.log('[podpowiedzi] tabela component_hints nie istnieje — silnik pracuje jak przed rundą 4. To NIE znaczy "sprawdziłem i nic nie znalazłem".');
+      } else if (hintLoad.stanTabeli === 'blad') {
+        console.error(`[podpowiedzi] BŁĄD odczytu component_hints (silnik jedzie dalej bez nich): ${hintLoad.blad}`);
+      }
+      if (hintLoad.selection && hintLoad.selection.niedopasowane > 0) {
+        console.error(`[podpowiedzi] UWAGA: ${hintLoad.selection.niedopasowane} podpowiedzi ma component_id=NULL mimo wypełnionej nazwy Obszaru/Elementu — to NIEUDANE dopasowanie w migracji, nie zamierzona reguła segmentowa. Zapytanie kontrolne (2) w claude/PODPOWIEDZI_Z_MATERIALOW_A.md pokaże które.`);
+      }
+      if (hintLoad.stanCelowania === 'brak_kolumny_elementu') {
+        console.log('[podpowiedzi] w tabeli goals nie ma żadnej ze znanych kolumn Elementu — celujemy w segment, nie w Element. To stan "nie wiem", nie "cel bez Elementu".');
+      }
+    } catch (e) {
+      // Warstwa podpowiedzi nie ma prawa wywrócić rekomendacji, która
+      // działa od 25.07.2026.
+      console.error(`[podpowiedzi] nieoczekiwany wyjątek, silnik jedzie dalej bez podpowiedzi: ${e.message}`);
+      hintLoad = null;
+    }
+  }
+  const hintSelection = hintLoad ? hintLoad.selection : null;
+
   // --- 4. Prompt + wywołanie AI ---
-  const systemPrompt = buildSystemPrompt({ recommendationType, knowledgeBaseContent, confidenceTone });
+  const systemPrompt = buildSystemPrompt({ recommendationType, knowledgeBaseContent, confidenceTone, hintSelection });
   const userPrompt = buildUserPrompt({
     recommendationType,
     referralReason,
@@ -1138,12 +1276,42 @@ async function generateRecommendation(params, injectedSupabase) {
     suggested_specialist_category: suggestedSpecialistCategory,
   };
 
-  const { data: inserted, error: insertError } = await supabase
-    .from('decision_recommendations')
-    .insert(row)
-    .select()
-    .single();
-  if (insertError) throw new Error(`generateRecommendation(insert): ${insertError.message}`);
+  // PODPOWIEDZI SILNIK A4 08.08.2026 — REGUŁA R1: prompt bogatszy o
+  // podpowiedzi to za mało. Rekomendacja musi POWIEŹĆ ZE SOBĄ konkretną
+  // podpowiedź w postaci nadającej się do pokazania na ekranie: treść,
+  // materiał, strona. Pełny kontrakt (kształt pola + przykład prawdziwego
+  // rekordu) opisany dla pasa B w claude/RAPORT_ZWROTNY_A_RUNDA_4.md,
+  // sekcja 11 — pas B buduje wyświetlanie i to jego jedyne źródło.
+  const showcaseHint = pickShowcaseHint(
+    hintSelection,
+    typeof aiResult.used_hint_klucz === 'string' && aiResult.used_hint_klucz
+      ? aiResult.used_hint_klucz
+      : null
+  );
+  if (showcaseHint) row.source_hint = showcaseHint;
+
+  let inserted = null;
+  {
+    const first = await supabase
+      .from('decision_recommendations').insert(row).select().single();
+    if (first.error && showcaseHint && isMissingColumnError(first.error)) {
+      // Kolumna `source_hint` jeszcze nie istnieje (Kuba nie wkleił migracji
+      // z sekcji 10 raportu). Zapisujemy rekomendację BEZ niej — silnik ma
+      // działać dokładnie tak jak dziś — ale mówimy to wprost w logu,
+      // zamiast po cichu zgubić podpowiedź (reguła R5).
+      console.error('[podpowiedzi] decision_recommendations nie ma kolumny source_hint — rekomendacja zapisana BEZ podpowiedzi dla ekranu. Zawodnik jej NIE zobaczy, dopóki migracja z sekcji 10 raportu A rundy 4 nie zostanie wklejona.');
+      const bezPola = { ...row };
+      delete bezPola.source_hint;
+      const second = await supabase
+        .from('decision_recommendations').insert(bezPola).select().single();
+      if (second.error) throw new Error(`generateRecommendation(insert): ${second.error.message}`);
+      inserted = second.data;
+    } else if (first.error) {
+      throw new Error(`generateRecommendation(insert): ${first.error.message}`);
+    } else {
+      inserted = first.data;
+    }
+  }
 
   return { ok: true, blocked: false, recommendation: inserted };
 }
@@ -1212,6 +1380,8 @@ module.exports._internal = {
   SEGMENT_TO_SPECIALIST_CATEGORY,
   INJURY_MODE_OVERRIDE_CATEGORY,
   resolveSuggestedSpecialistCategory,
+  // DOZOWANIE A6 08.08.2026
+  shouldLoadHints,
   fetchReadinessWindowLogs,
   computeReadinessSignals,
   buildReadinessNarrative,

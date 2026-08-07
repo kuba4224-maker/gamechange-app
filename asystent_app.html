@@ -329,6 +329,13 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--i
       <div id="event-error" class="gc-error gc-hidden"></div>
       <div id="event-ok" class="gc-ok gc-hidden"></div>
 
+      <!-- DYSPOZYTOR C6 08.08.2026 — kontener po wyciętej sugestii „Sugerowane na
+           ten tydzień". Zostaje PUSTY i na stałe ukryty: `renderCalendarSuggestion()`
+           czyści go i dokłada `gc-hidden` przy każdym renderowaniu Kalendarza, bo
+           `computeCalendarSuggestion()` zawsze zwraca `null`. Zawodnik nie widzi tu
+           NICZEGO. Powód wycięcia — duży komentarz przy `SUGGESTED_ACTIVITY_BY_SEGMENT`
+           w skrypcie niżej. Samego kontenera nie kasuję, bo funkcja renderująca go
+           szuka; usunięcie obu naraz w zamrożonym pliku to większe ryzyko niż pusty div. -->
       <div id="calendar-suggestion-wrap" class="gc-hidden" style="margin-bottom:20px;"></div>
 
       <div class="gc-section-block">
@@ -703,22 +710,22 @@ const SEGMENTS_BY_PILLAR = [
     ['fizycznosc', 'Fizyczność'],
   ]],
   ['Filar 2 — Efektywność techniczna', [
-    ['techFund', 'Technika Fundamentalna'],
-    ['techSpec', 'Technika Specjalistyczna'],
+    ['techFund', 'Technika fundamentalna'], // ZRODLO C5 08.08.2026 — wyrównanie do lib/labels.ts (znalezisko C4-N3). Zmieniona WYŁĄCZNIE etykieta widoczna dla człowieka; klucz techFund nietknięty.
+    ['techSpec', 'Technika specjalistyczna'], // ZRODLO C5 08.08.2026 — jw.
   ]],
   ['Filar 3 — Trwałość organizmu', [
-    ['tolerancja', 'Tolerancja (Obciążeń)'],
+    ['tolerancja', 'Tolerancja obciążeń'], // ZRODLO C5 08.08.2026 — jw.
     ['regeneracja', 'Regeneracja'],
     ['odpornosc', 'Odporność'],
     ['odzywianie', 'Odżywienie'],
   ]],
   ['Filar 4 — Mentalność', [
     ['koncentracja', 'Koncentracja'],
-    ['mental', 'Stan Mentalny'],
+    ['mental', 'Odwaga w grze'], // RODZIC C4 08.08.2026 — decyzja A1, trzecie i ostatnie miejsce (po lib/labels.ts i coach.html). Zmieniona WYŁĄCZNIE etykieta widoczna dla człowieka; klucz 'mental' i nazwa filaru zostają nietknięte (zamrożenie O4 w mocy dla wszystkiego poza etykietami — rozstrzygnięcie Kuby 08.08.2026).
   ]],
   ['Filar 5 — Boiskowa mądrość', [
     ['percepcja', 'Percepcja'],
-    ['decyzja', 'Szybkość Decyzji'],
+    ['decyzja', 'Szybkość decyzji'], // ZRODLO C5 08.08.2026 — jw. Po tej zmianie wszystkie 13 etykiet segmentów zgadza się co do znaku z lib/labels.ts, coach.html i lib/email-templates.js.
   ]],
 ];
 const SEG_LABELS = Object.fromEntries(SEGMENTS_BY_PILLAR.flatMap(([, segs]) => segs));
@@ -755,21 +762,60 @@ let eventsCache = [];
 // DEPENDENCY_NETWORK niedostępnym tutaj). Świadomie pominięta stamtąd
 // flaga "pilne" — wymagałaby zduplikowania 81-parowej sieci zależności
 // tylko dla jednego kosmetycznego wyróżnienia w tekście karty.
-const SUGGESTED_ACTIVITY_BY_SEGMENT = {
-  percepcja: 'małe gry i sytuacje meczowe (3v3, przewaga/niedobór) — 15 minut',
-  decyzja: 'ćwiczenia z presją czasu i decyzją pod obciążeniem — 15 minut',
-  koncentracja: 'krótka sesja uważności albo ćwiczenie na powrót po błędzie — 10 minut',
-  mental: 'wizualizacja trudnych sytuacji meczowych i planowanie reakcji — 10 minut',
-  moc: 'krótki blok skoków/sprintów eksplozywnych — 15 minut',
-  wytrzymalosc: 'interwały tlenowe średniej intensywności — 20 minut',
-  fizycznosc: 'ćwiczenia zwinności i zmiany kierunku — 15 minut',
-  techFund: 'żonglerka i prowadzenie piłki w ograniczonej przestrzeni — 15 minut',
-  techSpec: 'dryblingi 1v1 na sucho lub z pasywnym obrońcą — 15 minut',
-  regeneracja: 'rozciąganie i wcześniejsze położenie się spać — 15 minut',
-  odpornosc: 'lekki trening uzupełniający + dbałość o sen — 10 minut',
-  odzywianie: 'przygotowanie posiłku przedtreningowego na następny dzień — 15 minut',
-  tolerancja: 'praca nad mobilnością i stabilizacją stawów — 15 minut',
-};
+/* DYSPOZYTOR C6 08.08.2026 — SUGESTIA KALENDARZA USUNIĘTA. TABLICA ZOSTAJE TUTAJ.
+   ───────────────────────────────────────────────────────────────────────────
+   DLACZEGO ZNIKA (audyt spójności po 5 rundach, sekcja 4 — „Cztery niezależne
+   warstwy »co robić w tym segmencie«"):
+
+   1. Robiła to samo, co Blok Skupienia — planowała mikro-sesję pod cel
+      priorytetowy — tylko gorzej: z drugiego ekranu, na trzynastu zdaniach
+      zapisanych na sztywno w tym pliku, i BEZ WIEDZY O BLOKACH. Zawodnikowi,
+      któremu Blok właśnie zaplanował 18 wpisów, proponowała dziewiętnasty.
+      Planowanie pracy nad celem ma żyć w JEDNYM miejscu: Cele → „Zaplanuj
+      pracę nad tym celem" → Blok Skupienia.
+   2. Ta tablica była PIĄTĄ, nieutrzymywaną kopią wiedzy o segmentach, obok
+      `knowledge_base_entries` (13), `segment_components` (99),
+      `component_hints` (214 — z numerami stron materiałów Kuby) i promptu AI.
+      Trzynaście zdań utrzymywanych ręcznie obok korpusu, który mówi o tym
+      samym i jest podparty źródłem.
+   3. Po zmianie nazwy segmentu `mental` na „Odwaga w grze" jej wpis nadal
+      opisywał STARE pojęcie („wizualizacja… i planowanie reakcji" to stan
+      mentalny, nie odwaga w grze). Zgłaszane w rundzie 4 i 5 przez tę samą
+      sesję, dwa razy bez właściciela — czyli pozycja, której nikt nie
+      utrzymuje, a która mówiła zawodnikowi nieaktualne rzeczy.
+
+   BLIŹNIACZKA W APPCE MOBILNEJ (`SUGGESTED_ACTIVITY_BY_SEGMENT`
+   w `kalendarz.tsx`) zniknęła 06–07.08.2026 z dokładnie tych powodów. Ta
+   została wyłącznie dlatego, że tego pliku nie wolno było wtedy dotykać.
+   Wycięcie jest JAWNYM, ograniczonym wyjątkiem od zamrożenia pliku (O4),
+   zatwierdzonym w audycie spójności po 5 rundach, sekcja 4.
+
+   PEŁNY OPIS ZACHOWANIA, które tu było (warunki wyboru dnia, kolizje,
+   „już zaplanowane", kształt INSERT-a): `mobile/docs/KONTRAKT_KALENDARZ.md`,
+   sekcja 5. Ten komentarz jest zapisem DECYZJI, tamten dokument — zachowania.
+
+   TREŚĆ, KTÓRA ZNIKA Z ŻYWEGO KODU (zachowana co do znaku):
+
+   const SUGGESTED_ACTIVITY_BY_SEGMENT = {
+     percepcja: 'małe gry i sytuacje meczowe (3v3, przewaga/niedobór) — 15 minut',
+     decyzja: 'ćwiczenia z presją czasu i decyzją pod obciążeniem — 15 minut',
+     koncentracja: 'krótka sesja uważności albo ćwiczenie na powrót po błędzie — 10 minut',
+     mental: 'wizualizacja trudnych sytuacji meczowych i planowanie reakcji — 10 minut',
+     moc: 'krótki blok skoków/sprintów eksplozywnych — 15 minut',
+     wytrzymalosc: 'interwały tlenowe średniej intensywności — 20 minut',
+     fizycznosc: 'ćwiczenia zwinności i zmiany kierunku — 15 minut',
+     techFund: 'żonglerka i prowadzenie piłki w ograniczonej przestrzeni — 15 minut',
+     techSpec: 'dryblingi 1v1 na sucho lub z pasywnym obrońcą — 15 minut',
+     regeneracja: 'rozciąganie i wcześniejsze położenie się spać — 15 minut',
+     odpornosc: 'lekki trening uzupełniający + dbałość o sen — 10 minut',
+     odzywianie: 'przygotowanie posiłku przedtreningowego na następny dzień — 15 minut',
+     tolerancja: 'praca nad mobilnością i stabilizacją stawów — 15 minut',
+   };
+
+   UWAGA DLA KOGOŚ, KTO BĘDZIE TO CZYTAŁ ZA MIESIĄC: gdyby ta funkcja miała
+   kiedyś wrócić, NIE przywracaj tej tablicy. Zdania o tym, co robić
+   w segmencie, mają jedno źródło — `component_hints` — i ono ma numery stron.
+   ─────────────────────────────────────────────────────────────────────────── */
 
 // Poniedziałek-niedziela bieżącego tygodnia, z toLocalDateStr (nie
 // toISOString) — ta sama poprawka strefy czasowej co reszta apki
@@ -789,46 +835,33 @@ function getCurrentWeekDayList() {
   return days;
 }
 
+// DYSPOZYTOR C6 08.08.2026 — trzej konsumenci wyciętej tablicy (powód: patrz
+// duży komentarz przy `SUGGESTED_ACTIVITY_BY_SEGMENT` wyżej).
+//
+// `computeCalendarSuggestion()` ZOSTAJE jako funkcja i ZAWSZE zwraca `null`.
+// Świadomie nie kasuję jej: `null` był tu od początku STANEM POPRAWNYM, nie
+// awarią („nie ma czego zaproponować" — brak aktywnego celu, brak wolnego dnia,
+// mikro-sesja już zaplanowana), a jej jedyny wywołujący, `renderCalendarSuggestion()`,
+// obsługiwał ten przypadek od pierwszego dnia. Po tej zmianie po prostu nigdy nie
+// dostaje nic innego. Zostawienie wywołania zamiast wycięcia go daje jedną rzecz,
+// której samo skasowanie by nie dało: ścieżka „brak sugestii → wyczyść i ukryj"
+// nadal się WYKONUJE przy każdym renderowaniu Kalendarza, więc kontener jest
+// czyszczony nawet wtedy, gdyby ktoś kiedyś wstawił do niego cokolwiek innego.
+//
+// `renderCalendarSuggestion()` ZOSTAJE — jest wołana na końcu `loadEvents()`.
+// Straciła WYŁĄCZNIE gałąź rysującą kartę. Kontener czyszczony jawnie
+// (`innerHTML = ''`), nie tylko ukrywany, żeby nie został w DOM-ie kawałek
+// starej karty pod `display:none`.
+//
+// `acceptCalendarSuggestion()` USUNIĘTA W CAŁOŚCI — jej jedynym wywołującym był
+// przycisk „Dodaj" z szablonu, który właśnie zniknął. Wstawiała
+// `calendar_events` z `event_type:'micro_session'`, `source:'system'`,
+// `title: 'Sugerowane: <segment>'`, `notes: <aktywność>`, `goal_id: <cel>`.
+// Pełny opis: `mobile/docs/KONTRAKT_KALENDARZ.md`, sekcja 5, punkt 7.
+// Ręczne dodawanie mikro-sesji przez formularz Kalendarza jest NIETKNIĘTE —
+// zawodnik nadal może zaplanować mikro-sesję i powiązać ją z celem.
 function computeCalendarSuggestion() {
-  const activeGoal = goalsCache.find(g => g.is_priority && g.status === 'active');
-  if (!activeGoal) return null;
-
-  const activity = SUGGESTED_ACTIVITY_BY_SEGMENT[activeGoal.segment_id];
-  if (!activity) return null;
-
-  const todayStr = toLocalDateStr(new Date());
-  const weekDays = getCurrentWeekDayList().filter(d => d.dateStr >= todayStr);
-  if (weekDays.length === 0) return null;
-
-  // Dzień jest zajęty, jeśli istnieje jednorazowe wydarzenie zaplanowane
-  // na tę datę, albo cykliczne wydarzenie obejmujące ten dzień tygodnia
-  // (recurrence_rule w formacie 'weekly:MON,WED,FRI' — patrz Domena 07).
-  const busyDates = new Set(
-    eventsCache.filter(e => e.status === 'scheduled' && e.scheduled_date).map(e => e.scheduled_date)
-  );
-  const busyDayCodes = new Set();
-  eventsCache
-    .filter(e => e.status === 'scheduled' && e.recurrence_rule)
-    .forEach(e => e.recurrence_rule.replace('weekly:', '').split(',').forEach(code => busyDayCodes.add(code)));
-
-  const freeDay = weekDays.find(d => !busyDates.has(d.dateStr) && !busyDayCodes.has(d.dayCode));
-  if (!freeDay) return null;
-
-  // Nie ponawiaj sugestii, jeśli w tym tygodniu jest już zaplanowana
-  // mikro-sesja powiązana z tym samym celem (dodana ręcznie przez
-  // zawodnika albo wcześniej przez tę samą sugestię) — unika nagabywania.
-  const alreadyPlanned = eventsCache.some(e =>
-    e.status === 'scheduled' && e.goal_id === activeGoal.id && e.event_type === 'micro_session' &&
-    ((e.scheduled_date && busyDates.has(e.scheduled_date)) || e.recurrence_rule)
-  );
-  if (alreadyPlanned) return null;
-
-  return {
-    goal: activeGoal,
-    segmentName: SEG_LABELS[activeGoal.segment_id] || activeGoal.segment_id,
-    activity,
-    day: freeDay,
-  };
+  return null;
 }
 
 function renderCalendarSuggestion() {
@@ -840,51 +873,13 @@ function renderCalendarSuggestion() {
     wrap.innerHTML = '';
     return;
   }
-  wrap.classList.remove('gc-hidden');
-  wrap.innerHTML = `
-    <div class="gc-section-block" style="border-left:3px solid var(--accent);">
-      <div class="gc-label" style="margin-bottom:10px;">Sugerowane na ten tydzień</div>
-      <div style="font-size:15px; margin-bottom:6px;"><strong>${suggestion.segmentName}</strong> — ${suggestion.activity}</div>
-      <div style="font-size:13px; color:var(--ink2); margin-bottom:14px;">Masz wolny ${suggestion.day.label} — dodać tam mikro-sesję powiązaną z Twoim aktywnym celem?</div>
-      <button class="gc-btn-secondary" onclick="acceptCalendarSuggestion()">Dodaj</button>
-    </div>
-  `;
-}
-
-async function acceptCalendarSuggestion() {
-  const suggestion = computeCalendarSuggestion();
-  if (!suggestion) return;
-
-  const body = {
-    user_id: currentUser.id,
-    event_type: 'micro_session',
-    source: 'system',
-    title: `Sugerowane: ${suggestion.segmentName}`,
-    notes: suggestion.activity,
-    status: 'scheduled',
-    scheduled_date: suggestion.day.dateStr,
-    goal_id: suggestion.goal.id,
-  };
-
-  try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/calendar_events`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: SUPABASE_KEY,
-        Authorization: `Bearer ${currentUser.accessToken}`,
-        Prefer: 'return=minimal',
-      },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) throw new Error(await res.text());
-    await loadEvents();
-    await populateCalendarLinkSelect();
-  } catch (e) {
-    const errEl = document.getElementById('event-error');
-    errEl.textContent = 'Nie udało się dodać sugerowanej aktywności: ' + e.message;
-    errEl.classList.remove('gc-hidden');
-  }
+  // DYSPOZYTOR C6 08.08.2026 — nieosiągalne z założenia (patrz wyżej).
+  // Zostawione jako jawny stan „nie wiem": gdyby ktoś kiedyś przywrócił
+  // `computeCalendarSuggestion()` bez przeczytania powodów wycięcia, ma to
+  // krzyknąć w konsoli, a nie po cichu narysować kartę z nieistniejącej tablicy.
+  console.warn('renderCalendarSuggestion: computeCalendarSuggestion() zwróciło wynik, choć sugestia kalendarzowa została wycięta 08.08.2026 — patrz komentarz przy SUGGESTED_ACTIVITY_BY_SEGMENT.');
+  wrap.classList.add('gc-hidden');
+  wrap.innerHTML = '';
 }
 
 // Centrum Decyzji (Domena 06) — treść rekomendacji generuje wyłącznie

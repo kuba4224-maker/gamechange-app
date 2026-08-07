@@ -1,0 +1,239 @@
+{
+  "_opis": "TERMINARZ A7 08.08.2026 (v2; pierwotnie DOZOWANIE A6) — KANONICZNY FIXTURE BRAMKI WIEKOWEJ A9. Zmierzony 08.08.2026 przez sesje glowna na zywym lib/recommendation-hints.js (21 620 B); wyniki potwierdzone testem pasa A w rundzie 6 (3/3 przypadki co do sztuki i kolejnosci). Ten sam fixture jest kontraktem dla strony TS (Asystent Gamechange) — NIE WOLNO go zmienic bez rownoczesnej zmiany po obu stronach. Klucze wierszy bez skracania: skrot nazwy cicho psuje dopasowanie i nie rzuca bledu.",
+  "_wlasnosc_bezpieczenstwa": "Przy NIEZNANYM wieku zawodnika wiersze z min_age sa UKRYWANE (domyslnie bezpiecznie), a stan wiekNieznany: true jest jawnie raportowany. Pusty wynik i 'nie wiem, ile ma lat' to dwie rozne rzeczy i produkt musi je rozrozniac.",
+  "_uwaga_o_nazwach_pol": "v2 (TERMINARZ A7): pola nosza PRAWDZIWE nazwy kolumn component_hints — 'hint' i 'strony' (w v1 byly to 'tresc'/'strona', znalezisko A32). Bramka A9 tych pol nie czyta (computeAgeLowerBound + selectHintsForPrompt patrza na odbiorca/active/min_age/component_id/obszar_name/element_name/pozycja/klucz), wiec oczekiwane wyniki sa IDENTYCZNE z v1 — test sprawdza to WPROST (grupa 5, przemianowanie na stare nazwy), zamiast zakladac.",
+  "wersja": 2,
+  "now": "2026-08-08T12:00:00Z",
+  "goalComponentId": "comp-cel",
+  "limit": 12,
+  "wiersze": [
+    {
+      "klucz": "fx-01-zawodnik-bez-wieku",
+      "odbiorca": "zawodnik",
+      "min_age": null,
+      "active": true,
+      "component_id": null,
+      "obszar_name": null,
+      "element_name": null,
+      "pozycja": 1,
+      "rodzaj": "zrobic",
+      "zrodlo": "M",
+      "hint": "A",
+      "strony": "1"
+    },
+    {
+      "klucz": "fx-02-zawodnik-16plus",
+      "odbiorca": "zawodnik",
+      "min_age": 16,
+      "active": true,
+      "component_id": null,
+      "obszar_name": null,
+      "element_name": null,
+      "pozycja": 2,
+      "rodzaj": "zrobic",
+      "zrodlo": "M",
+      "hint": "B",
+      "strony": "2"
+    },
+    {
+      "klucz": "fx-03-oba-16plus",
+      "odbiorca": "oba",
+      "min_age": 16,
+      "active": true,
+      "component_id": null,
+      "obszar_name": null,
+      "element_name": null,
+      "pozycja": 3,
+      "rodzaj": "zrozumiec",
+      "zrodlo": "M",
+      "hint": "C",
+      "strony": "3"
+    },
+    {
+      "klucz": "fx-04-rodzic-16plus",
+      "odbiorca": "rodzic",
+      "min_age": 16,
+      "active": true,
+      "component_id": null,
+      "obszar_name": null,
+      "element_name": null,
+      "pozycja": 4,
+      "rodzaj": "zrobic",
+      "zrodlo": "M",
+      "hint": "D",
+      "strony": "4"
+    },
+    {
+      "klucz": "fx-05-rodzic-bez-wieku",
+      "odbiorca": "rodzic",
+      "min_age": null,
+      "active": true,
+      "component_id": null,
+      "obszar_name": null,
+      "element_name": null,
+      "pozycja": 5,
+      "rodzaj": "zrobic",
+      "zrodlo": "M",
+      "hint": "E",
+      "strony": "5"
+    },
+    {
+      "klucz": "fx-06-element-celu",
+      "odbiorca": "zawodnik",
+      "min_age": null,
+      "active": true,
+      "component_id": "comp-cel",
+      "obszar_name": "Obszar X",
+      "element_name": "Element Y",
+      "pozycja": 9,
+      "rodzaj": "zrobic",
+      "zrodlo": "M",
+      "hint": "F",
+      "strony": "6"
+    },
+    {
+      "klucz": "fx-07-obszar",
+      "odbiorca": "oba",
+      "min_age": null,
+      "active": true,
+      "component_id": "comp-obszar",
+      "obszar_name": "Obszar X",
+      "element_name": null,
+      "pozycja": 8,
+      "rodzaj": "zrobic",
+      "zrodlo": "M",
+      "hint": "G",
+      "strony": "7"
+    },
+    {
+      "klucz": "fx-08-inny-element",
+      "odbiorca": "zawodnik",
+      "min_age": null,
+      "active": true,
+      "component_id": "comp-inny",
+      "obszar_name": "Obszar X",
+      "element_name": "Element Z",
+      "pozycja": 1,
+      "rodzaj": "zrobic",
+      "zrodlo": "M",
+      "hint": "H",
+      "strony": "8"
+    },
+    {
+      "klucz": "fx-09-niedopasowany",
+      "odbiorca": "zawodnik",
+      "min_age": null,
+      "active": true,
+      "component_id": null,
+      "obszar_name": "Obszar X",
+      "element_name": null,
+      "pozycja": 2,
+      "rodzaj": "zrobic",
+      "zrodlo": "M",
+      "hint": "I",
+      "strony": "9"
+    },
+    {
+      "klucz": "fx-10-nieaktywny",
+      "odbiorca": "zawodnik",
+      "min_age": null,
+      "active": false,
+      "component_id": null,
+      "obszar_name": null,
+      "element_name": null,
+      "pozycja": 3,
+      "rodzaj": "zrobic",
+      "zrodlo": "M",
+      "hint": "J",
+      "strony": "10"
+    },
+    {
+      "klucz": "fx-11-zawodnik-16plus-el",
+      "odbiorca": "zawodnik",
+      "min_age": 16,
+      "active": true,
+      "component_id": "comp-cel",
+      "obszar_name": "Obszar X",
+      "element_name": "Element Y",
+      "pozycja": 3,
+      "rodzaj": "zrobic",
+      "zrodlo": "M",
+      "hint": "K",
+      "strony": "11"
+    }
+  ],
+  "oczekiwane": [
+    {
+      "przypadek": "rocznik 2011 (wiek 14)",
+      "birthYear": 2011,
+      "ageLowerBound": 14,
+      "wiekNieznany": false,
+      "kolejnoscKluczy": [
+        "fx-06-element-celu",
+        "fx-07-obszar",
+        "fx-01-zawodnik-bez-wieku",
+        "fx-09-niedopasowany"
+      ],
+      "celowanie": [
+        "element_celu",
+        "obszar",
+        "segment",
+        "niedopasowany"
+      ],
+      "ukryteZPowoduWieku": 3,
+      "odrzuconePrzezOdbiorce": 2,
+      "nieaktywne": 1,
+      "pominieteObceElementy": 1
+    },
+    {
+      "przypadek": "rocznik 2009 (wiek 16)",
+      "birthYear": 2009,
+      "ageLowerBound": 16,
+      "wiekNieznany": false,
+      "kolejnoscKluczy": [
+        "fx-11-zawodnik-16plus-el",
+        "fx-06-element-celu",
+        "fx-07-obszar",
+        "fx-01-zawodnik-bez-wieku",
+        "fx-02-zawodnik-16plus",
+        "fx-03-oba-16plus",
+        "fx-09-niedopasowany"
+      ],
+      "celowanie": [
+        "element_celu",
+        "element_celu",
+        "obszar",
+        "segment",
+        "segment",
+        "segment",
+        "niedopasowany"
+      ],
+      "ukryteZPowoduWieku": 0,
+      "odrzuconePrzezOdbiorce": 2,
+      "nieaktywne": 1,
+      "pominieteObceElementy": 1
+    },
+    {
+      "przypadek": "rocznik nieznany (null)",
+      "birthYear": null,
+      "ageLowerBound": null,
+      "wiekNieznany": true,
+      "kolejnoscKluczy": [
+        "fx-06-element-celu",
+        "fx-07-obszar",
+        "fx-01-zawodnik-bez-wieku",
+        "fx-09-niedopasowany"
+      ],
+      "celowanie": [
+        "element_celu",
+        "obszar",
+        "segment",
+        "niedopasowany"
+      ],
+      "ukryteZPowoduWieku": 3,
+      "odrzuconePrzezOdbiorce": 2,
+      "nieaktywne": 1,
+      "pominieteObceElementy": 1
+    }
+  ]
+}

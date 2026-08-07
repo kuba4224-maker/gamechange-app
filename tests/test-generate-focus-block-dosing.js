@@ -61,9 +61,24 @@ const {
   buildSystemPrompt,
   buildUserPrompt,
   stripMarkdownJsonFence,
+  // DOZOWANIE A6 08.08.2026
+  describeDayGaps,
+  describeDosingState,
+  // TERMINARZ A7 08.08.2026
+  buildMatchScheduleLines,
+  describeMatchGap,
+  dayIndexOfDate,
 } = require('../api/generate-focus-block-dosing.js')._internal;
 
 Module._resolveFilename = originalResolveFilename;
+
+// DOZOWANIE A6 08.08.2026 — warstwa czysta z rundy 4, IMPORTOWANA (nie kopia).
+// Ten sam plik, ta sama bramka A9, te same filtry co w silniku rekomendacji
+// i w fazie 2 Bloku. Test kontraktowy tej bramki: tests/test-bramka-a9-kontrakt.js.
+const {
+  selectHintsForPrompt,
+  buildHintPromptBlock,
+} = require('../lib/recommendation-hints.js');
 
 let passed = 0;
 let failed = 0;
@@ -488,6 +503,327 @@ function training(now, daysAgo, rpe, durationMinutes) {
     const r = await fetchComponentOrCustom(supabase, 'brak-takiego', null);
     assert.strictEqual(r, null);
   });
+
+  // ============================================================
+  // DOZOWANIE A6 08.08.2026 — GRUPY 12–14
+  // ============================================================
+  // Faza 1 (dozowanie: dni, minuty, tygodnie) dostała podpowiedzi z materiałów.
+  // Wiersze niżej to WSZYSTKIE 18 podpowiedzi segmentu `moc`, przepisane 1:1
+  // z migracji rundy 3 (`claude/PODPOWIEDZI_Z_MATERIALOW_A.md`, sekcja 4.3,
+  // KROK 2). Nazwy pól = nazwy kolumn `component_hints`, bez skrótów.
+  //
+  // `moc` jest tu wybrana świadomie, a nie dla wygody: to jedyny segment,
+  // w którym materiał zawiera regułę oznaczoną jako BEZWZGLĘDNA i dotyczącą
+  // wprost tego, co ten endpoint rozstrzyga (`moc-segment-01`, odstęp 48 h).
+  // ============================================================
+
+  const M_MOC = 'Moc — System Gamechange (pełny)';
+  const O_SILA = 'Potencjał siłowy (siła maksymalna)';
+  const O_RFD = 'Wykorzystanie siły / RFD';
+  const O_SSC = 'Recykling energii sprężystej (plyometria/SSC)';
+  function wiersz(klucz, component_id, obszar_name, element_name, hint, rodzaj, strony, dowody, pozycja) {
+    return {
+      klucz, segment_id: 'moc', component_id, obszar_name, element_name, hint,
+      odbiorca: 'zawodnik', min_age: null, rodzaj, zrodlo: M_MOC, strony, dowody,
+      pozycja, active: true,
+    };
+  }
+  const MOC_HINTS = [
+    wiersz('moc-baza-siowa-dolnych-partii-przysiad-martwy-ci-01', 'comp-baza', O_SILA, 'Baza siłowa dolnych partii (przysiad/martwy ciąg)', 'Jeśli masz mało czasu, trenuj nogi i biodra. To one generują eksplozję w piłce — góra ciała tylko wspiera kontakt. Przy pełnym czasie pracuj nad obiema.', 'zrobic', '3', null, 1),
+    wiersz('moc-baza-siowa-dolnych-partii-przysiad-martwy-ci-02', 'comp-baza', O_SILA, 'Baza siłowa dolnych partii (przysiad/martwy ciąg)', 'Przysiad i martwy ciąg rób w 2–4 seriach po 5–15 powtórzeń. Ciężar dobierz tak, żeby ostatnie powtórzenia były naprawdę ciężkie, ale technika się nie sypała.', 'zrobic', '2, 5', null, 2),
+    wiersz('moc-baza-siowa-dolnych-partii-przysiad-martwy-ci-03', 'comp-baza', O_SILA, 'Baza siłowa dolnych partii (przysiad/martwy ciąg)', 'Test startowy: przysiad z maksymalnym ciężarem przy poprawnej technice. Poniżej 1× masy ciała — nisko, 1–1,5× — średnio, powyżej 1,5× — wysoko. Zrób go przed pierwszą sesją i zapisz.', 'zrobic', '2', null, 3),
+    wiersz('moc-trening-jednostronny-unilateralny-01', 'comp-unilateralny', O_SILA, 'Trening jednostronny (unilateralny)', 'W planie mocy dwa ćwiczenia robisz na jedną stronę: most biodrowy jednonóż i wyciskanie kettla w klęku jednonóż. 2–4 serie po 5–15 powtórzeń na stronę.', 'zrobic', '10', null, 1),
+    wiersz('moc-trening-balistyczny-olimpijski-o-niskim-obci-01', 'comp-balistyczny', O_RFD, 'Trening balistyczny/olimpijski o niskim obciążeniu', 'Każde powtórzenie w bloku plyometrii wykonuj z maksymalną eksplozją, a między seriami odpoczywaj 60–120 sekund. W tym bloku nie ma miejsca na zmęczenie.', 'zrobic', '8', null, 1),
+    wiersz('moc-trening-balistyczny-olimpijski-o-niskim-obci-02', 'comp-balistyczny', O_RFD, 'Trening balistyczny/olimpijski o niskim obciążeniu', 'Plyometria góry ciała to rzut piłką lekarską w ziemię, rzut rotacyjny i wycisko-podrzut hantlą: 2–4 serie po 4–6 powtórzeń.', 'zrobic', '5, 9', null, 2),
+    wiersz('moc-stabilizacja-tuowia-jako-warunek-wstepny-01', 'comp-stabilizacja', O_RFD, 'Stabilizacja tułowia jako warunek wstępny', 'Blok stabilizacji rób zawsze jako pierwszy w sesji. Uczy ciało szczelności, zanim zaczniesz generować duże siły.', 'zrobic', '7', null, 1),
+    wiersz('moc-stabilizacja-tuowia-jako-warunek-wstepny-02', 'comp-stabilizacja', O_RFD, 'Stabilizacja tułowia jako warunek wstępny', 'Trzy ćwiczenia stabilizacji: martwy robal 4–6 powtórzeń na stronę, deska boczna z pracą biodra 10–20 na stronę, wiosłowanie renegata 4–6 na stronę.', 'zrobic', '5, 7', null, 2),
+    wiersz('moc-stabilizacja-tuowia-jako-warunek-wstepny-03', 'comp-stabilizacja', O_RFD, 'Stabilizacja tułowia jako warunek wstępny', 'Stabilizacja ma trzy zadania: nie dać się wygiąć do przodu, nie dać się złamać na bok i nie dać się niekontrolowanie skręcić. Do każdego jest inne ćwiczenie.', 'zrozumiec', '13', null, 3),
+    wiersz('moc-skoki-reaktywne-drop-jumps-depth-jumps-01', 'comp-skoki', O_SSC, 'Skoki reaktywne (drop jumps, depth jumps)', 'Test sprężystości: szybkie skoki pogo przez 10 sekund. Jeśli zapadasz się i kontakt z podłożem jest długi, to jest Twoje najsłabsze ogniwo.', 'zrobic', '2', null, 1),
+    wiersz('moc-skoki-reaktywne-drop-jumps-depth-jumps-02', 'comp-skoki', O_SSC, 'Skoki reaktywne (drop jumps, depth jumps)', 'Jeśli słaby jest recykling, w plyometrii skracaj czas kontaktu z podłożem i odbijaj się natychmiast po lądowaniu. Serię przerywasz, gdy ruch traci lekkość.', 'zrobic', '12', null, 2),
+    wiersz('moc-recykling-energii-sprezystej-plyometria-ssc-01', 'comp-recykling', O_SSC, null, 'Cykl rozciągnięcie-skurcz ma dwie prędkości: wolną (skok na maksymalną wysokość, powyżej 0,25 s) i szybką (sprint i zmiana kierunku, poniżej 0,25 s). W piłce potrzebujesz obu — dlatego w planie są trzy płaszczyzny skoków.', 'zrozumiec', '13', null, 1),
+    wiersz('moc-segment-01', null, null, null, 'Między sesjami zostaw minimum 48 godzin przerwy, szczególnie po plyometrii. Mecz powinien być co najmniej 48 godzin po sesji plyometrycznej.', 'zrobic', '4', 'materiał podaje jako regułę bezwzględną', 1),
+    wiersz('moc-segment-02', null, null, null, 'Tygodnie 1–2 to adaptacja: 1–2 sesje, ciężary poniżej maksimum, priorytet technika. Od tygodnia 3 do 6: 2–3 sesje, każda na tyle wymagająca, żeby ciało dostało sygnał.', 'zrobic', '4', null, 2),
+    wiersz('moc-segment-03', null, null, null, 'Zakwasy (ogólny dyskomfort, mija po 1–2 dniach) — nie zmniejszaj trudności. Ból punktowy w jednym miejscu, utrzymujący się kilka dni — zmniejsz trudność na następnym treningu. Nie ignoruj tego sygnału.', 'zrozumiec', '12', null, 3),
+    wiersz('moc-segment-04', null, null, null, 'Progres nie zachodzi podczas treningu, tylko podczas regeneracji po nim. Twoje zadanie to dać ciału bodziec i skończyć.', 'zrozumiec', '3', null, 4),
+    wiersz('moc-segment-05', null, null, null, 'Po 6 tygodniach powtórz testy startowe. Ale ważniejsze pytanie brzmi: czy wygrywasz starty, które wcześniej przegrywałeś?', 'zrobic', '11', null, 5),
+    wiersz('moc-segment-06', null, null, null, 'Poprawa wyników testów nie oznacza automatycznie poprawy w grze. Najpierw rośnie potencjał, dopiero potem — przez miesiące gry — organizm uczy się go używać na boisku.', 'zrozumiec', '11', null, 6),
+  ];
+
+  const KB_TEST = 'Baza wiedzy testowa dla segmentu — jeden akapit, dokładnie jak w knowledge_base_entries.';
+  function selekcja({ goal = null, limit = 12, rows = MOC_HINTS, wiek = 14 } = {}) {
+    return selectHintsForPrompt({ hints: rows, goalComponentId: goal, ageLowerBound: wiek, limit });
+  }
+
+  console.log('\n12. DOZOWANIE A6 — ścieżka BEZ podpowiedzi jest identyczna CO DO ZNAKU');
+
+  // Szablony przepisane 1:1 z pliku SPRZED tej rundy (odczytanego z dysku Kuby
+  // zanim cokolwiek zmieniłem). md5 jest mocniejszym dowodem niż długość —
+  // rozmiar może się zgadzać przy podmienionym znaku, md5 nie.
+  const MD5_SPRZED_RUNDY_6 = {
+    'moc, bez bazy wiedzy': { dl: 1600, md5: '9ce451717dadcbeda0f62cb562f9c57c', arg: { knowledgeBaseContent: null, segmentId: 'moc' } },
+    'moc, z bazą wiedzy': { dl: 1770, md5: '7d118851f22d821405dab763101b6693', arg: { knowledgeBaseContent: KB_TEST, segmentId: 'moc' } },
+    'techSpec, z bazą wiedzy': { dl: 2025, md5: 'a8466921be5cf2d74723a271396ac65b', arg: { knowledgeBaseContent: KB_TEST, segmentId: 'techSpec' } },
+  };
+  const crypto = require('crypto');
+  const md5 = (s) => crypto.createHash('md5').update(s, 'utf8').digest('hex');
+
+  for (const [nazwa, oczek] of Object.entries(MD5_SPRZED_RUNDY_6)) {
+    scenario(`${nazwa}: prompt BEZ podpowiedzi = stan sprzed rundy 6 (md5 + długość)`, () => {
+      const p = buildSystemPrompt(oczek.arg);
+      assert.strictEqual(p.length, oczek.dl, `długość: ${p.length} zamiast ${oczek.dl}`);
+      assert.strictEqual(md5(p), oczek.md5, 'md5 promptu bez podpowiedzi rozjechał się ze stanem sprzed rundy 6');
+    });
+
+    scenario(`${nazwa}: hintSelection z PUSTĄ listą też nie zmienia ani znaku`, () => {
+      const p = buildSystemPrompt({ ...oczek.arg, hintSelection: { hints: [] } });
+      assert.strictEqual(md5(p), oczek.md5);
+    });
+  }
+
+  scenario('brak tabeli component_hints (hintSelection = null) -> prompt bez sekcji podpowiedzi i bez pola used_hint_klucz', () => {
+    const p = buildSystemPrompt({ knowledgeBaseContent: KB_TEST, segmentId: 'moc', hintSelection: null });
+    assert.ok(!p.includes('PODPOWIEDZI Z MATERIAŁÓW'));
+    assert.ok(!p.includes('used_hint_klucz'));
+    assert.ok(!p.includes('JAK ICH UŻYĆ PRZY DOZOWANIU'));
+  });
+
+  console.log('\n13. DOZOWANIE A6 — podpowiedzi WCHODZĄ do promptu fazy 1');
+
+  scenario('sekcja podpowiedzi jest w promptcie, z kluczem, materiałem i stroną w każdej linii', () => {
+    const p = buildSystemPrompt({ knowledgeBaseContent: KB_TEST, segmentId: 'moc', hintSelection: selekcja() });
+    assert.ok(p.includes('PODPOWIEDZI Z MATERIAŁÓW GAMECHANGE'));
+    assert.ok(p.includes('(moc-segment-01)'));
+    assert.ok(p.includes('Moc — System Gamechange (pełny), s. 4'));
+  });
+
+  scenario('REGUŁA BEZWZGLĘDNA moc-segment-01 (48 h przerwy) JEST w promptcie — to jest cały powód tej rundy', () => {
+    const p = buildSystemPrompt({ knowledgeBaseContent: KB_TEST, segmentId: 'moc', hintSelection: selekcja() });
+    assert.ok(p.includes('minimum 48 godzin przerwy'), 'reguła bezwzględna musi trafić do promptu fazy 1');
+    assert.ok(p.includes('[materiał deklaruje: materiał podaje jako regułę bezwzględną]'),
+      'oznaczenie reguły bezwzględnej musi jechać razem z treścią, inaczej model nie odróżni jej od reszty');
+  });
+
+  scenario('reguła bezwzględna przechodzi TAKŻE wtedy, gdy Blok ma wybrany Element (nie wypada za celowaniem)', () => {
+    const sel = selekcja({ goal: 'comp-skoki' });
+    assert.ok(sel.hints.some((h) => h.klucz === 'moc-segment-01'));
+    assert.strictEqual(sel.hints[0].celowanie, 'element_celu', 'Element celu ma być pierwszy');
+  });
+
+  scenario('instrukcja fazy 1 mówi WPROST, że podpowiedź o odstępach WIĄŻE days/durationMinutes/weeks', () => {
+    const p = buildSystemPrompt({ knowledgeBaseContent: KB_TEST, segmentId: 'moc', hintSelection: selekcja() });
+    assert.match(p, /JAK ICH UŻYĆ PRZY DOZOWANIU/);
+    assert.match(p, /ograniczenie WIĄŻĄCE/);
+    assert.match(p, /NIE MOŻE zostać złamana/);
+    assert.match(p, /"days"/);
+  });
+
+  scenario('pole used_hint_klucz wchodzi do formatu odpowiedzi TYLKO razem z podpowiedziami', () => {
+    const zP = buildSystemPrompt({ knowledgeBaseContent: KB_TEST, segmentId: 'moc', hintSelection: selekcja() });
+    const bezP = buildSystemPrompt({ knowledgeBaseContent: KB_TEST, segmentId: 'moc' });
+    assert.ok(zP.includes('used_hint_klucz'));
+    assert.ok(!bezP.includes('used_hint_klucz'));
+  });
+
+  scenario('sekcja podpowiedzi stoi OBOK bazy wiedzy, nie zamiast niej', () => {
+    const p = buildSystemPrompt({ knowledgeBaseContent: KB_TEST, segmentId: 'moc', hintSelection: selekcja() });
+    assert.ok(p.includes(KB_TEST), 'baza wiedzy musi zostać');
+    assert.ok(p.indexOf('BAZA WIEDZY GAMECHANGE') < p.indexOf('PODPOWIEDZI Z MATERIAŁÓW'));
+  });
+
+  scenario('nota o techSpec nadal działa razem z podpowiedziami (nie wypchnięta)', () => {
+    const p = buildSystemPrompt({ knowledgeBaseContent: KB_TEST, segmentId: 'techSpec', hintSelection: selekcja() });
+    assert.match(p, /słabiej ugruntowana naukowo/);
+    assert.match(p, /PODPOWIEDZI Z MATERIAŁÓW/);
+  });
+
+  console.log('\n14. DOZOWANIE A6 — describeDayGaps: czy model trzyma odstęp (diagnostyka, nie blokada)');
+
+  scenario('MON/WED/FRI -> najmniejszy odstęp 48 h (PIĄ->PON to 3 dni przez zawinięcie)', () => {
+    assert.strictEqual(describeDayGaps(['MON', 'WED', 'FRI']).minOdstepGodzin, 48);
+  });
+
+  scenario('MON/TUE/WED -> 24 h, czyli ZŁAMANA reguła 48 h — i to widać', () => {
+    const g = describeDayGaps(['MON', 'TUE', 'WED']);
+    assert.strictEqual(g.minOdstepGodzin, 24);
+    assert.match(describeDosingState({ gaps: g }), /UWAGA_ODSTEP_PONIZEJ_48H=tak/);
+  });
+
+  scenario('ZAWINIĘCIE TYGODNIA: MON/SUN to odstęp 24 h, nie 6 dni — na tym łatwo się przejechać', () => {
+    assert.strictEqual(describeDayGaps(['MON', 'SUN']).minOdstepGodzin, 24);
+  });
+
+  scenario('jedna sesja w tygodniu -> 168 h, stan "jedna_sesja" (nie null, nie 0)', () => {
+    const g = describeDayGaps(['WED']);
+    assert.strictEqual(g.minOdstepGodzin, 168);
+    assert.strictEqual(g.stan, 'jedna_sesja');
+  });
+
+  scenario('duplikaty dni nie zaniżają odstępu do zera', () => {
+    assert.strictEqual(describeDayGaps(['MON', 'MON', 'THU']).minOdstepGodzin, 72);
+  });
+
+  scenario('nieznane kody dni -> jawny stan i lista, nigdy ciche pominięcie (R5)', () => {
+    const g = describeDayGaps(['MON', 'PONIEDZIALEK', 'THU']);
+    assert.deepStrictEqual(g.nieznaneKody, ['PONIEDZIALEK']);
+    assert.match(describeDosingState({ gaps: g }), /NIEZNANE_KODY_DNI=PONIEDZIALEK/);
+  });
+
+  scenario('same śmieci na wejściu -> minOdstepGodzin=null i stan "brak_rozpoznanych_dni", nie crash', () => {
+    const g = describeDayGaps(['XXX', null, 7]);
+    assert.strictEqual(g.minOdstepGodzin, null);
+    assert.strictEqual(g.stan, 'brak_rozpoznanych_dni');
+  });
+
+  scenario('describeDosingState mówi WPROST, czy podpowiedzi w ogóle poszły', () => {
+    assert.match(describeDosingState({ hintsWeszly: false }), /podpowiedzi_w_promptcie=nie/);
+    assert.match(describeDosingState({ hintsWeszly: true, kluczPodpowiedzi: 'moc-segment-01' }), /uzyta=moc-segment-01/);
+  });
+
+  console.log('\n15. DOZOWANIE A6 — koszt promptu na PRAWDZIWYCH wierszach migracji (18 × `moc`)');
+
+  const POMIARY = [];
+  function zmierz(nazwa, opcje) {
+    const sel = selekcja(opcje);
+    const bez = buildSystemPrompt({ knowledgeBaseContent: KB_TEST, segmentId: 'moc' });
+    const z = buildSystemPrompt({ knowledgeBaseContent: KB_TEST, segmentId: 'moc', hintSelection: sel });
+    POMIARY.push({ nazwa, wejscie: sel.wszystkieWejsciowe, wstrzykniete: sel.hints.length, bez: bez.length, z: z.length, delta: z.length - bez.length });
+    return { sel, bez, z };
+  }
+
+  scenario('Blok BEZ Elementu: 18 wierszy na wejściu -> 7 w promptcie, +3 179 znaków', () => {
+    const { sel, delta } = (() => { const r = zmierz('moc, Blok bez Elementu, limit 12', {}); return { sel: r.sel, delta: r.z.length - r.bez.length }; })();
+    assert.strictEqual(sel.wszystkieWejsciowe, 18);
+    assert.strictEqual(sel.hints.length, 7);
+    assert.strictEqual(delta, 3179);
+  });
+
+  scenario('Blok Z Elementem (comp-skoki): 9 w promptcie, +3 674 znaków, Element pierwszy', () => {
+    const r = zmierz('moc, Blok z Elementem, limit 12', { goal: 'comp-skoki' });
+    assert.strictEqual(r.sel.hints.length, 9);
+    assert.strictEqual(r.z.length - r.bez.length, 3674);
+    assert.strictEqual(r.sel.hints[0].klucz, 'moc-skoki-reaktywne-drop-jumps-depth-jumps-01');
+  });
+
+  scenario('limit 12 NIE tnie segmentu `moc` — po filtrach zostaje najwyżej 9, przyciete=0', () => {
+    assert.strictEqual(selekcja({ goal: 'comp-skoki' }).przycieteLimitem, 0);
+    assert.strictEqual(selekcja({}).przycieteLimitem, 0);
+  });
+
+  scenario('bramka A9 na `moc` nie odpala się — żaden wiersz nie ma min_age (znalezisko A20 nadal aktualne)', () => {
+    assert.strictEqual(MOC_HINTS.filter((h) => h.min_age != null).length, 0);
+    assert.strictEqual(selekcja({ wiek: 14 }).ukryteZPowoduWieku, 0);
+    assert.strictEqual(selekcja({ wiek: null }).ukryteZPowoduWieku, 0);
+  });
+
+  scenario('14-latek, 16-latek i wiek nieznany dostają na `moc` DOKŁADNIE ten sam prompt', () => {
+    const a = buildSystemPrompt({ knowledgeBaseContent: KB_TEST, segmentId: 'moc', hintSelection: selekcja({ wiek: 14 }) });
+    const b = buildSystemPrompt({ knowledgeBaseContent: KB_TEST, segmentId: 'moc', hintSelection: selekcja({ wiek: 16 }) });
+    const c = buildSystemPrompt({ knowledgeBaseContent: KB_TEST, segmentId: 'moc', hintSelection: selekcja({ wiek: null }) });
+    assert.strictEqual(a, b);
+    assert.strictEqual(b, c);
+  });
+
+  scenario('ODRZUCONA heurystyka „tnij rodzaj=zrozumiec": oszczędza 1 035 znaków, ale gubi treść o dozowaniu', () => {
+    // Ten scenariusz NIE testuje kodu produkcyjnego. Utrwala POMIAR, na którym
+    // oparta jest decyzja z sekcji 5 raportu: filtr po `rodzaj` wyrzuciłby
+    // moc-segment-04 ("progres zachodzi podczas regeneracji" — wprost o odstępach),
+    // a zostawiłby test skoków pogo, który z dozowaniem nie ma nic wspólnego.
+    const sel = selekcja({ goal: 'comp-skoki' });
+    const pelny = buildHintPromptBlock(sel);
+    const okrojony = buildHintPromptBlock({ ...sel, hints: sel.hints.filter((h) => h.rodzaj !== 'zrozumiec') });
+    assert.strictEqual(pelny.length - okrojony.length, 1035);
+    const wypadloby = sel.hints.filter((h) => h.rodzaj === 'zrozumiec').map((h) => h.klucz);
+    assert.ok(wypadloby.includes('moc-segment-04'), 'to jest dokładnie ta podpowiedź, przez którą filtr został odrzucony');
+    const zostaloby = sel.hints.filter((h) => h.rodzaj === 'zrobic').map((h) => h.klucz);
+    assert.ok(zostaloby.includes('moc-skoki-reaktywne-drop-jumps-depth-jumps-01'), 'a to ta, która by została mimo zerowego związku z dozowaniem');
+  });
+
+  // ============================================================
+  // 16. TERMINARZ A7 08.08.2026 — mecze w dozowaniu (M21/A34)
+  // ============================================================
+  console.log('\n16. Terminarz meczów w fazie 1 (M21)');
+
+  scenario('bez meczów: system i user prompt są CO DO ZNAKU dzisiejsze (md5, nie długość)', () => {
+    const przed = {
+      sys: buildSystemPrompt({ knowledgeBaseContent: 'KB', segmentId: 'moc', hintSelection: null }),
+      usr: buildUserPrompt({ segmentId: 'moc', elementDescription: 'skoki', sessionsPerWeek: 3, equipment: [], readinessLines: [] }),
+    };
+    const po = {
+      sys: buildSystemPrompt({ knowledgeBaseContent: 'KB', segmentId: 'moc', hintSelection: null, matchDayCodes: [] }),
+      usr: buildUserPrompt({ segmentId: 'moc', elementDescription: 'skoki', sessionsPerWeek: 3, equipment: [], readinessLines: [], matchLines: [] }),
+    };
+    const md5 = (s) => require('crypto').createHash('md5').update(s).digest('hex');
+    assert.strictEqual(md5(po.sys), md5(przed.sys));
+    assert.strictEqual(md5(po.usr), md5(przed.usr));
+  });
+
+  scenario('daty → dni tygodnia: 2026-08-08 to sobota (SAT), niepoprawna data odpada', () => {
+    assert.strictEqual(dayIndexOfDate('2026-08-08'), 5);
+    assert.strictEqual(dayIndexOfDate('2026-08-10'), 0);
+    assert.strictEqual(dayIndexOfDate('nie-data'), null);
+  });
+
+  scenario('buildMatchScheduleLines: mecze dają JEDNĄ linię z datami i kodami, pusta lista — zero linii', () => {
+    const { lines, matchDayCodes } = buildMatchScheduleLines(['2026-08-09', '2026-08-15']);
+    assert.strictEqual(lines.length, 1);
+    assert.ok(lines[0].includes('2026-08-09') && lines[0].includes('SUN') && lines[0].includes('SAT'));
+    assert.deepStrictEqual(matchDayCodes.sort(), ['SAT', 'SUN']);
+    assert.deepStrictEqual(buildMatchScheduleLines([]), { lines: [], matchDayCodes: [] });
+    assert.deepStrictEqual(buildMatchScheduleLines(null), { lines: [], matchDayCodes: [] });
+  });
+
+  scenario('z meczami: system prompt ma sekcję WIĄŻĄCĄ, user prompt ma daty — bez nazw przeciwników', () => {
+    const sys = buildSystemPrompt({ knowledgeBaseContent: 'KB', segmentId: 'moc', hintSelection: null, matchDayCodes: ['SAT'] });
+    assert.ok(sys.includes('TERMINARZ MECZÓW'));
+    assert.ok(sys.includes('WIĄŻĄCA'));
+    assert.ok(sys.includes('dzień meczu NIE jest dniem sesji Bloku'));
+    const usr = buildUserPrompt({ segmentId: 'moc', elementDescription: 'skoki', sessionsPerWeek: 3, equipment: [], readinessLines: [], matchLines: buildMatchScheduleLines(['2026-08-09']).lines });
+    assert.ok(usr.includes('2026-08-09'));
+  });
+
+  scenario('describeMatchGap: sesja→mecz w przód, cyklicznie; dzień meczu = 0 h', () => {
+    // sesja MON, mecz WED → 48 h (dokładnie na granicy reguły)
+    assert.strictEqual(describeMatchGap(['MON'], ['WED']).minOdstepDoMeczuGodzin, 48);
+    // sesja FRI, mecz SAT → 24 h — złamanie reguły 48 h
+    assert.strictEqual(describeMatchGap(['FRI'], ['SAT']).minOdstepDoMeczuGodzin, 24);
+    // zawinięcie tygodnia: sesja SUN, mecz MON → 24 h, nie 6 dni
+    assert.strictEqual(describeMatchGap(['SUN'], ['MON']).minOdstepDoMeczuGodzin, 24);
+    // sesja w dzień meczu
+    assert.strictEqual(describeMatchGap(['SAT'], ['SAT']).minOdstepDoMeczuGodzin, 0);
+    // brak meczów ≠ brak rozpoznanych dni (R5)
+    assert.strictEqual(describeMatchGap(['MON'], []).stan, 'brak_meczow');
+    assert.strictEqual(describeMatchGap([], ['SAT']).stan, 'brak_rozpoznanych_dni');
+  });
+
+  scenario('describeDosingState: linia logu mówi o meczu wprost, z ostrzeżeniami < 48 h i „w dzień meczu"', () => {
+    const linia = describeDosingState({
+      gaps: describeDayGaps(['MON', 'WED', 'FRI']),
+      hintsWeszly: false,
+      matchGap: describeMatchGap(['FRI'], ['SAT']),
+    });
+    assert.ok(linia.includes('min_odstep_do_meczu_h=24'));
+    assert.ok(linia.includes('UWAGA_MECZ_PONIZEJ_48H_PO_SESJI=tak'));
+    const wDzien = describeDosingState({ gaps: describeDayGaps(['SAT']), hintsWeszly: false, matchGap: describeMatchGap(['SAT'], ['SAT']) });
+    assert.ok(wDzien.includes('UWAGA_SESJA_W_DZIEN_MECZU=tak'));
+    // brak meczów → ani słowa o meczach w logu (linia jak przed rundą)
+    const bez = describeDosingState({ gaps: describeDayGaps(['MON']), hintsWeszly: false, matchGap: describeMatchGap(['MON'], []) });
+    assert.ok(!bez.includes('meczu'));
+  });
+
+  // Pomiar OSOBNYM logiem (zasada 14):
+  {
+    const sysBez = buildSystemPrompt({ knowledgeBaseContent: 'KB', segmentId: 'moc', hintSelection: null });
+    const sysZ = buildSystemPrompt({ knowledgeBaseContent: 'KB', segmentId: 'moc', hintSelection: null, matchDayCodes: ['SAT'] });
+    console.log(`[pomiar] TERMINARZ: sekcja meczowa w system promptcie = +${sysZ.length - sysBez.length} znaków (tylko gdy mecze są; bez meczów +0).`);
+  }
+
+  console.log('\n--- KOSZT PROMPTU FAZY 1 (do sekcji 12 raportu, generowane) ---\n');
+  console.log('| wariant | na wejściu | wstrzyknięte | prompt bez | prompt z | delta |');
+  console.log('|---|---:|---:|---:|---:|---:|');
+  for (const p of POMIARY) {
+    console.log(`| ${p.nazwa} | ${p.wejscie} | ${p.wstrzykniete} | ${p.bez} | ${p.z} | **+${p.delta}** |`);
+  }
+  console.log('');
 
   console.log(failed === 0 ? `\nWSZYSTKIE TESTY PRZESZŁY (${passed}).` : `\n${failed} TEST(ÓW) NIE PRZESZŁO (${passed} ok).`);
   process.exit(failed === 0 ? 0 : 1);

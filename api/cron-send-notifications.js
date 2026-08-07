@@ -1,6 +1,16 @@
 // ============================================================
 // GAMECHANGE — cron-send-notifications.js (do wdrożenia: /api/cron-send-notifications.js w repo gamechange-app)
 // ============================================================
+// TERMINARZ A7 08.08.2026 (C6-N2): JEDYNY REALNY HARMONOGRAM CAŁEGO SYSTEMU —
+// PIĘTNAŚCIE rytmów w ustalonej kolejności: powiadomienia push, retencja,
+// digest trenera, rotacja training focus, wygasanie triala, zgody
+// rodzicielskie i raport rodzica (ostatni, bo jako jedyny wysyła pocztę
+// poza system). Każdy rytm w osobnym try/catch (runda 6) — rytm, który
+// padnie, nie zabiera kolejnych. Historyczna nazwa pliku
+// ("send-notifications") zostaje: zmiana ścieżki = zmiana 12 wpisów crona
+// w vercel.json. Pierwotny nagłówek niżej (scheduler pięciu rytmów) opisywał
+// stan sprzed rund 4–6 — zostawiony jako historia:
+//
 // SCHEDULER dla pięciu "rytmów" powiadomień push (F15, Domena 09 —
 // asystent_sportowca_09_powiadomienia.sql). Ten sam wzorzec ochrony co
 // api_cron_send_parent_reports.js/api_cron_settlement.js: CRON_SECRET w
@@ -81,6 +91,26 @@ const { runTrainingFocusRotation } = require('../lib/training-focus-rotation');
 // lib/coach-scheduled-reports.js samym — patrz nagłówek tamtego pliku po
 // pełne wyjaśnienie (ZADANIE 3, weryfikacja Pakietu 20).
 const { runCoachScheduledReportsCheck } = require('../lib/coach-scheduled-reports');
+// ZRODLO C5 08.08.2026 — RAPORT RODZICA WCHODZI DO DYSPOZYTORA.
+// Znalezisko C4-N4: api/cron-send-parent-reports.js NIGDY nie był wpisany
+// do vercel.json, więc cały mechanizm raportu dla rodzica — wzbogacony
+// w rundzie 4 o wskazówki z materiałów, trzy uczciwe stany pustki
+// i porównanie z poprzednim raportem — po prostu się nie uruchamiał.
+// To ten sam wzorzec, przez który runRetentionCheck i runTrainingFocusRotation
+// przeleżały dwa dni z gotowym, przetestowanym kodem (naprawa 04.08.2026,
+// osiem linijek wyżej) — i to samo lekarstwo.
+//
+// DLACZEGO TUTAJ, A NIE CZTERNASTYM WPISEM W vercel.json: plik ma już 13
+// zadań, a plan Vercel Hobby ma limit, co do którego audyt po bloku 4
+// (pozycja M4) podejrzewa, że jest po cichu przycinany. Dokładanie
+// czternastego wpisu do listy, która może być obcinana bez ostrzeżenia,
+// naprawiałoby cichy brak innym cichym brakiem. Dyspozytor ma 12 pewnych
+// wpisów co ~2h — raport rodzica dostaje 12 szans dziennie zamiast zera,
+// a bramką pozostaje last_sent_at + PARENT_REPORT_INTERVAL_DAYS (30, bez
+// zmian), więc częstsze uruchamianie NIE znaczy częstszej wysyłki.
+// Dokładnie ta sama własność, na której stoją runRetentionCheck
+// (deduplikacja przez retention_reminder_log) i runCoachDigestCheck.
+const { runParentReportsCheck } = require('../lib/parent-reports');
 
 function getAdminClient() {
   const url = process.env.SUPABASE_URL;
@@ -119,6 +149,18 @@ const CONTEXTUAL_INSIGHT_MIN_GAP_DAYS = 3; // NOWE 29.07.2026 — spec: "max 1 n
 // NOWE 31.07.2026 (Krok 5b) — okna/interwały dla rytmów Bloku Skupienia.
 const FOCUS_BLOCK_CHECKIN_INTERVAL_DAYS = 14;   // Faza 2a: co ~2 tygodnie
 const FOCUS_BLOCK_CHECKIN_WINDOW_HOUR = 10;     // stałe okno rano
+// DYSPOZYTOR C6 08.08.2026 — dopisek do pusha rytmu 6, gdy w TEJ turze
+// powstała nowa dawka treści (znalezisko A28/M12). Od rundy 5 dawka
+// FAKTYCZNIE ląduje w bazie, ale push mówił wyłącznie pytanie kontrolne —
+// zawodnik nie miał żadnego powodu, żeby zajrzeć do Bloku po treść, o której
+// nie wiedział. Zbudowana rzecz, o której odbiorca nie wie, to ta sama klasa
+// braku co rzecz niezbudowana (reguła R1).
+// BRZMIENIE (test 15-latka): bez „dawka" (brzmi jak lekarstwo), bez
+// „materiał"/„treść" (brzmi jak szkoła), bez wykrzyknika. Separator „ · "
+// to ten sam znak, którym appka oddziela źródło od treści w Bloku
+// („Z materiałów Gamechange · Moc, s. 8") — więc zawodnik już go zna.
+// Jedno zdanie, bo push i tak zostaje przycięty na liście powiadomień.
+const NOWA_DAWKA_DOPISEK = ' · Jest nowa porcja wiedzy w Twoim Bloku.';
 const FOCUS_BLOCK_MAINTENANCE_INTERVAL_DAYS = 45; // Faza 4: "rzadkie" sprawdzanie, ~1.5 miesiąca
 const FOCUS_BLOCK_MAINTENANCE_WINDOW_HOUR = 10;
 
@@ -557,9 +599,21 @@ async function runFocusBlockCheckins(supabase, warsawNow, results) {
 
       const tokens = await getTokensForUser(supabase, block.user_id);
       if (tokens.length === 0) continue;
+      // DYSPOZYTOR C6 08.08.2026 — push mówi, że przyszła nowa porcja wiedzy.
+      // Czytamy TĘ SAMĄ `generated.contentDose`, którą kilka linii wyżej
+      // czyta zegar kadencji (`last_content_dose_at`) — świadomie ten sam
+      // warunek, nie osobny: kontrakt pasa A z rundy 5 mówi, że
+      // `contentDose === true` znaczy „w TEJ turze powstała NOWA dawka",
+      // a nie „blok ma jakąś dawkę". Gdyby dopisek jechał na innym warunku,
+      // zawodnik dostawałby zaproszenie do treści, której już dawno nie ma
+      // po co szukać. Zegar kadencji jest NIETKNIĘTY — to tylko odczyt.
+      // Bez dawki `body` jest co do znaku takie, jak przed tą rundą.
+      const bodyPusha = generated.contentDose
+        ? `${generated.question}${NOWA_DAWKA_DOPISEK}`
+        : generated.question;
       await sendPush(tokens, {
         title: 'Gamechange',
-        body: generated.question,
+        body: bodyPusha,
         data: { type: 'focus_block_checkin', focusBlockId: block.id, checkinId: inserted.id },
       });
       results.focus_block_checkins++;
@@ -784,6 +838,49 @@ async function runParentalConsentExpiry(supabase, results) {
   }
 }
 
+// ------------------------------------------------------------
+// DYSPOZYTOR C6 08.08.2026 — IZOLACJA RYTMÓW.
+//
+// PROBLEM, KTÓRY TO ZAMYKA (znalezisko C5-N4): do tej rundy piętnaście
+// rytmów stało w JEDNYM `try`. Rytm, który rzucił wyjątkiem, zabierał ze
+// sobą WSZYSTKIE NASTĘPNE w kolejce — a odpowiedź crona nie mówiła, że
+// coś się nie wykonało: mówiła tylko `ok:false` i komunikat pierwszego
+// błędu. Czyli awaria rytmu 3 wyglądała identycznie jak awaria całego
+// dyspozytora, a dwanaście rytmów po nim milczało. To jest „cichy brak"
+// na poziomie harmonogramu — dokładnie ten wzorzec, przez który raport
+// rodzica przeleżał całą rundę z gotowym, przetestowanym kodem.
+//
+// CO SIĘ ZMIENIA: każdy z piętnastu rytmów ma własny `try/catch`. Rytm,
+// który rzuci, dostaje `results.<klucz>_error` z komunikatem, a kolejka
+// idzie dalej. Kolejność 1–15 NIETKNIĘTA (raport rodzica nadal ostatni —
+// jako jedyny wysyła pocztę do osób spoza systemu).
+//
+// CZEGO TO NIE ZMIENIA: przy przebiegu bez wyjątków odpowiedź jest
+// IDENTYCZNA co do znaku z tą sprzed tej rundy — żaden klucz `_error`
+// nie powstaje, `results` ma dokładnie te same 19 pól, status 200,
+// `ok:true`. Zmienia się WYŁĄCZNIE los wyjątku. Osiem starszych funkcji
+// nie jest tej rundy — są OPAKOWANE, nie naprawiane.
+//
+// DLACZEGO NADAL 500, A NIE 200, GDY COŚ PADŁO: 500 to jedyny sygnał,
+// który widać w panelu Vercela bez otwierania treści odpowiedzi.
+// Zwrócenie 200 przy padniętym rytmie zamieniłoby jeden cichy brak na
+// drugi: kolejka by dokończyła, ale w dashboardzie byłoby zielono.
+// Kod statusu zostaje więc dokładnie taki, jaki był („gdzieś poleciał
+// wyjątek → 500"); zmienia się to, że przed zwróceniem 500 pozostałe
+// rytmy zdążyły zrobić swoje, i to, że odpowiedź mówi KTÓRE padły.
+// Ponowne uruchomienie jest bezpieczne z tej samej własności, na której
+// stoi cały ten plik: każdy rytm ma własną bramkę (okno godzinowe,
+// `last_sent_at`, log deduplikacji), więc dyspozytor jest wołany 12x
+// dziennie i trzynaste wywołanie niczego nie dubluje.
+// ------------------------------------------------------------
+function zapiszBladRytmu(results, klucz, nazwaFunkcji, e) {
+  // Do odpowiedzi HTTP idzie WYŁĄCZNIE `e.message` — nigdy `e.stack`.
+  // Stack ma trafić do logu Vercela (linia niżej), gdzie jest przydatny,
+  // a nie do treści odpowiedzi endpointu chronionego jednym sekretem.
+  results[`${klucz}_error`] = (e && e.message) ? e.message : String(e);
+  console.error(`cron-send-notifications: rytm ${nazwaFunkcji} (${klucz}) rzucił wyjątkiem — kolejka idzie dalej:`, e);
+}
+
 module.exports = async (req, res) => {
   const authHeader = req.headers.authorization || '';
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -796,6 +893,18 @@ module.exports = async (req, res) => {
     trial_expiry: 0, parental_consent_expiry: 0, coach_digest: 0,
     retention_check: 0, training_focus_rotation: 0,
     coach_scheduled_reports: 0,
+    // ZRODLO C5 08.08.2026 — pięć liczników raportu rodzica. Świadomie
+    // PIĘĆ, nie jeden: cztery pozostałe to zabezpieczenie „niecichego
+    // braku" z rundy 4 (reguła R5) i zniknęłyby, gdyby spłaszczyć je do
+    // samego `parent_reports`. `parent_reports_missing_extras` równe
+    // liczbie wysłanych raportów znaczy „migracja rundy 4 nie została
+    // wklejona, rodzice dostają wersję sprzed niej" — i to musi być widać
+    // w odpowiedzi crona, nie tylko w logu. Wszystkie pięć jawnie
+    // wyzerowane, żeby przebieg bez subskrypcji pokazywał zera, a nie brak
+    // pola (brak pola nie odróżnia „nikt nie był na czas" od „ten rytm
+    // w ogóle się nie wykonał").
+    parent_reports: 0, parent_reports_failed: 0, parent_reports_skipped_no_report: 0,
+    parent_reports_missing_extras: 0, parent_reports_snapshot_failed: 0,
   };
 
   // DIAGNOSTYKA 29.07.2026 — patrz komentarz przy verifyFirebaseConfig() w
@@ -818,20 +927,87 @@ module.exports = async (req, res) => {
     const supabase = getAdminClient();
     const warsawNow = getWarsawNow();
 
-    await runMorningReadiness(supabase, warsawNow, results);
-    await runPostTraining(supabase, warsawNow, results);
-    await runPreMatch(supabase, warsawNow, results);
-    await runWeeklySummary(supabase, warsawNow, results);
-    await runContextualInsight(supabase, results);
-    await runFocusBlockCheckins(supabase, warsawNow, results);
-    await runFocusBlockMaintenance(supabase, warsawNow, results);
-    await runFocusBlockAdaptation(supabase, results);
-    await runTrialExpiry(supabase, warsawNow, results);
-    await runParentalConsentExpiry(supabase, results);
-    await runCoachDigestCheck(supabase, results);
-    await runRetentionCheck(supabase, results);
-    await runTrainingFocusRotation(supabase, warsawNow, results);
-    await runCoachScheduledReportsCheck(supabase, warsawNow, results);
+    // DYSPOZYTOR C6 08.08.2026 — piętnaście rytmów, piętnaście osobnych
+    // `try/catch`. Świadomie rozpisane jeden po drugim zamiast pętli po
+    // tablicy: kolejność 1–15 jest tu ustaleniem projektowym (raport
+    // rodzica ostatni), a lista widoczna wprost w kodzie jest jedynym
+    // miejscem, w którym tę kolejność da się przeczytać i sprawdzić
+    // `grep`em. Pętla po tablicy schowałaby ją o jeden poziom głębiej.
+    try { await runMorningReadiness(supabase, warsawNow, results); }
+    catch (e) { zapiszBladRytmu(results, 'morning_readiness', 'runMorningReadiness', e); }
+
+    try { await runPostTraining(supabase, warsawNow, results); }
+    catch (e) { zapiszBladRytmu(results, 'post_training', 'runPostTraining', e); }
+
+    try { await runPreMatch(supabase, warsawNow, results); }
+    catch (e) { zapiszBladRytmu(results, 'pre_match', 'runPreMatch', e); }
+
+    try { await runWeeklySummary(supabase, warsawNow, results); }
+    catch (e) { zapiszBladRytmu(results, 'weekly_summary', 'runWeeklySummary', e); }
+
+    try { await runContextualInsight(supabase, results); }
+    catch (e) { zapiszBladRytmu(results, 'contextual_insight', 'runContextualInsight', e); }
+
+    try { await runFocusBlockCheckins(supabase, warsawNow, results); }
+    catch (e) { zapiszBladRytmu(results, 'focus_block_checkins', 'runFocusBlockCheckins', e); }
+
+    try { await runFocusBlockMaintenance(supabase, warsawNow, results); }
+    catch (e) { zapiszBladRytmu(results, 'focus_block_maintenance', 'runFocusBlockMaintenance', e); }
+
+    try { await runFocusBlockAdaptation(supabase, results); }
+    catch (e) { zapiszBladRytmu(results, 'focus_block_adaptation', 'runFocusBlockAdaptation', e); }
+
+    try { await runTrialExpiry(supabase, warsawNow, results); }
+    catch (e) { zapiszBladRytmu(results, 'trial_expiry', 'runTrialExpiry', e); }
+
+    try { await runParentalConsentExpiry(supabase, results); }
+    catch (e) { zapiszBladRytmu(results, 'parental_consent_expiry', 'runParentalConsentExpiry', e); }
+
+    try { await runCoachDigestCheck(supabase, results); }
+    catch (e) { zapiszBladRytmu(results, 'coach_digest', 'runCoachDigestCheck', e); }
+
+    try { await runRetentionCheck(supabase, results); }
+    catch (e) { zapiszBladRytmu(results, 'retention_check', 'runRetentionCheck', e); }
+
+    try { await runTrainingFocusRotation(supabase, warsawNow, results); }
+    catch (e) { zapiszBladRytmu(results, 'training_focus_rotation', 'runTrainingFocusRotation', e); }
+
+    try { await runCoachScheduledReportsCheck(supabase, warsawNow, results); }
+    catch (e) { zapiszBladRytmu(results, 'coach_scheduled_reports', 'runCoachScheduledReportsCheck', e); }
+
+    // ZRODLO C5 08.08.2026 — raport rodzica. ŚWIADOMIE OSTATNI w kolejce:
+    // to jedyny rytm, który wysyła e-maile do osób spoza systemu (rodziców),
+    // i jedyny, który dołączył do tego dyspozytora w tej rundzie. Gdyby
+    // miał się wywrócić, ma to zrobić PO tym, jak trzynaście pozostałych
+    // rytmów zrobiło swoje. Sama funkcja z zasady nie rzuca (patrz nagłówek
+    // lib/parent-reports.js) — kolejność jest drugim pasem bezpieczeństwa,
+    // nie jedynym.
+    // DYSPOZYTOR C6 08.08.2026 — od tej rundy jest jeszcze trzeci pas:
+    // własny `try/catch`. Kolejność i tak zostaje ostatnia, bo powód powyżej
+    // (poczta poza system) nie zniknął.
+    try { await runParentReportsCheck(supabase, results); }
+    catch (e) { zapiszBladRytmu(results, 'parent_reports', 'runParentReportsCheck', e); }
+
+    // DYSPOZYTOR C6 08.08.2026 — jawny stan „coś się nie wykonało" (reguła R5).
+    // Bez tego trzeba by przeglądać dwadzieścia kluczy `results` w poszukiwaniu
+    // sufiksu `_error`. Pole powstaje WYŁĄCZNIE wtedy, gdy jakiś rytm padł —
+    // przebieg bez wyjątków ma odpowiedź co do znaku taką, jak przed tą rundą.
+    const kluczeZBledem = Object.keys(results)
+      .filter((k) => k.endsWith('_error'))
+      .map((k) => k.slice(0, -'_error'.length));
+
+    if (kluczeZBledem.length > 0) {
+      const podsumowanie = `${kluczeZBledem.length} z 15 rytmów rzuciło wyjątkiem: ${kluczeZBledem.join(', ')}`;
+      console.error('cron-send-notifications zakończony Z BŁĘDAMI RYTMÓW:', { ...results, firebaseConfigOk, firebaseConfigError });
+      return res.status(500).json({
+        ok: false,
+        error: podsumowanie,
+        rytmy_z_bledem: kluczeZBledem,
+        results,
+        firebaseConfigOk,
+        firebaseConfigError,
+      });
+    }
 
     console.log('cron-send-notifications zakończony:', { ...results, firebaseConfigOk, firebaseConfigError });
     return res.status(200).json({ ok: true, results, firebaseConfigOk, firebaseConfigError });
@@ -866,5 +1042,6 @@ module.exports._internal = {
   runRetentionCheck,
   runTrainingFocusRotation,
   runCoachScheduledReportsCheck,
+  runParentReportsCheck, // ZRODLO C5 08.08.2026
   SEGMENT_DISPLAY_NAME,
 };

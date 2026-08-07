@@ -59,6 +59,9 @@ const {
   checkFeedbackEscalationNotYetFired, computeRejectionStreak,
   fetchKnowledgeBase, resolveGoalSegment,
   buildSystemPrompt, SEG_NAMES,
+  // DOZOWANIE A6 08.08.2026 — decyzja produktowa: specialist_referral bez
+  // segmentu NIE sięga po `tolerancja`.
+  shouldLoadHints,
 } = require('../api/generate-recommendation.js')._internal;
 
 Module._resolveFilename = originalResolveFilename;
@@ -507,6 +510,75 @@ async function scenario(name, fn) {
   await scenario('zawiera dokładnie 13 segmentów z niepustymi etykietami', () => {
     assert.strictEqual(Object.keys(SEG_NAMES).length, 13);
     Object.values(SEG_NAMES).forEach((label) => assert.ok(label && label.length > 0));
+  });
+
+  // ============================================================
+  console.log('\n12. DOZOWANIE A6 08.08.2026 — shouldLoadHints: specialist_referral BEZ SEGMENTU nie sięga po `tolerancja`');
+  // ------------------------------------------------------------
+  // Decyzja produktowa sesji głównej z 08.08.2026
+  // (AUDYT_PO_BLOKU_4_08_08_2026.md, sekcja 5), zamykająca znalezisko A24
+  // z rundy 4. Wersja krótka: skierowanie do specjalisty z powodu wzorca bólu
+  // nie ma segmentu i podstawienie za nie `tolerancja` byłoby zamianą DOMYSŁU
+  // w DANE — z przypisem "Tolerancja obciążeń, s. 4" pod skierowaniem, którego
+  // nikt z tym segmentem nie powiązał.
+  //
+  // Te scenariusze są po to, żeby ktoś, kto za pół roku zechce "dodać
+  // brakującą funkcję", trafił najpierw na czerwony test i przeczytał powód.
+  // ------------------------------------------------------------
+
+  await scenario('specialist_referral BEZ segmentu -> NIE ładujemy podpowiedzi, powód nazwany wprost', () => {
+    const r = shouldLoadHints({ recommendationType: 'specialist_referral', segmentId: null });
+    assert.strictEqual(r.load, false);
+    assert.strictEqual(r.powod, 'specialist_referral_bez_segmentu_swiadomie_bez_podpowiedzi');
+  });
+
+  await scenario('powód NIE brzmi "brak_segmentu" — świadoma decyzja i zwykły brak danych to dwie różne rzeczy (R5)', () => {
+    const referral = shouldLoadHints({ recommendationType: 'specialist_referral', segmentId: null });
+    const inny = shouldLoadHints({ recommendationType: 'training_focus', segmentId: null });
+    assert.notStrictEqual(referral.powod, inny.powod);
+    assert.strictEqual(inny.powod, 'brak_segmentu');
+  });
+
+  await scenario('segmentId nie jest nigdzie podmieniany na "tolerancja" — funkcja go w ogóle nie zwraca', () => {
+    const r = shouldLoadHints({ recommendationType: 'specialist_referral', segmentId: null });
+    assert.ok(!Object.prototype.hasOwnProperty.call(r, 'segmentId'),
+      'shouldLoadHints ma decydować CZY ładować, nie podstawiać segment — inaczej domysł stanie się danymi');
+    assert.ok(!JSON.stringify(r).includes('tolerancja'));
+  });
+
+  await scenario('pusty string i undefined jako segmentId zachowują się jak brak (nie wpadają w gałąź "segment znany")', () => {
+    assert.strictEqual(shouldLoadHints({ recommendationType: 'specialist_referral', segmentId: '' }).load, false);
+    assert.strictEqual(shouldLoadHints({ recommendationType: 'specialist_referral' }).load, false);
+  });
+
+  await scenario('POZOSTAŁE TYPY BEZ ZMIAN: specialist_referral Z segmentem (feedback_escalation) nadal ładuje podpowiedzi', () => {
+    const r = shouldLoadHints({ recommendationType: 'specialist_referral', segmentId: 'tolerancja' });
+    assert.strictEqual(r.load, true);
+    assert.strictEqual(r.powod, 'segment_znany');
+  });
+
+  await scenario('POZOSTAŁE TYPY BEZ ZMIAN: training_focus z segmentem ładuje podpowiedzi', () => {
+    assert.strictEqual(shouldLoadHints({ recommendationType: 'training_focus', segmentId: 'moc' }).load, true);
+  });
+
+  await scenario('training_focus BEZ segmentu też nie ładuje — ale z INNYM powodem (to stan "nie wiem", nie decyzja)', () => {
+    const r = shouldLoadHints({ recommendationType: 'training_focus', segmentId: null });
+    assert.strictEqual(r.load, false);
+    assert.strictEqual(r.powod, 'brak_segmentu');
+  });
+
+  await scenario('wywołanie bez argumentów nie rzuca (silnik nie ma prawa się wywrócić na warstwie podpowiedzi)', () => {
+    const r = shouldLoadHints();
+    assert.strictEqual(r.load, false);
+    assert.strictEqual(r.powod, 'brak_segmentu');
+  });
+
+  await scenario('mapowanie segment→specjalista NIE jest tą zmianą dotknięte — tolerancja nadal daje physiotherapy', () => {
+    // Osobna rzecz niż podpowiedzi: `suggested_specialist_category` liczy się
+    // z segmentu, gdy segment JEST. Ta zmiana dotyczy wyłącznie podpowiedzi.
+    assert.strictEqual(resolveSuggestedSpecialistCategory('tolerancja', false), 'physiotherapy');
+    assert.strictEqual(resolveSuggestedSpecialistCategory('tolerancja', true), 'orthopedics');
+    assert.strictEqual(resolveSuggestedSpecialistCategory(null, false), null);
   });
 
   console.log(failed === 0 ? `\nWSZYSTKIE TESTY PRZESZŁY (${passed}).` : `\n${failed} TEST(ÓW) NIE PRZESZŁO (${passed} ok).`);
