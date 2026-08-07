@@ -817,23 +817,26 @@ let eventsCache = [];
    w segmencie, mają jedno źródło — `component_hints` — i ono ma numery stron.
    ─────────────────────────────────────────────────────────────────────────── */
 
-// Poniedziałek-niedziela bieżącego tygodnia, z toLocalDateStr (nie
-// toISOString) — ta sama poprawka strefy czasowej co reszta apki
-// (patrz komentarz przy toLocalDateStr), żeby "dzisiaj"/"ten tydzień"
-// liczyły się w czasie lokalnym zawodnika, nie UTC.
-function getCurrentWeekDayList() {
-  const now = new Date();
-  const dayOfWeek = (now.getDay() + 6) % 7; // 0=Pon..6=Nd
-  const monday = new Date(now);
-  monday.setDate(now.getDate() - dayOfWeek);
-  const days = [];
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
-    days.push({ dateStr: toLocalDateStr(d), dayCode: DAYS_OF_WEEK[i][0], label: DAYS_OF_WEEK[i][1] });
-  }
-  return days;
-}
+// PORZADEK R9 08.08.2026 (M26/C6-N1) — getCurrentWeekDayList() WYCIETA z zywego
+// kodu: po wycieciu sugestii kalendarzowej w rundzie 6 nie miala ani jednego
+// wywolania (byla pomocnikiem computeCalendarSuggestion, nie konsumentem
+// tablicy — dlatego runda 6 zostawila ja swiadomie, patrz C6-N1). Kod zostaje
+// w komentarzu: gdyby cos podobnego mialo wrocic, appka mobilna ma zywa,
+// utrzymywana wersje w lib/date-utils.ts — przywracac stamtad, nie stad.
+// Bylo:
+//   function getCurrentWeekDayList() {
+//     const now = new Date();
+//     const dayOfWeek = (now.getDay() + 6) % 7; // 0=Pon..6=Nd
+//     const monday = new Date(now);
+//     monday.setDate(now.getDate() - dayOfWeek);
+//     const days = [];
+//     for (let i = 0; i < 7; i++) {
+//       const d = new Date(monday);
+//       d.setDate(monday.getDate() + i);
+//       days.push({ dateStr: toLocalDateStr(d), dayCode: DAYS_OF_WEEK[i][0], label: DAYS_OF_WEEK[i][1] });
+//     }
+//     return days;
+//   }
 
 // DYSPOZYTOR C6 08.08.2026 — trzej konsumenci wyciętej tablicy (powód: patrz
 // duży komentarz przy `SUGGESTED_ACTIVITY_BY_SEGMENT` wyżej).
