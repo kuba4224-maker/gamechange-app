@@ -81,6 +81,27 @@ const {
   pickShowcaseHint,
 } = require('../lib/focus-block-content-store');
 
+// RUNDA 19 08.08.2026 — bramka kosztowa (patrz lib/ai-rate-limiter.js).
+// Budżet 5/10 min: check-in i podsumowanie zamykające to z definicji
+// zdarzenia rzadkie (raz na blok, raz na dzień), więc pięć prób w kwadransie
+// z zapasem pokrywa zawodnika, któremu zamula sieć i który stuka ponownie.
+//
+// UWAGA — bramka siedzi WYŁĄCZNIE w handlerze HTTP na dole pliku. Cron
+// (runFocusBlockCheckins w api/cron-send-notifications.js) woła funkcje
+// generateCheckin/generateClosingReview BEZPOŚREDNIO, z pominięciem HTTP,
+// i ma własny budżet — ten limit nigdy nie może go dotknąć.
+const {
+  makeRateLimiter,
+  rateLimitKey,
+  respondRateLimited,
+} = require('../lib/ai-rate-limiter.js');
+
+const limiterTresciBloku = makeRateLimiter({
+  nazwa: 'blok-tresc',
+  max: 5,
+  windowMs: 10 * 60 * 1000,
+});
+
 function getAdminClient() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -418,7 +439,25 @@ module.exports = async (req, res) => {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { action, focusBlockId } = req.body || {};
+  const { action, focusBlockId, userId } = req.body || {};
+
+  // BRAMKA KOSZTOWA (runda 19) — PRZED walidacją focusBlockId, bo samo
+  // odbicie się od walidacji nie może być darmową sondą do stukania w
+  // endpoint. Klucz: userId, gdy appka go poda, inaczej sam Blok (bo to on
+  // jest tu jedynym trwałym identyfikatorem), a w ostateczności adres.
+  {
+    const klucz = rateLimitKey(req, userId || focusBlockId);
+    const limit = limiterTresciBloku.check(klucz);
+    if (!limit.allowed) {
+      return respondRateLimited(res, {
+        limiter: limiterTresciBloku,
+        limit,
+        klucz,
+        komunikat: `Za dużo prób w krótkim czasie. Odpowiedź sprzed chwili jest nadal aktualna — spróbuj ponownie za ${Math.ceil(limit.retryAfterS / 60)} min.`,
+      });
+    }
+  }
+
   if (!focusBlockId) {
     return res.status(400).json({ ok: false, error: 'Brak focusBlockId w treści żądania.' });
   }

@@ -66,6 +66,23 @@ const {
   detectTeamThreadSignals,
 } = require('../lib/coach-thread-library.js');
 
+// RUNDA 19 08.08.2026 — bramka kosztowa (patrz lib/ai-rate-limiter.js).
+// Budżet 8/10 min: ten endpoint to dispatcher kilku akcji trenera, z których
+// część woła model (podpowiedź jednostki, prowadzenie rozwoju trenera), a
+// część nie. Trener w jednej sesji z panelem klika po kilka akcji pod rząd —
+// stąd sufit wyższy niż u zawodnika, ale nadal skończony.
+const {
+  makeRateLimiter,
+  rateLimitKey,
+  respondRateLimited,
+} = require('../lib/ai-rate-limiter.js');
+
+const limiterTrenera = makeRateLimiter({
+  nazwa: 'trener',
+  max: 8,
+  windowMs: 10 * 60 * 1000,
+});
+
 function getAdminClient() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -474,6 +491,25 @@ module.exports = async (req, res) => {
   // claude/INTEGRACJA_FILAR_B_PROFIL_TRENERA_SQL.md.
   // ────────────────────────────────────────────────────────────
   const action = req.body && req.body.action;
+
+  // BRAMKA KOSZTOWA (runda 19) — PO dispatcherze feedbacku (tamta ścieżka
+  // nie woła modelu i ma własne 409 przy powtórce), PRZED wszystkimi
+  // akcjami, które mogą sięgnąć po model. Klucz: ten identyfikator, który
+  // dana akcja i tak niesie w body — trener albo zawodnik odpowiadający na
+  // rundę opinii — a gdy body go nie ma, skrót adresu.
+  {
+    const b = req.body || {};
+    const klucz = rateLimitKey(req, b.coachUserId || b.playerUserId || b.userId);
+    const limit = limiterTrenera.check(klucz);
+    if (!limit.allowed) {
+      return respondRateLimited(res, {
+        limiter: limiterTrenera,
+        limit,
+        klucz,
+        komunikat: `Za dużo prób w krótkim czasie. Poprzednia odpowiedź jest nadal aktualna — spróbuj ponownie za ${Math.ceil(limit.retryAfterS / 60)} min.`,
+      });
+    }
+  }
 
   if (action === 'coach_own_priority_guidance') {
     try {

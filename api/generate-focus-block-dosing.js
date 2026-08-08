@@ -107,6 +107,16 @@ const {
   pickShowcaseHint,
 } = require('../lib/focus-block-content-store.js');
 
+// RUNDA 19 08.08.2026 — wspólna bramka kosztowa AI (limit z rundy 13 mieszka
+// od teraz tam, żeby cztery endpointy miały jedną implementację i jeden
+// kształt odpowiedzi 429).
+const {
+  makeRateLimiter,
+  rateLimitKey,
+  respondRateLimited,
+  pruneAndCheckRateLimit: pruneAndCheckWspolne,
+} = require('../lib/ai-rate-limiter.js');
+
 function getAdminClient() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -804,33 +814,33 @@ const RATE_LIMIT_MAX_CALLS = 3;
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000; // 10 minut
 const RATE_LIMIT_MAX_TRACKED_USERS = 500;    // bezpiecznik pamięci instancji
 
+// RUNDA 19 08.08.2026 (sesja główna) — logika okna i bezpiecznik pamięci
+// PRZENIESIONE do lib/ai-rate-limiter.js, bo od tej rundy ten sam mechanizm
+// chroni cztery endpointy zamiast jednego (dozowanie + treść Bloku +
+// walidacja celu + podpowiedzi trenera — patrz nagłówek tamtego pliku).
+// Tutaj zostaje WYŁĄCZNIE budżet tego endpointu; zachowanie limitu dozowania
+// jest identyczne co do znaku (3 wywołania / 10 min / zawodnik), a obie
+// funkcje niżej mają nadal tę samą sygnaturę, bo testy rundy 13 wołają je
+// wprost (z własną mapą stanu i fałszywym zegarem).
+const _rateLimiterDozowania = makeRateLimiter({
+  nazwa: 'dozowanie',
+  max: RATE_LIMIT_MAX_CALLS,
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  maxSledzonych: RATE_LIMIT_MAX_TRACKED_USERS,
+});
+
 // Czysta: (lista czasów wywołań, teraz) -> decyzja + odświeżona lista.
 // `fresh` przy odmowie NIE zawiera bieżącej próby — odrzucone wywołanie
 // nie przedłuża blokady (inaczej stukanie w przycisk nigdy by się nie
 // odblokowało).
 function pruneAndCheckRateLimit(entries, nowMs, max = RATE_LIMIT_MAX_CALLS, windowMs = RATE_LIMIT_WINDOW_MS) {
-  const fresh = (Array.isArray(entries) ? entries : []).filter((t) => nowMs - t < windowMs);
-  if (fresh.length >= max) {
-    const retryAfterS = Math.max(1, Math.ceil((windowMs - (nowMs - fresh[0])) / 1000));
-    return { allowed: false, fresh, retryAfterS };
-  }
-  return { allowed: true, fresh: [...fresh, nowMs], retryAfterS: 0 };
+  return pruneAndCheckWspolne(entries, nowMs, max, windowMs);
 }
 
-const _rateLimitState = new Map();
+const _rateLimitState = _rateLimiterDozowania.state;
 
 function checkDosingRateLimit(userId, nowMs = Date.now(), state = _rateLimitState) {
-  // Bezpiecznik: zanim dopiszemy nowego usera, wyrzucamy przeterminowanych,
-  // a gdy to nie wystarcza - czyścimy całość (limit łagodnieje, pamięć nie rośnie).
-  if (!state.has(userId) && state.size >= RATE_LIMIT_MAX_TRACKED_USERS) {
-    for (const [k, v] of state) {
-      if (v.every((t) => nowMs - t >= RATE_LIMIT_WINDOW_MS)) state.delete(k);
-    }
-    if (state.size >= RATE_LIMIT_MAX_TRACKED_USERS) state.clear();
-  }
-  const wynik = pruneAndCheckRateLimit(state.get(userId), nowMs);
-  state.set(userId, wynik.fresh);
-  return wynik;
+  return _rateLimiterDozowania.check(userId, nowMs, state);
 }
 
 // ------------------------------------------------------------
@@ -846,15 +856,18 @@ module.exports = async (req, res) => {
 
   // LIMIT R13 (M24) — przed jakąkolwiek pracą i przed wywołaniem modelu.
   // Bez userId nie limitujemy (i tak zaraz poleci walidacja "brak userId").
-  if (userId) {
-    const limit = checkDosingRateLimit(String(userId));
+  // RUNDA 19: klucz liczony wspólną funkcją — dla zalogowanego zawodnika to
+  // nadal userId (zachowanie bez zmian), a wywołanie BEZ userId, które
+  // wcześniej przechodziło przez bramkę wolne, wpada teraz na kubeł adresu.
+  {
+    const klucz = rateLimitKey(req, userId);
+    const limit = _rateLimiterDozowania.check(klucz);
     if (!limit.allowed) {
-      console.warn(`[dozowanie] rate-limit: userId=${userId} przekroczył ${RATE_LIMIT_MAX_CALLS} wywołania/${Math.round(RATE_LIMIT_WINDOW_MS / 60000)} min — odmowa, retryAfterS=${limit.retryAfterS}.`);
-      res.setHeader('Retry-After', String(limit.retryAfterS));
-      return res.status(429).json({
-        ok: false,
-        error: `Za dużo prób w krótkim czasie. Sugestia dozowania sprzed chwili jest nadal aktualna — spróbuj ponownie za ${Math.ceil(limit.retryAfterS / 60)} min.`,
-        retryAfterSeconds: limit.retryAfterS,
+      return respondRateLimited(res, {
+        limiter: _rateLimiterDozowania,
+        limit,
+        klucz,
+        komunikat: `Za dużo prób w krótkim czasie. Sugestia dozowania sprzed chwili jest nadal aktualna — spróbuj ponownie za ${Math.ceil(limit.retryAfterS / 60)} min.`,
       });
     }
   }

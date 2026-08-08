@@ -39,12 +39,19 @@
 //
 // CO ŚWIADOMIE NIE JEST TU ZROBIONE (spójnie z resztą projektu — otwarcie
 // nazwane, nie przeoczone):
-//   - Kontrola kosztów / rate-limiting per zawodnik (jak w generate-
-//     recommendation.js checkHardDailyCap). Ten endpoint nie zapisuje
-//     nic do bazy, więc nie ma dziś prostego miejsca do liczenia
-//     wywołań/dobę bez dodawania nowej tabeli — świadomie odłożone, poza
-//     zakresem tej sesji (SESJA_START nie wymagał tego wprost). Jedyna
-//     ochrona na razie: twardy limit długości wejściowego tekstu niżej.
+//   - [ZAMKNIĘTE 08.08.2026, RUNDA 19] Kontrola kosztów / rate-limiting.
+//     Akapit niżej opisywał stan sprzed rundy 19 i jest ZDEZAKTUALIZOWANY:
+//     bramka kosztowa istnieje i siedzi w handlerze HTTP na dole pliku
+//     (6 wywołań / 10 min na zawodnika, wspólny mechanizm z lib/ai-rate-
+//     limiter.js). Nie wymagała nowej tabeli, bo licznik żyje w pamięci
+//     instancji — z pełną listą ograniczeń tego podejścia spisaną w
+//     nagłówku tamtego pliku. Zdanie „jedyna ochrona to limit długości"
+//     przestało być prawdą; zostawione jako ślad, skąd wzięła się dziura:
+//     ten endpoint był w całości anonimowy i bez sufitu, więc jedno
+//     żądanie w pętli zamieniało klucz projektu na cudze wywołania modelu.
+//     (dawny opis) Ten endpoint nie zapisuje nic do bazy, więc nie ma dziś
+//     prostego miejsca do liczenia wywołań/dobę bez dodawania nowej tabeli
+//     — świadomie odłożone, poza zakresem tamtej sesji.
 //   - Wsparcie dla `position_id` (filtrowanie Obszarów po pozycji
 //     zawodnika) — Krok 0 tej sesji potwierdził żywym zapytaniem do
 //     Supabase, że `position_id` jest puste dla 100% wierszy we
@@ -53,6 +60,23 @@
 // ============================================================
 
 const MAX_TEXT_LENGTH = 300;
+
+// RUNDA 19 08.08.2026 — bramka kosztowa (patrz lib/ai-rate-limiter.js).
+// Budżet 6/10 min: doprecyzowanie celu to z natury kilka podejść pod rząd
+// („sprawdź" → poprawka słowa → „sprawdź" znowu), więc sufit musi być
+// wyższy niż przy dozowaniu (3), ale nadal poniżej tego, co opłaca się
+// komuś, kto chciałby użyć naszego klucza jako darmowego modelu.
+const {
+  makeRateLimiter,
+  rateLimitKey,
+  respondRateLimited,
+} = require('../lib/ai-rate-limiter.js');
+
+const limiterCelow = makeRateLimiter({
+  nazwa: 'cele',
+  max: 6,
+  windowMs: 10 * 60 * 1000,
+});
 
 // ------------------------------------------------------------
 // NAZWY SEGMENTÓW — świadoma duplikacja SEG_NAMES z generate-
@@ -198,7 +222,25 @@ module.exports = async (req, res) => {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { segmentId, text } = req.body || {};
+  const { segmentId, text, userId } = req.body || {};
+
+  // BRAMKA KOSZTOWA (runda 19) — PRZED walidacją wejścia i przed jakimkolwiek
+  // wywołaniem modelu. `userId` jest opcjonalny: appka dziś go nie wysyła
+  // (kontrakt KONTRAKT_CELE), więc kluczem jest skrót adresu — a gdy appka
+  // kiedyś zacznie go wysyłać, limit sam zrobi się celniejszy, bez zmiany
+  // tego kodu.
+  {
+    const klucz = rateLimitKey(req, userId);
+    const limit = limiterCelow.check(klucz);
+    if (!limit.allowed) {
+      return respondRateLimited(res, {
+        limiter: limiterCelow,
+        limit,
+        klucz,
+        komunikat: `Za dużo sprawdzeń w krótkim czasie. Zapisz cel tak, jak go teraz opisałeś — sprawdzenie i tak nigdy nie blokuje zapisu — i wróć za ${Math.ceil(limit.retryAfterS / 60)} min.`,
+      });
+    }
+  }
 
   try {
     const result = await validateGoalRefinement({ segmentId, text });
