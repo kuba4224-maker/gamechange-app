@@ -39,6 +39,10 @@ const {
   classifyHint,
   applyAgeGate,
   isPlayerAudience,
+  ADULT_MIN_AGE,
+  isAdultLowerBound,
+  isParentReferralHint,
+  isAudienceForPlayer,
   selectHintsForPrompt,
   formatHintLine,
   buildHintPromptBlock,
@@ -333,23 +337,25 @@ async function scenario(name, fn) {
   });
 
   // ==========================================================
-  console.log('\n5. `odbiorca` — do promptu zawodnika NIGDY nie idzie treść dla rodzica');
+  console.log('\n5. `odbiorca` — do promptu NIELETNIEGO nigdy nie idzie treść dla rodzica '
+    + '(DOROSŁY R11: przy pewnym 18+ zawodnik jest własnym rodzicem i tę warstwę dostaje)');
 
-  await scenario('isPlayerAudience: zawodnik i oba -> tak; rodzic -> nie', () => {
+  await scenario('isPlayerAudience: zawodnik i oba -> tak; rodzic -> nie (funkcja czysta bez wieku, bez zmian)', () => {
     assert.strictEqual(isPlayerAudience({ odbiorca: 'zawodnik' }), true);
     assert.strictEqual(isPlayerAudience({ odbiorca: 'oba' }), true);
     assert.strictEqual(isPlayerAudience({ odbiorca: 'rodzic' }), false);
   });
 
-  await scenario('podpowiedź "rodzic" odpada nawet dla 20-latka (to nie jest bramka wiekowa)', () => {
-    const sel = selectHintsForPrompt({ hints: [HINT_RODZIC, HINT_SEGMENT], ageLowerBound: 20 });
+  await scenario('podpowiedź "rodzic" odpada dla 16-latka (routing kanału, nie bramka wiekowa)', () => {
+    const sel = selectHintsForPrompt({ hints: [HINT_RODZIC, HINT_SEGMENT], ageLowerBound: 16 });
     assert.strictEqual(sel.hints.length, 1);
     assert.strictEqual(sel.hints[0].odbiorca, 'zawodnik');
     assert.strictEqual(sel.odrzuconePrzezOdbiorce, 1);
+    assert.strictEqual(sel.dorosly, false);
   });
 
-  await scenario('żadna podpowiedź w bloku promptu nie ma odbiorcy "rodzic" — sprawdzone na treści', () => {
-    const sel = selectHintsForPrompt({ hints: [HINT_RODZIC, HINT_SEGMENT], ageLowerBound: 20 });
+  await scenario('żadna podpowiedź w bloku promptu 16-latka nie ma odbiorcy "rodzic" — sprawdzone na treści', () => {
+    const sel = selectHintsForPrompt({ hints: [HINT_RODZIC, HINT_SEGMENT], ageLowerBound: 16 });
     const blok = buildHintPromptBlock(sel);
     assert.ok(!blok.includes('magnezu elementarnego'));
   });
@@ -358,6 +364,78 @@ async function scenario(name, fn) {
     const sel = selectHintsForPrompt({ hints: [h({ odbiorca: null }), h({ odbiorca: 'cos' })] });
     assert.strictEqual(sel.hints.length, 0);
     assert.strictEqual(sel.odrzuconePrzezOdbiorce, 2);
+  });
+
+  // ----------------------------------------------------------
+  // DOROSŁY R11 08.08.2026 — „18+ = własny rodzic"
+  // ----------------------------------------------------------
+  await scenario('R11: isAudienceForPlayer — rodzic wchodzi TYLKO przy pewnym 18+ (17 i null nie)', () => {
+    assert.strictEqual(isAudienceForPlayer({ odbiorca: 'rodzic' }, 18), true);
+    assert.strictEqual(isAudienceForPlayer({ odbiorca: 'rodzic' }, 20), true);
+    assert.strictEqual(isAudienceForPlayer({ odbiorca: 'rodzic' }, 17), false);
+    assert.strictEqual(isAudienceForPlayer({ odbiorca: 'rodzic' }, null), false);
+    assert.strictEqual(isAudienceForPlayer({ odbiorca: 'zawodnik' }, null), true);
+    assert.strictEqual(ADULT_MIN_AGE, 18);
+  });
+
+  await scenario('R11: podpowiedź "rodzic" WCHODZI do promptu 18-latka, z jawnym licznikiem', () => {
+    const sel = selectHintsForPrompt({ hints: [HINT_RODZIC, HINT_SEGMENT], ageLowerBound: 18 });
+    assert.strictEqual(sel.hints.length, 2);
+    assert.ok(sel.hints.some((x) => x.odbiorca === 'rodzic'));
+    assert.strictEqual(sel.odrzuconePrzezOdbiorce, 0);
+    assert.strictEqual(sel.dorosly, true);
+    assert.strictEqual(sel.wlaczoneZWarstwyRodzica, 1);
+    const blok = buildHintPromptBlock(sel);
+    assert.ok(blok.includes('magnezu elementarnego'), 'dawka z warstwy rodzica ma być w promptcie dorosłego');
+  });
+
+  await scenario('R11: bramka A9 dalej działa na wierszach z warstwy rodzica (min_age=21 przytrzymałoby 18-latka)', () => {
+    const sel = selectHintsForPrompt({
+      hints: [{ ...HINT_RODZIC, min_age: 21 }, HINT_SEGMENT], ageLowerBound: 18,
+    });
+    assert.strictEqual(sel.hints.length, 1);
+    assert.strictEqual(sel.ukryteZPowoduWieku, 1);
+  });
+
+  await scenario('R11: odesłanie „ustal z rodzicem" (tekst systemowy A9) WYPADA u dorosłego — jawnie', () => {
+    const ODESLANIE = h({
+      klucz: 'regeneracja-segment-07', segment_id: 'regeneracja',
+      hint: 'Magnez to sprawa do ustalenia z rodzicem — to on kupuje i pilnuje dawki.',
+      rodzaj: 'zrozumiec', zrodlo: 'decyzja A9 (tekst systemowy — nie z materiału)', strony: '—', pozycja: 7,
+    });
+    const dorosly = selectHintsForPrompt({ hints: [ODESLANIE, HINT_RODZIC, HINT_SEGMENT], ageLowerBound: 18 });
+    assert.ok(!dorosly.hints.some((x) => x.klucz === 'regeneracja-segment-07'),
+      'u dorosłego „ustal z rodzicem" stałoby obok samej dawki');
+    assert.strictEqual(dorosly.pominieteOdeslaniaDoRodzica, 1);
+    const nieletni = selectHintsForPrompt({ hints: [ODESLANIE, HINT_RODZIC, HINT_SEGMENT], ageLowerBound: 15 });
+    assert.ok(nieletni.hints.some((x) => x.klucz === 'regeneracja-segment-07'),
+      'u nieletniego odesłanie ZOSTAJE — to jego droga do dawek');
+    assert.strictEqual(nieletni.pominieteOdeslaniaDoRodzica, 0);
+  });
+
+  await scenario('R11: nieznany wiek NIE włącza warstwy rodzica (fail-closed, jak A9) i log to mówi', () => {
+    const sel = selectHintsForPrompt({ hints: [HINT_RODZIC, HINT_SEGMENT], ageLowerBound: null });
+    assert.strictEqual(sel.dorosly, false);
+    assert.strictEqual(sel.odrzuconePrzezOdbiorce, 1);
+    assert.ok(!describeHintState(sel, 'ok').includes('DOROSLY'));
+    const doroslySel = selectHintsForPrompt({ hints: [HINT_RODZIC, HINT_SEGMENT], ageLowerBound: 19 });
+    assert.match(describeHintState(doroslySel, 'ok'), /DOROSLY=tak wlaczone_z_warstwy_rodzica=1/);
+  });
+
+  await scenario('R11: granica jest ostra i konserwatywna — rocznik 2008 (dolna 17) to jeszcze NIE dorosły', () => {
+    const NOW_R11 = new Date('2026-08-08T12:00:00Z');
+    const sel = selectHintsForPrompt({
+      hints: [HINT_RODZIC, HINT_SEGMENT],
+      ageLowerBound: computeAgeLowerBound(2008, NOW_R11),
+    });
+    assert.strictEqual(sel.dorosly, false);
+    assert.strictEqual(sel.odrzuconePrzezOdbiorce, 1);
+    const sel2007 = selectHintsForPrompt({
+      hints: [HINT_RODZIC, HINT_SEGMENT],
+      ageLowerBound: computeAgeLowerBound(2007, NOW_R11),
+    });
+    assert.strictEqual(sel2007.dorosly, true);
+    assert.strictEqual(sel2007.hints.length, 2);
   });
 
   await scenario('active=false odpada i jest liczone osobno (wyłączona podpowiedź != brak danych)', () => {
@@ -491,9 +569,17 @@ async function scenario(name, fn) {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(s)), s);
   });
 
-  await scenario('kontrakt NIE zawiera treści dla rodzica, bo ta nigdy nie dociera do selekcji', () => {
-    const sel = selectHintsForPrompt({ hints: [HINT_RODZIC], ageLowerBound: 20 });
+  await scenario('kontrakt NIELETNIEGO nie zawiera treści dla rodzica, bo ta nie dociera do selekcji', () => {
+    const sel = selectHintsForPrompt({ hints: [HINT_RODZIC], ageLowerBound: 16 });
     assert.strictEqual(pickShowcaseHint(sel), null);
+  });
+
+  await scenario('R11: kontrakt DOROSŁEGO może nieść dawkę z warstwy rodzica — pełny kształt na ekran', () => {
+    const s = pickShowcaseHint(selectHintsForPrompt({ hints: [HINT_RODZIC], ageLowerBound: 20 }));
+    assert.ok(s, 'dorosły ma dostać showcase z warstwy rodzica');
+    assert.strictEqual(s.klucz, 'regeneracja-segment-08');
+    assert.ok(s.tresc.includes('magnezu elementarnego'));
+    assert.strictEqual(s.strona, '5, 13');
   });
 
   // ==========================================================

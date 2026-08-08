@@ -1544,14 +1544,26 @@ function renderRosterHeader() {
   }
 }
 
+// AGENT-N1 (runda 14, 08.08.2026) — WSPÓLNA nazwa zawodnika w UI trenera.
+// E-mail (potencjalnie nieletniego) NIGDY nie wchodzi do treści ekranu jako
+// nazwa — wyrównanie do wzorca teamDiagPlayerName() z widoku drużyny (D4,
+// runda 7). E-mail dalej bywa używany FUNKCJONALNIE jako identyfikator
+// zapisu (player_email w player_insights / coach_notes) — to nie jest UI.
+// Trzy stany celowo rozłączne (zero cichych błędów):
+//  • jest full_name → full_name;
+//  • jest e-mail, ale brak full_name → „Zawodnik bez nazwy w systemie"
+//    (dane doszły, zawodnik nie uzupełnił profilu);
+//  • nie doszło NIC (np. polityka users_coach_select z Domeny 18 nie
+//    wdrożona na tej bazie) → komunikat serwisowy, jak dotąd.
+function playerNameForCoachUI(u) {
+  if (u && u.full_name) return u.full_name;
+  if (u && u.email) return 'Zawodnik bez nazwy w systemie';
+  return 'Zawodnik (brak danych identyfikacyjnych — napisz do Kuby)'; // AUDYT 06.08.2026: było 'sprawdź, czy wdrożono Domenę 18 / users_coach_select' — nazwa migracji SQL w interfejsie trenera
+}
+
 function renderRosterCard(row) {
   const u = row.users || {};
-  const name = u.full_name || u.email;
-  // Jeśli ANI full_name ANI email nie doszły (np. polityka
-  // users_coach_select z Domeny 18 nie jest jeszcze wdrożona na tej bazie),
-  // pokaż to wprost jako TODO, nie cichy pusty ciąg — zgodnie z zasadą
-  // "zero cichych błędów zamiast jasnego komunikatu" z tego zlecenia.
-  const nameLabel = name || 'Zawodnik (brak danych identyfikacyjnych — napisz do Kuby)'; // AUDYT 06.08.2026: było 'sprawdź, czy wdrożono Domenę 18 / users_coach_select' — nazwa migracji SQL w interfejsie trenera
+  const nameLabel = playerNameForCoachUI(u); // AGENT-N1: było `u.full_name || u.email` — e-mail nieletniego wchodził do UI
 
   const diag = diagnosisByUser.get(row.player_user_id);
   let diagLabel = 'Brak odnotowanej diagnozy.';
@@ -1639,8 +1651,7 @@ async function loadPrivateRoster() {
 
 function renderPrivateRosterCard(row) {
   const u = row.users || {};
-  const name = u.full_name || u.email;
-  const nameLabel = name || 'Zawodnik (brak danych identyfikacyjnych)';
+  const nameLabel = playerNameForCoachUI(u); // AGENT-N1: bez e-maila w UI
 
   const activeShares = SHARE_FLAG_LABELS
     .filter(([key]) => row.shareFlags && row.shareFlags[key])
@@ -1678,14 +1689,14 @@ async function openPlayerDetail(playerId) {
   // Szuka najpierw w składzie drużynowym, potem w liście prywatnej — ten sam
   // zawodnik teoretycznie mógłby wystąpić w obu (drużyna + osobna relacja
   // prywatna), więc kolejność nie ma tu znaczenia dla poprawności, tylko
-  // źródło danych do wyświetlenia nazwy/e-maila w nagłówku.
+  // źródło danych do wyświetlenia nazwy w nagłówku (AGENT-N1: bez e-maila).
   currentPlayer = rosterCache.find(r => r.player_user_id === playerId)
     || privateRosterCache.find(r => r.player_user_id === playerId)
     || { player_user_id: playerId, users: {} };
   showView('detail');
 
   const u = currentPlayer.users || {};
-  document.getElementById('detail-player-name').textContent = u.full_name || u.email || 'Zawodnik';
+  document.getElementById('detail-player-name').textContent = playerNameForCoachUI(u); // AGENT-N1: bez e-maila w UI
   clearDetailSections();
 
   await Promise.all([
@@ -1974,7 +1985,10 @@ function renderGroupGoalSuggestPanel() {
   const playersHtml = rosterCache.length
     ? rosterCache.map(r => {
         const u = r.users || {};
-        const name = escapeHtml(u.full_name || u.email || 'Zawodnik');
+        // AGENT-N1: bez e-maila. Kilku zawodników bez nazwy będzie tu
+        // nierozróżnialnych — świadomie: to lepsze niż e-mail nieletniego
+        // na ekranie; identyfikacja przez kartę w Składzie (diagnoza/plakietki).
+        const name = escapeHtml(playerNameForCoachUI(u));
         return `<label style="display:block; font-size:14px; margin-bottom:6px;"><input type="checkbox" class="group-goal-suggest-checkbox" value="${r.player_user_id}" style="margin-right:8px;">${name}</label>`;
       }).join('')
     : '<div class="gc-empty">Brak aktywnych zawodników.</div>';
@@ -3726,8 +3740,9 @@ function teamDiagHeatLevel(val) {
   return { bg: '#e8f5e9', border: '#2a7a3a', text: '#1a5a2a', label: 'Dobry' };
 }
 
-// NIGDY e-mail — patrz nagłówek sekcji. Celowo INNY fallback niż w
-// renderRosterCard() (tam e-mail wchodzi do nazwy zawodnika).
+// NIGDY e-mail — patrz nagłówek sekcji. Od rundy 14 (AGENT-N1) CAŁE UI
+// trenera trzyma ten wzorzec: Skład/prywatni/nagłówek/panel grupowy używają
+// playerNameForCoachUI() (tam dodatkowo trzeci stan serwisowy „brak danych").
 function teamDiagPlayerName(u) {
   return (u && u.full_name) ? u.full_name : 'Zawodnik bez nazwy w systemie';
 }

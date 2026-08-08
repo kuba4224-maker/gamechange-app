@@ -239,6 +239,9 @@ const KLUCZE_RESULTS_PRZY_SUKCESIE = [
   'retention_check', 'training_focus_rotation', 'coach_scheduled_reports',
   'parent_reports', 'parent_reports_failed', 'parent_reports_skipped_no_report',
   'parent_reports_missing_extras', 'parent_reports_snapshot_failed',
+  // LIMIT R15 08.08.2026 — dwa jawne zera bramki limitu pushy (2/dzień +
+  // cisza nocna): zero ≠ brak pola, ten sam wzorzec co liczniki raportu.
+  'push_gate_quiet_hours', 'push_gate_daily_cap',
 ];
 
 let passed = 0;
@@ -276,7 +279,7 @@ async function scenario(name, fn) {
     assert.strictEqual('rytmy_z_bledem' in out.body, false, 'pole ma się pojawiać wyłącznie przy błędzie');
   });
 
-  await scenario('sukces: results ma DOKŁADNIE 19 kluczy sprzed tej rundy, ani jednego więcej', async () => {
+  await scenario('sukces: results ma DOKŁADNIE 21 kluczy (19 sprzed + 2 liczniki bramki z R15), ani jednego więcej', async () => {
     zerujLiczniki();
     zamrozZegar('2026-08-16T17:00:00Z');
     currentFakeSupabase = makeFakeSupabase({});
@@ -539,9 +542,12 @@ async function scenario(name, fn) {
     const kod = fs.readFileSync(require.resolve('../api/cron-send-notifications.js'), 'utf8')
       .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
     const wywolania = [...kod.matchAll(/await (run[A-Za-z]+)\(supabase/g)].map((m) => m[1]);
+    // LIMIT R15 08.08.2026 — siedem rytmów push w kolejności PRIORYTETÓW
+    // limitu dobowego (Kuba 01.08, sekcja 5.3; lustro: PRIORITY_ORDER w
+    // lib/push-rate-limiter.js). Rytmy bez pushy bez zmian, raport ostatni.
     assert.deepStrictEqual(wywolania, [
-      'runMorningReadiness', 'runPostTraining', 'runPreMatch', 'runWeeklySummary',
-      'runContextualInsight', 'runFocusBlockCheckins', 'runFocusBlockMaintenance',
+      'runContextualInsight', 'runPreMatch', 'runPostTraining', 'runFocusBlockCheckins',
+      'runMorningReadiness', 'runFocusBlockMaintenance', 'runWeeklySummary',
       'runFocusBlockAdaptation', 'runTrialExpiry', 'runParentalConsentExpiry',
       'runCoachDigestCheck', 'runRetentionCheck', 'runTrainingFocusRotation',
       'runCoachScheduledReportsCheck', 'runParentReportsCheck',
@@ -553,9 +559,10 @@ async function scenario(name, fn) {
     const kod = fs.readFileSync(require.resolve('../api/cron-send-notifications.js'), 'utf8');
     const zapisy = [...kod.matchAll(/zapiszBladRytmu\(results, '([a-z_]+)', '(run[A-Za-z]+)'/g)];
     assert.strictEqual(zapisy.length, 15, `oczekiwano 15 osobnych catchy, jest ${zapisy.length}`);
-    assert.deepStrictEqual(zapisy.map((m) => m[1]), [
-      'morning_readiness', 'post_training', 'pre_match', 'weekly_summary', 'contextual_insight',
-      'focus_block_checkins', 'focus_block_maintenance', 'focus_block_adaptation',
+    assert.deepStrictEqual(zapisy.map((m) => m[1]), [ // LIMIT R15: kolejność priorytetów
+      'contextual_insight', 'pre_match', 'post_training', 'focus_block_checkins',
+      'morning_readiness', 'focus_block_maintenance', 'weekly_summary',
+      'focus_block_adaptation',
       'trial_expiry', 'parental_consent_expiry', 'coach_digest', 'retention_check',
       'training_focus_rotation', 'coach_scheduled_reports', 'parent_reports',
     ]);
@@ -806,10 +813,10 @@ async function scenario(name, fn) {
     const fs = require('fs');
     const kod = fs.readFileSync(require.resolve('../api/cron-send-notifications.js'), 'utf8');
     const guardy = [...kod.matchAll(/if \(!czasWyczerpany\('([a-z_]+)'\)\)/g)].map((m) => m[1]);
-    assert.deepStrictEqual(guardy, [
-      'morning_readiness', 'post_training', 'pre_match', 'weekly_summary', 'contextual_insight',
-      'focus_block_checkins', 'focus_block_maintenance', 'focus_block_adaptation',
-      'trial_expiry', 'parental_consent_expiry', 'coach_digest',
+    assert.deepStrictEqual(guardy, [ // LIMIT R15: kolejność priorytetów
+      'contextual_insight', 'pre_match', 'post_training', 'focus_block_checkins',
+      'morning_readiness', 'focus_block_maintenance', 'weekly_summary',
+      'focus_block_adaptation', 'trial_expiry', 'parental_consent_expiry', 'coach_digest',
       'retention_check', 'training_focus_rotation', 'coach_scheduled_reports', 'parent_reports',
     ], 'strażnik ma stać przy KAŻDYM rytmie i w tej samej kolejności co kolejka — rytm bez strażnika to dziura w budżecie');
   });

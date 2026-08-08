@@ -175,8 +175,10 @@ function makeFakeSupabase(tables = {}, errors = {}) {
             state[table].push(row);
             return Promise.resolve({ data: [row], error: null }).then(resolve, reject);
           }
-          if (errors[table] && errors[table].select) return Promise.resolve({ data: null, error: errors[table].select }).then(resolve, reject);
-          return Promise.resolve({ data: applyFilters(), error: null }).then(resolve, reject);
+          if (errors[table] && errors[table].select) return Promise.resolve({ data: null, error: errors[table].select, count: null }).then(resolve, reject);
+          // LIMIT R15 — `count` liczony zawsze (gatedSendPush czyta { count } z push_send_log);
+          // dotychczasowi odbiorcy destrukturyzują tylko { data, error }, więc to czysto addytywne.
+          return Promise.resolve({ data: applyFilters(), error: null, count: applyFilters().length }).then(resolve, reject);
         },
       };
       return builder;
@@ -525,7 +527,7 @@ async function scenario(name, fn) {
       push_tokens: [{ user_id: 'u1', token: 't1' }],
     });
     const results = makeResults();
-    await runContextualInsight(supabase, results);
+    await runContextualInsight(supabase, warsawNowAt({ hour: 12 }), results); // LIMIT R15: doszło warsawNow
     assert.strictEqual(sendPushCalls.length, 1);
     assert.ok(sendPushCalls[0].opts.body.startsWith('x'.repeat(60) + '…'), 'tekst dłuższy niż 60 znaków musi być obcięty z wielokropkiem');
     assert.strictEqual(supabase._state.decision_recommendations[0].notified_at !== null, true);
@@ -539,7 +541,7 @@ async function scenario(name, fn) {
       decision_recommendations: [{ id: 'r2', user_id: 'u2', recommendation_text: text60, notified_at: null, created_at: daysAgoIso(0) }],
       push_tokens: [{ user_id: 'u2', token: 't2' }],
     });
-    await runContextualInsight(supabase, makeResults());
+    await runContextualInsight(supabase, warsawNowAt({ hour: 12 }), makeResults()); // LIMIT R15: doszło warsawNow
     assert.strictEqual(sendPushCalls[0].opts.body, `${text60} — sprawdź rekomendację`);
   });
 
@@ -552,7 +554,7 @@ async function scenario(name, fn) {
       ],
       push_tokens: [{ user_id: 'u3', token: 't3' }],
     });
-    await runContextualInsight(supabase, makeResults());
+    await runContextualInsight(supabase, warsawNowAt({ hour: 12 }), makeResults()); // LIMIT R15: doszło warsawNow
     assert.strictEqual(sendPushCalls.length, 0);
   });
 
@@ -565,7 +567,7 @@ async function scenario(name, fn) {
       ],
       push_tokens: [{ user_id: 'u4', token: 't4' }],
     });
-    await runContextualInsight(supabase, makeResults());
+    await runContextualInsight(supabase, warsawNowAt({ hour: 12 }), makeResults()); // LIMIT R15: doszło warsawNow
     assert.strictEqual(sendPushCalls.length, 1);
   });
 
@@ -579,7 +581,7 @@ async function scenario(name, fn) {
       push_tokens: [{ user_id: 'u5', token: 't5' }],
     });
     const results = makeResults();
-    await runContextualInsight(supabase, results);
+    await runContextualInsight(supabase, warsawNowAt({ hour: 12 }), results); // LIMIT R15: doszło warsawNow
     assert.strictEqual(sendPushCalls.length, 1);
     assert.strictEqual(results.contextual_insight, 1);
   });
@@ -590,7 +592,7 @@ async function scenario(name, fn) {
       decision_recommendations: [{ id: 'r6', user_id: 'u6', recommendation_text: 'coś', notified_at: null, created_at: daysAgoIso(0) }],
       push_tokens: [],
     });
-    await runContextualInsight(supabase, makeResults());
+    await runContextualInsight(supabase, warsawNowAt({ hour: 12 }), makeResults()); // LIMIT R15: doszło warsawNow
     assert.strictEqual(sendPushCalls.length, 0);
     assert.strictEqual(supabase._state.decision_recommendations[0].notified_at, null);
   });
@@ -602,7 +604,7 @@ async function scenario(name, fn) {
       notification_preferences: [{ user_id: 'u7', notification_type: 'contextual_insight', enabled: false }],
       push_tokens: [{ user_id: 'u7', token: 't7' }],
     });
-    await runContextualInsight(supabase, makeResults());
+    await runContextualInsight(supabase, warsawNowAt({ hour: 12 }), makeResults()); // LIMIT R15: doszło warsawNow
     assert.strictEqual(sendPushCalls.length, 0);
   });
 
@@ -887,6 +889,92 @@ async function scenario(name, fn) {
     await runParentalConsentExpiry(supabase, results);
     assert.ok(supabase._state.payment_parental_consents[1].stripe_action_completed_at, 'drugi wiersz (bez subskrypcji Stripe) musi zostać przetworzony niezależnie');
     assert.strictEqual(results.parental_consent_expiry, 2, 'oba wiersze kończą się aktualizacją stripe_action_completed_at, więc oba liczą się jako przetworzone');
+  });
+
+  // ============================================================
+  // LIMIT R15 08.08.2026 — bramka limitu pushy (lib/push-rate-limiter.js
+  // podpięty do WSZYSTKICH siedmiu wysyłek; 2/dzień + cisza nocna 21-7).
+  // ============================================================
+  console.log('\n11b. LIMIT R15 — bramka limitu pushy w dyspozytorze');
+
+  // sent_at w połowie doby UTC 2026-08-15 — mieści się w dobie Warszawy
+  // 2026-08-15 niezależnie od CET/CEST.
+  const DZIS_SENT_AT = '2026-08-15T10:00:00.000Z';
+
+  await scenario('[pomiar] limit dobowy: 2 wpisy w push_send_log -> morning_readiness ODMÓWIONY, licznik push_gate_daily_cap', async () => {
+    sendPushCalls.length = 0;
+    const supabase = makeFakeSupabase({
+      users: [{ id: 'u1' }], notification_preferences: [], daily_logs: [],
+      push_tokens: [{ user_id: 'u1', token: 't1' }],
+      push_send_log: [
+        { user_id: 'u1', notification_type: 'contextual_insight', sent_at: DZIS_SENT_AT },
+        { user_id: 'u1', notification_type: 'pre_match', sent_at: DZIS_SENT_AT },
+      ],
+    });
+    const results = makeResults();
+    await runMorningReadiness(supabase, warsawNowAt({ hour: 7 }), results);
+    assert.strictEqual(sendPushCalls.length, 0, 'trzeci push tego dnia MUSI być odmówiony');
+    assert.strictEqual(results.morning_readiness, 0);
+    assert.strictEqual(results.push_gate_daily_cap, 1, 'odmowa musi być policzona, nie cicha');
+    console.log(`    [pomiar] push_send_log=2 -> wysłane=0, push_gate_daily_cap=${results.push_gate_daily_cap}`);
+  });
+
+  await scenario('limit dobowy liczy się PER ZAWODNIK — cudze wpisy nie blokują', async () => {
+    sendPushCalls.length = 0;
+    const supabase = makeFakeSupabase({
+      users: [{ id: 'u1' }], notification_preferences: [], daily_logs: [],
+      push_tokens: [{ user_id: 'u1', token: 't1' }],
+      push_send_log: [
+        { user_id: 'KTOS_INNY', notification_type: 'pre_match', sent_at: DZIS_SENT_AT },
+        { user_id: 'KTOS_INNY', notification_type: 'pre_match', sent_at: DZIS_SENT_AT },
+      ],
+    });
+    const results = makeResults();
+    await runMorningReadiness(supabase, warsawNowAt({ hour: 7 }), results);
+    assert.strictEqual(sendPushCalls.length, 1, 'cudzy limit nie ma prawa blokować u1');
+    assert.strictEqual(results.morning_readiness, 1);
+  });
+
+  await scenario('cisza nocna (22:00 Warszawy): contextual_insight ODMÓWIONY i notified_at NIE ustawione (spróbuje przy kolejnym przebiegu)', async () => {
+    sendPushCalls.length = 0;
+    const supabase = makeFakeSupabase({
+      decision_recommendations: [{ id: 'r1', user_id: 'u1', recommendation_text: 'Krótka rekomendacja', notified_at: null, created_at: daysAgoIso(0) }],
+      notification_preferences: [],
+      push_tokens: [{ user_id: 'u1', token: 't1' }],
+    });
+    const results = makeResults();
+    await runContextualInsight(supabase, warsawNowAt({ hour: 22 }), results);
+    assert.strictEqual(sendPushCalls.length, 0, 'push w ciszy nocnej');
+    assert.strictEqual(results.contextual_insight, 0);
+    assert.strictEqual(results.push_gate_quiet_hours, 1);
+    const rec = supabase._state.decision_recommendations[0];
+    assert.strictEqual(rec.notified_at, null, 'odmowa bramki NIE może zjadać rekomendacji (notified_at musi zostać null)');
+  });
+
+  await scenario('wysłany push zapisuje wiersz w push_send_log (limit dobowy ma z czego liczyć)', async () => {
+    sendPushCalls.length = 0;
+    const supabase = makeFakeSupabase({
+      users: [{ id: 'u1' }], notification_preferences: [], daily_logs: [],
+      push_tokens: [{ user_id: 'u1', token: 't1' }],
+    });
+    const results = makeResults();
+    await runMorningReadiness(supabase, warsawNowAt({ hour: 7 }), results);
+    assert.strictEqual(sendPushCalls.length, 1);
+    assert.strictEqual(supabase._state.push_send_log.length, 1, 'brak zapisu do logu = limit nigdy nie zadziała');
+    assert.strictEqual(supabase._state.push_send_log[0].user_id, 'u1');
+    assert.strictEqual(supabase._state.push_send_log[0].notification_type, 'morning_readiness');
+  });
+
+  await scenario('FAIL-OPEN: błąd odczytu push_send_log (np. tabela nie istnieje) -> push i tak wychodzi, błąd głośny w logu', async () => {
+    sendPushCalls.length = 0;
+    const supabase = makeFakeSupabase({
+      users: [{ id: 'u1' }], notification_preferences: [], daily_logs: [],
+      push_tokens: [{ user_id: 'u1', token: 't1' }],
+    }, { push_send_log: { select: { message: 'relation "public.push_send_log" does not exist' } } });
+    const results = makeResults();
+    await runMorningReadiness(supabase, warsawNowAt({ hour: 7 }), results);
+    assert.strictEqual(sendPushCalls.length, 1, 'brak tabeli logu NIE może uciszyć całych powiadomień (fail-open)');
+    assert.strictEqual(results.morning_readiness, 1);
   });
 
   console.log('\n12. handler (moduł.exports) — autoryzacja i przekazanie firebaseConfigOk');

@@ -68,6 +68,12 @@ const {
   buildMatchScheduleLines,
   describeMatchGap,
   dayIndexOfDate,
+  // LIMIT R13 08.08.2026 (M24)
+  RATE_LIMIT_MAX_CALLS,
+  RATE_LIMIT_WINDOW_MS,
+  RATE_LIMIT_MAX_TRACKED_USERS,
+  pruneAndCheckRateLimit,
+  checkDosingRateLimit,
 } = require('../api/generate-focus-block-dosing.js')._internal;
 
 Module._resolveFilename = originalResolveFilename;
@@ -816,6 +822,67 @@ function training(now, daysAgo, rpe, durationMinutes) {
     const sysZ = buildSystemPrompt({ knowledgeBaseContent: 'KB', segmentId: 'moc', hintSelection: null, matchDayCodes: ['SAT'] });
     console.log(`[pomiar] TERMINARZ: sekcja meczowa w system promptcie = +${sysZ.length - sysBez.length} znaków (tylko gdy mecze są; bez meczów +0).`);
   }
+
+  // ==========================================================
+  console.log('\n17. LIMIT R13 (M24) — rate-limit fazy 1: max 3 wywołania / 10 min / zawodnik');
+
+  scenario('stałe limitu: 3 wywołania w oknie 10 minut (te same liczby co w komunikacie 429)', () => {
+    assert.strictEqual(RATE_LIMIT_MAX_CALLS, 3);
+    assert.strictEqual(RATE_LIMIT_WINDOW_MS, 10 * 60 * 1000);
+  });
+
+  scenario('pierwsze trzy wywołania przechodzą, czwarte w oknie dostaje odmowę z czasem odczekania', () => {
+    const t0 = 1_000_000;
+    let entries = [];
+    for (let i = 0; i < 3; i++) {
+      const w = pruneAndCheckRateLimit(entries, t0 + i * 1000);
+      assert.strictEqual(w.allowed, true, `wywołanie ${i + 1} powinno przejść`);
+      entries = w.fresh;
+    }
+    const czwarte = pruneAndCheckRateLimit(entries, t0 + 3000);
+    assert.strictEqual(czwarte.allowed, false);
+    assert.ok(czwarte.retryAfterS >= 1 && czwarte.retryAfterS <= 600, String(czwarte.retryAfterS));
+  });
+
+  scenario('odmowa NIE przedłuża blokady — stukanie w przycisk odblokowuje się po oknie od 1. próby', () => {
+    const t0 = 0;
+    let entries = [];
+    for (let i = 0; i < 3; i++) entries = pruneAndCheckRateLimit(entries, t0 + i).fresh;
+    for (let i = 0; i < 50; i++) {
+      const w = pruneAndCheckRateLimit(entries, t0 + 5000 + i);
+      assert.strictEqual(w.allowed, false);
+      entries = w.fresh; // fresh bez bieżącej próby — lista się nie wydłuża
+    }
+    assert.strictEqual(entries.length, 3);
+    const po = pruneAndCheckRateLimit(entries, t0 + RATE_LIMIT_WINDOW_MS + 1);
+    assert.strictEqual(po.allowed, true);
+  });
+
+  scenario('okno jest kroczące: po wypadnięciu najstarszego wpisu znowu wolno', () => {
+    const w1 = pruneAndCheckRateLimit([0, 1000, 2000], RATE_LIMIT_WINDOW_MS + 500);
+    assert.strictEqual(w1.allowed, true);
+    assert.strictEqual(w1.fresh.length, 3); // 1000, 2000 wciąż w oknie + bieżące
+  });
+
+  scenario('checkDosingRateLimit trzyma stan per zawodnik i nie miesza użytkowników', () => {
+    const state = new Map();
+    const t0 = 42;
+    for (let i = 0; i < 3; i++) assert.strictEqual(checkDosingRateLimit('u1', t0 + i, state).allowed, true);
+    assert.strictEqual(checkDosingRateLimit('u1', t0 + 10, state).allowed, false);
+    assert.strictEqual(checkDosingRateLimit('u2', t0 + 10, state).allowed, true, 'inny zawodnik nie dziedziczy blokady');
+  });
+
+  scenario('bezpiecznik pamięci: przy pełnej mapie userów stan się czyści — limit ŁAGODNIEJE, nigdy nie surowieje', () => {
+    const state = new Map();
+    const t0 = 0;
+    for (let i = 0; i < RATE_LIMIT_MAX_TRACKED_USERS; i++) state.set('u' + i, [t0]);
+    const w = checkDosingRateLimit('nowy', t0 + RATE_LIMIT_WINDOW_MS + 1, state);
+    assert.strictEqual(w.allowed, true);
+    assert.ok(state.size <= RATE_LIMIT_MAX_TRACKED_USERS, String(state.size));
+  });
+
+  // Pomiar OSOBNYM logiem (zasada 14):
+  console.log(`[pomiar] LIMIT R13: ${RATE_LIMIT_MAX_CALLS} wywołania / ${Math.round(RATE_LIMIT_WINDOW_MS / 60000)} min / zawodnik; stan w pamięci instancji (best-effort — zimny start zeruje licznik, limit może być łagodniejszy, nigdy surowszy).`);
 
   console.log('\n--- KOSZT PROMPTU FAZY 1 (do sekcji 12 raportu, generowane) ---\n');
   console.log('| wariant | na wejściu | wstrzyknięte | prompt bez | prompt z | delta |');

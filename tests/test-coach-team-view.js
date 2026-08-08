@@ -328,7 +328,7 @@ async function main() {
     assert.ok(!/[a-z0-9._-]+@[a-z0-9.-]+/i.test(out), 'coś o kształcie e-maila w HTML widoku');
   });
 
-  await scenario('teamDiagPlayerName NIGDY nie sięga po email (inaczej niż karta Składu)', () => {
+  await scenario('teamDiagPlayerName NIGDY nie sięga po email (od r14 reszta UI trzyma ten sam wzorzec)', () => {
     assert.strictEqual(S.teamDiagPlayerName({ full_name: 'Jan', email: 'jan@x.pl' }), 'Jan');
     const fallback = S.teamDiagPlayerName({ email: 'jan@x.pl' });
     assert.ok(!fallback.includes('@'), 'fallback nazwy użył e-maila');
@@ -341,6 +341,31 @@ async function main() {
     const kod = bezKomentarzy(String(S.loadTeamDiagnosesPanel));
     assert.ok(kod.includes('users(full_name)'), 'embed users(full_name) zniknął');
     assert.ok(!kod.includes('users(full_name,email)'), 'nowy widok nie ma prawa pobierać e-maili');
+  });
+
+  // AGENT-N1 (runda 14, 08.08.2026) — wyrównanie STARYCH miejsc panelu do
+  // wzorca D4: e-mail (potencjalnie nieletniego) nie jest już fallbackiem
+  // nazwy w Składzie, liście prywatnych, nagłówku szczegółów ani panelu
+  // sugestii grupowej. player_email jako IDENTYFIKATOR zapisu (player_insights,
+  // coach_notes) celowo zostaje — to nie jest treść ekranu.
+  await scenario('AGENT-N1 (r14): e-mail zawodnika NIE jest nazwą nigdzie w UI trenera', () => {
+    // Trzy rozłączne stany wspólnej funkcji nazwy:
+    assert.strictEqual(S.playerNameForCoachUI({ full_name: 'Jan Kowalski', email: 'jan@x.pl' }), 'Jan Kowalski');
+    assert.strictEqual(S.playerNameForCoachUI({ email: 'jan@x.pl' }), 'Zawodnik bez nazwy w systemie');
+    assert.ok(S.playerNameForCoachUI({}).includes('napisz do Kuby'), 'stan serwisowy „nic nie doszło" zniknął');
+    assert.ok(S.playerNameForCoachUI(null).includes('napisz do Kuby'), 'null ma dawać stan serwisowy, nie wyjątek');
+    for (const u of [{ email: 'a@b.pl' }, {}, null, { full_name: '', email: 'c@d.pl' }]) {
+      assert.ok(!String(S.playerNameForCoachUI(u)).includes('@'), 'e-mail wyciekł przez funkcję nazwy');
+    }
+    // Cztery miejsca UI używają wspólnej funkcji (a nie własnego `|| u.email`).
+    // bezKomentarzy() nie zdejmuje komentarzy NA KOŃCU linii — komentarze
+    // AGENT-N1 cytują stary kod, więc zdejmujemy je tu osobno.
+    const bezAgentN1 = (fn) => bezKomentarzy(String(fn)).replace(/\/\/ AGENT-N1[^\n]*/g, '');
+    for (const fn of [S.renderRosterCard, S.renderPrivateRosterCard, S.renderGroupGoalSuggestPanel, S.openPlayerDetail]) {
+      const kod = bezAgentN1(fn);
+      assert.ok(kod.includes('playerNameForCoachUI('), `funkcja ${fn.name} nie używa wspólnej nazwy`);
+      assert.ok(!/\|\|\s*u\.email/.test(kod), `funkcja ${fn.name} wciąż ma fallback nazwy na e-mail`);
+    }
   });
 
   await scenario('imię z bazy jest ESCAPE\'owane — HTML w nazwie nie wykonuje się', () => {

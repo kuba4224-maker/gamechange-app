@@ -1,0 +1,25 @@
+# ============================================================
+# GAMECHANGE — CI (runda 17, 08.08.2026; audyt holistyczny 2a)
+# ============================================================
+# Uruchamia WSZYSTKIE suity tests/test-*.js przy każdym pushu i PR.
+# Testy nie dotykają sieci (Supabase/Firebase/Anthropic stubowane w samych
+# testach przez require.cache) — nie potrzebują żadnych sekretów.
+# Pierwszy zielony przebieg tego workflow = koniec ery, w której jedyną
+# ochroną przed regresją była dyscyplina sesji.
+name: Testy
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  testy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test

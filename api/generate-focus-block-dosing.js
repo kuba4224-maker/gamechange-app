@@ -45,8 +45,8 @@
 //   cele.tsx). Ten endpoint jest czystą funkcją sugestii.
 // - Egzekwowanie limitu "jeden aktywny Blok na filar" — to robi baza
 //   (unique index w migracji) + UI appki PRZED wywołaniem tego endpointu.
-// - Kontrola kosztów / rate-limiting — ten sam świadomy brak co w
-//   validate-goal-refinement.js (SESJA_START tej sesji tego nie wymagał).
+// - Kontrola kosztów / rate-limiting — od rundy 13 CZĘŚCIOWO ZROBIONA:
+//   patrz sekcja "LIMIT R13" niżej (M24/A35). Świadomie best-effort.
 //
 // ------------------------------------------------------------
 // DOZOWANIE A6 08.08.2026 — FAZA 1 WIDZI PODPOWIEDZI Z MATERIAŁÓW
@@ -775,6 +775,65 @@ async function generateFocusBlockDosing(params, injectedSupabase) {
 }
 
 // ------------------------------------------------------------
+// LIMIT R13 08.08.2026 — rate-limit fazy 1 (dług M24, znalezisko A35)
+// ------------------------------------------------------------
+// PO CO: po rundach 6-7 prompt tego endpointu jest ~3x większy (baza wiedzy
+// + podpowiedzi z materiałów + terminarz), a wywołuje go appka BEZ sekretu,
+// jednym przyciskiem w planerze Bloku. Zawodnik stukający w "Zaproponuj
+// dozowanie" pięć razy z rzędu (bo "nie podoba mi się wynik" albo bo sieć
+// zamula i nie widzi spinnera) płaci pięć pełnych promptów. Ten limit
+// zamyka dokładnie ten scenariusz: max 3 wywołania na zawodnika w oknie
+// 10 minut, czwarte dostaje 429 z czasem odczekania — a appka i tak ma
+// już wynik z poprzednich prób na ekranie.
+//
+// CO TEN LIMIT ŚWIADOMIE JEST, A CZYM NIE JEST (uczciwie, R5):
+//  • Stan trzymany W PAMIĘCI instancji funkcji (Map userId -> czasy).
+//    Vercel może odpalić kilka instancji albo zimny start wyzeruje licznik
+//    - wtedy limit bywa łagodniejszy, NIGDY surowszy. To wystarcza na
+//    ochronę przed stukaniem i pętlą w appce (realny koszt z A35), a nie
+//    wymaga nowej tabeli ani zapisu do bazy (endpoint pozostaje czystą
+//    funkcją sugestii).
+//  • To NIE jest ochrona przed napastnikiem — endpoint jest bez sekretu
+//    (świadoma decyzja z nagłówka, wzorzec validate-goal-refinement.js);
+//    napastnik może rotować userId. Twarda ochrona = sekret/auth, osobna
+//    decyzja produktowa, poza tą rundą.
+// Czysta logika okna jest w pruneAndCheckRateLimit() (testowalna z fałszywym
+// zegarem); stan i I/O w checkDosingRateLimit().
+
+const RATE_LIMIT_MAX_CALLS = 3;
+const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000; // 10 minut
+const RATE_LIMIT_MAX_TRACKED_USERS = 500;    // bezpiecznik pamięci instancji
+
+// Czysta: (lista czasów wywołań, teraz) -> decyzja + odświeżona lista.
+// `fresh` przy odmowie NIE zawiera bieżącej próby — odrzucone wywołanie
+// nie przedłuża blokady (inaczej stukanie w przycisk nigdy by się nie
+// odblokowało).
+function pruneAndCheckRateLimit(entries, nowMs, max = RATE_LIMIT_MAX_CALLS, windowMs = RATE_LIMIT_WINDOW_MS) {
+  const fresh = (Array.isArray(entries) ? entries : []).filter((t) => nowMs - t < windowMs);
+  if (fresh.length >= max) {
+    const retryAfterS = Math.max(1, Math.ceil((windowMs - (nowMs - fresh[0])) / 1000));
+    return { allowed: false, fresh, retryAfterS };
+  }
+  return { allowed: true, fresh: [...fresh, nowMs], retryAfterS: 0 };
+}
+
+const _rateLimitState = new Map();
+
+function checkDosingRateLimit(userId, nowMs = Date.now(), state = _rateLimitState) {
+  // Bezpiecznik: zanim dopiszemy nowego usera, wyrzucamy przeterminowanych,
+  // a gdy to nie wystarcza - czyścimy całość (limit łagodnieje, pamięć nie rośnie).
+  if (!state.has(userId) && state.size >= RATE_LIMIT_MAX_TRACKED_USERS) {
+    for (const [k, v] of state) {
+      if (v.every((t) => nowMs - t >= RATE_LIMIT_WINDOW_MS)) state.delete(k);
+    }
+    if (state.size >= RATE_LIMIT_MAX_TRACKED_USERS) state.clear();
+  }
+  const wynik = pruneAndCheckRateLimit(state.get(userId), nowMs);
+  state.set(userId, wynik.fresh);
+  return wynik;
+}
+
+// ------------------------------------------------------------
 // HTTP HANDLER (Vercel Function) — wywoływany bezpośrednio z appki
 // mobilnej, bez sekretu (patrz komentarz "WZOROWANY" na górze pliku).
 // ------------------------------------------------------------
@@ -784,6 +843,21 @@ module.exports = async (req, res) => {
   }
 
   const { userId, segmentId, componentId, customDescription, sessionsPerWeek } = req.body || {};
+
+  // LIMIT R13 (M24) — przed jakąkolwiek pracą i przed wywołaniem modelu.
+  // Bez userId nie limitujemy (i tak zaraz poleci walidacja "brak userId").
+  if (userId) {
+    const limit = checkDosingRateLimit(String(userId));
+    if (!limit.allowed) {
+      console.warn(`[dozowanie] rate-limit: userId=${userId} przekroczył ${RATE_LIMIT_MAX_CALLS} wywołania/${Math.round(RATE_LIMIT_WINDOW_MS / 60000)} min — odmowa, retryAfterS=${limit.retryAfterS}.`);
+      res.setHeader('Retry-After', String(limit.retryAfterS));
+      return res.status(429).json({
+        ok: false,
+        error: `Za dużo prób w krótkim czasie. Sugestia dozowania sprzed chwili jest nadal aktualna — spróbuj ponownie za ${Math.ceil(limit.retryAfterS / 60)} min.`,
+        retryAfterSeconds: limit.retryAfterS,
+      });
+    }
+  }
 
   try {
     const result = await generateFocusBlockDosing({ userId, segmentId, componentId, customDescription, sessionsPerWeek });
@@ -804,5 +878,8 @@ module.exports._internal = {
   DAY_INDEX, describeDayGaps, describeDosingState,
   // TERMINARZ A7 08.08.2026
   fetchUpcomingMatches, buildMatchScheduleLines, describeMatchGap, dayIndexOfDate,
+  // LIMIT R13 08.08.2026 (M24)
+  RATE_LIMIT_MAX_CALLS, RATE_LIMIT_WINDOW_MS, RATE_LIMIT_MAX_TRACKED_USERS,
+  pruneAndCheckRateLimit, checkDosingRateLimit,
 };
 

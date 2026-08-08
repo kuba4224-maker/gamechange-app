@@ -46,6 +46,14 @@
 //  6. contextual_insight wysyłał stały, ogólny tekst zamiast treści
 //     konkretnej rekomendacji (spec: pierwsze ~60 znaków + "— sprawdź
 //     rekomendację") i nie miał limitu "max 1 na 3 dni" ze specyfikacji.
+// LIMIT R15 08.08.2026 — poniższy akapit jest już HISTORIĄ: globalny limit
+// "max 2 powiadomienia dziennie na zawodnika" + cisza nocna 21:00-7:00 SĄ
+// zaimplementowane. Wszystkie wysyłki push idą przez gatedSendPush() z
+// lib/push-rate-limiter.js (log w tabeli push_send_log; gdy tabeli brak,
+// bramka fail-open: wysyła jak dawniej i głośno loguje błąd odczytu).
+// Kolejność priorytetów MIĘDZY rytmami = kolejność wywołań rytmów niżej
+// (potwierdzona przez Kubę 01.08, sekcja 5.3 KOLEJKA_DECYZJI).
+// Akapit oryginalny (stan do rundy 14):
 // Pozostała ŚWIADOMIE NIEZAIMPLEMENTOWANA część specyfikacji (opisana
 // wprost w sekcji "Limity częstotliwości i cisza nocna"): globalny limit
 // "max 2 powiadomienia dziennie na zawodnika" z kolejnością priorytetów
@@ -75,7 +83,11 @@
 // ============================================================
 
 const { createClient } = require('@supabase/supabase-js');
-const { sendPush, verifyFirebaseConfig } = require('./send-push');
+const { verifyFirebaseConfig } = require('./send-push');
+// LIMIT R15 08.08.2026 — jedyna dozwolona droga wysyłki push w tym pliku.
+// Bezpośredni sendPush() ominąłby limit dobowy i ciszę nocną — pilnowane
+// testem (tests/test-cron-send-notifications.js, sekcja LIMIT R15).
+const { gatedSendPush } = require('../lib/push-rate-limiter');
 const { runFocusBlockAdaptation } = require('../lib/focus-block-adaptation');
 const { stripeRequest } = require('../lib/stripe-client');
 const { runCoachDigestCheck } = require('../lib/coach-digest');
@@ -257,6 +269,17 @@ async function hasLoggedMorningToday(supabase, userId, warsawNow) {
 // POPRAWIONE 29.07.2026: dodany warunek "jeszcze nie zalogował dziś" +
 // rotacja treści wg parzystości dnia miesiąca, dokładnie jak w spec.
 // ------------------------------------------------------------
+// LIMIT R15 08.08.2026 — przekrojowe liczniki odmów bramki limitu.
+// `(x || 0) + 1` zamiast `++`, żeby wywołanie rytmu z okrojonym obiektem
+// results (testy jednostkowe) nie produkowało NaN.
+function zliczOdmoweBramki(results, wynikBramki) {
+  if (wynikBramki.reason === 'quiet_hours') {
+    results.push_gate_quiet_hours = (results.push_gate_quiet_hours || 0) + 1;
+  } else if (wynikBramki.reason === 'daily_cap_reached') {
+    results.push_gate_daily_cap = (results.push_gate_daily_cap || 0) + 1;
+  }
+}
+
 async function runMorningReadiness(supabase, warsawNow, results) {
   const { data: users, error } = await supabase.from('users').select('id');
   if (error || !users) { console.error('cron-send-notifications: błąd pobierania users (morning_readiness):', error); return; }
@@ -283,11 +306,14 @@ async function runMorningReadiness(supabase, warsawNow, results) {
     const tokens = await getTokensForUser(supabase, u.id);
     if (tokens.length === 0) continue;
     try {
-      await sendPush(tokens, {
+      const wynikBramki = await gatedSendPush(supabase, { // LIMIT R15
+        userId: u.id, tokens, notificationType: 'morning_readiness',
         title: 'Gamechange',
         body,
         data: { type: 'morning_readiness' },
+        warsawNow,
       });
+      if (!wynikBramki.sent) { zliczOdmoweBramki(results, wynikBramki); continue; }
       results.morning_readiness++;
     } catch (e) {
       console.error(`cron-send-notifications: błąd wysyłki morning_readiness dla ${u.id}:`, e);
@@ -341,11 +367,14 @@ async function runPostTraining(supabase, warsawNow, results) {
     const tokens = await getTokensForUser(supabase, ev.user_id);
     if (tokens.length === 0) continue;
     try {
-      await sendPush(tokens, {
+      const wynikBramki = await gatedSendPush(supabase, { // LIMIT R15
+        userId: ev.user_id, tokens, notificationType: 'post_training',
         title: 'Gamechange',
         body,
         data: { type: 'post_training', calendarEventId: ev.id },
+        warsawNow,
       });
+      if (!wynikBramki.sent) { zliczOdmoweBramki(results, wynikBramki); continue; }
       results.post_training++;
     } catch (e) {
       console.error(`cron-send-notifications: błąd wysyłki post_training dla ${ev.user_id}:`, e);
@@ -363,7 +392,7 @@ async function runPostTraining(supabase, warsawNow, results) {
 // event_type='match' — ta funkcja jest gotowa, ale realnie nieaktywna,
 // dopóki ta luka nie zostanie zamknięta gdzie indziej.
 // ------------------------------------------------------------
-async function sendPreMatchForDate(supabase, targetDateStr, bodyText, resultsKeyLabel, results) {
+async function sendPreMatchForDate(supabase, targetDateStr, bodyText, resultsKeyLabel, results, warsawNow) {
   const { data: events, error } = await supabase
     .from('calendar_events')
     .select('id, user_id')
@@ -385,11 +414,14 @@ async function sendPreMatchForDate(supabase, targetDateStr, bodyText, resultsKey
     const tokens = await getTokensForUser(supabase, ev.user_id);
     if (tokens.length === 0) continue;
     try {
-      await sendPush(tokens, {
+      const wynikBramki = await gatedSendPush(supabase, { // LIMIT R15
+        userId: ev.user_id, tokens, notificationType: 'pre_match',
         title: 'Gamechange',
         body: bodyText,
         data: { type: 'pre_match', calendarEventId: ev.id },
+        warsawNow,
       });
+      if (!wynikBramki.sent) { zliczOdmoweBramki(results, wynikBramki); continue; }
       results.pre_match++;
     } catch (e) {
       console.error(`cron-send-notifications: błąd wysyłki pre_match (${resultsKeyLabel}) dla ${ev.user_id}:`, e);
@@ -408,7 +440,7 @@ async function runPreMatch(supabase, warsawNow, results) {
     await sendPreMatchForDate(
       supabase, `${y}-${m}-${d}`,
       'Jutro grasz. Zajrzyj do trybu meczowego, zanim wyjdziesz z domu.',
-      'wieczór przed', results
+      'wieczór przed', results, warsawNow
     );
   }
 
@@ -417,7 +449,7 @@ async function runPreMatch(supabase, warsawNow, results) {
     await sendPreMatchForDate(
       supabase, warsawNow.dateStr,
       'Dziś mecz. Sprawdź check-in meczowy.',
-      'rano w dniu', results
+      'rano w dniu', results, warsawNow
     );
   }
 }
@@ -465,11 +497,14 @@ async function runWeeklySummary(supabase, warsawNow, results) {
     const tokens = await getTokensForUser(supabase, u.id);
     if (tokens.length === 0) continue;
     try {
-      await sendPush(tokens, {
+      const wynikBramki = await gatedSendPush(supabase, { // LIMIT R15
+        userId: u.id, tokens, notificationType: 'weekly_summary',
         title: 'Gamechange',
         body: `Twój tydzień w liczbach czeka. Zobacz jak poszło z celem ${goalName}.`,
         data: { type: 'weekly_summary' },
+        warsawNow,
       });
+      if (!wynikBramki.sent) { zliczOdmoweBramki(results, wynikBramki); continue; }
       results.weekly_summary++;
     } catch (e) {
       console.error(`cron-send-notifications: błąd wysyłki weekly_summary dla ${u.id}:`, e);
@@ -489,7 +524,7 @@ async function runWeeklySummary(supabase, warsawNow, results) {
 // dwie nowe rekomendacje tego samego zawodnika w jednym przebiegu nie
 // wysłały dwóch push'ów naraz.
 // ------------------------------------------------------------
-async function runContextualInsight(supabase, results) {
+async function runContextualInsight(supabase, warsawNow, results) { // LIMIT R15: doszło warsawNow (bramka potrzebuje godziny i daty Warszawy)
   const { data: recs, error } = await supabase
     .from('decision_recommendations')
     .select('id, user_id, recommendation_text')
@@ -525,11 +560,17 @@ async function runContextualInsight(supabase, results) {
     const body = `${snippet}${raw.length > 60 ? '…' : ''} — sprawdź rekomendację`;
 
     try {
-      await sendPush(tokens, {
+      const wynikBramki = await gatedSendPush(supabase, { // LIMIT R15
+        userId: rec.user_id, tokens, notificationType: 'contextual_insight',
         title: 'Gamechange',
         body,
         data: { type: 'contextual_insight', recommendationId: rec.id },
+        warsawNow,
       });
+      // LIMIT R15 — odmowa bramki NIE ustawia notified_at i NIE zajmuje
+      // limitu "1/3 dni": rekomendacja ma dostać pusha przy KOLEJNYM
+      // przebiegu, nie przepaść po cichu.
+      if (!wynikBramki.sent) { zliczOdmoweBramki(results, wynikBramki); continue; }
       const { error: updateError } = await supabase
         .from('decision_recommendations')
         .update({ notified_at: new Date().toISOString() })
@@ -611,7 +652,11 @@ async function runFocusBlockCheckins(supabase, warsawNow, results) {
       const bodyPusha = generated.contentDose
         ? `${generated.question}${NOWA_DAWKA_DOPISEK}`
         : generated.question;
-      await sendPush(tokens, {
+      // LIMIT R15 — bramka limitu. Odmowa NIE cofa checkinu ani dawki:
+      // pytanie i treść już istnieją w appce (ekran Cele/Dziś), zawodnik
+      // zobaczy je przy najbliższym wejściu; ginie tylko push-przypomnienie.
+      const wynikBramki = await gatedSendPush(supabase, {
+        userId: block.user_id, tokens, notificationType: 'focus_block_checkin',
         title: 'Gamechange',
         body: bodyPusha,
         // DEEPLINK R8 08.08.2026 — czwarte pole `contentDose` WYŁĄCZNIE przy
@@ -628,7 +673,9 @@ async function runFocusBlockCheckins(supabase, warsawNow, results) {
           type: 'focus_block_checkin', focusBlockId: block.id, checkinId: inserted.id,
           ...(generated.contentDose ? { contentDose: true } : {}),
         },
+        warsawNow,
       });
+      if (!wynikBramki.sent) { zliczOdmoweBramki(results, wynikBramki); continue; }
       results.focus_block_checkins++;
     } catch (e) {
       console.error(`cron-send-notifications: błąd runFocusBlockCheckins dla bloku ${block.id}:`, e);
@@ -683,11 +730,15 @@ async function runFocusBlockMaintenance(supabase, warsawNow, results) {
 
       const tokens = await getTokensForUser(supabase, block.user_id);
       if (tokens.length === 0) continue;
-      await sendPush(tokens, {
+      // LIMIT R15 — jak przy checkinach: odmowa nie cofa wiersza checkinu.
+      const wynikBramki = await gatedSendPush(supabase, {
+        userId: block.user_id, tokens, notificationType: 'focus_block_maintenance',
         title: 'Gamechange',
         body: questionText,
         data: { type: 'focus_block_maintenance', focusBlockId: block.id, checkinId: inserted.id },
+        warsawNow,
       });
+      if (!wynikBramki.sent) { zliczOdmoweBramki(results, wynikBramki); continue; }
       results.focus_block_maintenance++;
     } catch (e) {
       console.error(`cron-send-notifications: błąd runFocusBlockMaintenance dla bloku ${block.id}:`, e);
@@ -946,6 +997,10 @@ module.exports = async (req, res) => {
     // w ogóle się nie wykonał").
     parent_reports: 0, parent_reports_failed: 0, parent_reports_skipped_no_report: 0,
     parent_reports_missing_extras: 0, parent_reports_snapshot_failed: 0,
+    // LIMIT R15 08.08.2026 — przekrojowe liczniki bramki limitu pushy
+    // (2/dzień + cisza nocna). Jawnie wyzerowane z tego samego powodu co
+    // liczniki raportu rodzica: zero ≠ brak pola.
+    push_gate_quiet_hours: 0, push_gate_daily_cap: 0,
   };
 
   // DIAGNOSTYKA 29.07.2026 — patrz komentarz przy verifyFirebaseConfig() w
@@ -974,30 +1029,38 @@ module.exports = async (req, res) => {
 
     // DYSPOZYTOR C6 08.08.2026 — piętnaście rytmów, piętnaście osobnych
     // `try/catch`. Świadomie rozpisane jeden po drugim zamiast pętli po
-    // tablicy: kolejność 1–15 jest tu ustaleniem projektowym (raport
-    // rodzica ostatni), a lista widoczna wprost w kodzie jest jedynym
-    // miejscem, w którym tę kolejność da się przeczytać i sprawdzić
-    // `grep`em. Pętla po tablicy schowałaby ją o jeden poziom głębiej.
-    try { if (!czasWyczerpany('morning_readiness')) await runMorningReadiness(supabase, warsawNow, results); }
-    catch (e) { zapiszBladRytmu(results, 'morning_readiness', 'runMorningReadiness', e); }
-
-    try { if (!czasWyczerpany('post_training')) await runPostTraining(supabase, warsawNow, results); }
-    catch (e) { zapiszBladRytmu(results, 'post_training', 'runPostTraining', e); }
+    // tablicy: kolejność 1–15 jest tu ustaleniem projektowym (od R15:
+    // rytmy push wg priorytetów limitu dobowego, raport rodzica ostatni),
+    // a lista widoczna wprost w kodzie jest jedynym miejscem, w którym tę
+    // kolejność da się przeczytać i sprawdzić `grep`em.
+    // LIMIT R15 08.08.2026 — SIEDEM rytmów push idzie w KOLEJNOŚCI
+    // PRIORYTETÓW (potwierdzonej przez Kubę 01.08, sekcja 5.3
+    // KOLEJKA_DECYZJI; lustro: PRIORITY_ORDER w lib/push-rate-limiter.js):
+    // kontekstowo > przed meczem > po treningu > checkin Bloku > rano >
+    // utrzymanie Bloku > tygodniowo. Od tej rundy kolejność MA skutek:
+    // limit dobowy (2/dzień) zjadają najpierw rytmy najważniejsze.
+    // Rytmy bez pushy (adaptacja, trial, zgody, digest, retencja, rotacja,
+    // raporty) zostają za nimi w dotychczasowej kolejności.
+    try { if (!czasWyczerpany('contextual_insight')) await runContextualInsight(supabase, warsawNow, results); }
+    catch (e) { zapiszBladRytmu(results, 'contextual_insight', 'runContextualInsight', e); }
 
     try { if (!czasWyczerpany('pre_match')) await runPreMatch(supabase, warsawNow, results); }
     catch (e) { zapiszBladRytmu(results, 'pre_match', 'runPreMatch', e); }
 
-    try { if (!czasWyczerpany('weekly_summary')) await runWeeklySummary(supabase, warsawNow, results); }
-    catch (e) { zapiszBladRytmu(results, 'weekly_summary', 'runWeeklySummary', e); }
-
-    try { if (!czasWyczerpany('contextual_insight')) await runContextualInsight(supabase, results); }
-    catch (e) { zapiszBladRytmu(results, 'contextual_insight', 'runContextualInsight', e); }
+    try { if (!czasWyczerpany('post_training')) await runPostTraining(supabase, warsawNow, results); }
+    catch (e) { zapiszBladRytmu(results, 'post_training', 'runPostTraining', e); }
 
     try { if (!czasWyczerpany('focus_block_checkins')) await runFocusBlockCheckins(supabase, warsawNow, results); }
     catch (e) { zapiszBladRytmu(results, 'focus_block_checkins', 'runFocusBlockCheckins', e); }
 
+    try { if (!czasWyczerpany('morning_readiness')) await runMorningReadiness(supabase, warsawNow, results); }
+    catch (e) { zapiszBladRytmu(results, 'morning_readiness', 'runMorningReadiness', e); }
+
     try { if (!czasWyczerpany('focus_block_maintenance')) await runFocusBlockMaintenance(supabase, warsawNow, results); }
     catch (e) { zapiszBladRytmu(results, 'focus_block_maintenance', 'runFocusBlockMaintenance', e); }
+
+    try { if (!czasWyczerpany('weekly_summary')) await runWeeklySummary(supabase, warsawNow, results); }
+    catch (e) { zapiszBladRytmu(results, 'weekly_summary', 'runWeeklySummary', e); }
 
     try { if (!czasWyczerpany('focus_block_adaptation')) await runFocusBlockAdaptation(supabase, results); }
     catch (e) { zapiszBladRytmu(results, 'focus_block_adaptation', 'runFocusBlockAdaptation', e); }

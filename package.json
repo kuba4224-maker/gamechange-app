@@ -2,6 +2,9 @@
   "name": "gamechange-app",
   "version": "1.0.0",
   "private": true,
+  "scripts": {
+    "test": "node tests/run-all-tests.js"
+  },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
     "firebase-admin": "^13.0.0"

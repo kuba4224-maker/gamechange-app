@@ -1,8 +1,9 @@
 {
-  "_opis": "TERMINARZ A7 08.08.2026 (v2; pierwotnie DOZOWANIE A6) — KANONICZNY FIXTURE BRAMKI WIEKOWEJ A9. Zmierzony 08.08.2026 przez sesje glowna na zywym lib/recommendation-hints.js (21 620 B); wyniki potwierdzone testem pasa A w rundzie 6 (3/3 przypadki co do sztuki i kolejnosci). Ten sam fixture jest kontraktem dla strony TS (Asystent Gamechange) — NIE WOLNO go zmienic bez rownoczesnej zmiany po obu stronach. Klucze wierszy bez skracania: skrot nazwy cicho psuje dopasowanie i nie rzuca bledu.",
+  "_opis": "DOROSLY R11 08.08.2026 (v3; wczesniej TERMINARZ A7 v2, pierwotnie DOZOWANIE A6) — KANONICZNY FIXTURE BRAMKI WIEKOWEJ A9 + ROUTINGU DOROSLEGO. Zmierzony na zywym lib/recommendation-hints.js. Ten sam fixture jest kontraktem dla strony TS (Asystent Gamechange) — NIE WOLNO go zmienic bez rownoczesnej zmiany po obu stronach. Klucze wierszy bez skracania: skrot nazwy cicho psuje dopasowanie i nie rzuca bledu.",
   "_wlasnosc_bezpieczenstwa": "Przy NIEZNANYM wieku zawodnika wiersze z min_age sa UKRYWANE (domyslnie bezpiecznie), a stan wiekNieznany: true jest jawnie raportowany. Pusty wynik i 'nie wiem, ile ma lat' to dwie rozne rzeczy i produkt musi je rozrozniac.",
   "_uwaga_o_nazwach_pol": "v2 (TERMINARZ A7): pola nosza PRAWDZIWE nazwy kolumn component_hints — 'hint' i 'strony' (w v1 byly to 'tresc'/'strona', znalezisko A32). Bramka A9 tych pol nie czyta (computeAgeLowerBound + selectHintsForPrompt patrza na odbiorca/active/min_age/component_id/obszar_name/element_name/pozycja/klucz), wiec oczekiwane wyniki sa IDENTYCZNE z v1 — test sprawdza to WPROST (grupa 5, przemianowanie na stare nazwy), zamiast zakladac.",
-  "wersja": 2,
+  "_dorosly_r11": "v3 (DOROSLY R11): czwarty przypadek — rocznik 2007, dolna granica wieku 18, pelnoletnosc PEWNA. Wiersze odbiorca='rodzic' (fx-04, fx-05) wchodza wprost do zawodnika (18+ = wlasny rodzic), z jawnym licznikiem wlaczoneZWarstwyRodzica. Trzy dotychczasowe przypadki (14 / 16 / nieznany) sa NIETKNIETE co do sztuki — u nieletniego i przy nieznanym wieku routing dziala bajt w bajt jak w v2 (fail-closed). Odeslania do rodzica (zrodlo z 'decyzja A9') u doroslego wypadaja — fixture ich nie zawiera (zrodlo='M'), pilnuja tego testy jednostkowe obu stron.",
+  "wersja": 3,
   "now": "2026-08-08T12:00:00Z",
   "goalComponentId": "comp-cel",
   "limit": 12,
@@ -182,6 +183,8 @@
       ],
       "ukryteZPowoduWieku": 3,
       "odrzuconePrzezOdbiorce": 2,
+      "dorosly": false,
+      "wlaczoneZWarstwyRodzica": 0,
       "nieaktywne": 1,
       "pominieteObceElementy": 1
     },
@@ -210,6 +213,42 @@
       ],
       "ukryteZPowoduWieku": 0,
       "odrzuconePrzezOdbiorce": 2,
+      "dorosly": false,
+      "wlaczoneZWarstwyRodzica": 0,
+      "nieaktywne": 1,
+      "pominieteObceElementy": 1
+    },
+    {
+      "przypadek": "rocznik 2007 (wiek 18 — dorosly)",
+      "birthYear": 2007,
+      "ageLowerBound": 18,
+      "wiekNieznany": false,
+      "kolejnoscKluczy": [
+        "fx-11-zawodnik-16plus-el",
+        "fx-06-element-celu",
+        "fx-07-obszar",
+        "fx-01-zawodnik-bez-wieku",
+        "fx-02-zawodnik-16plus",
+        "fx-03-oba-16plus",
+        "fx-04-rodzic-16plus",
+        "fx-05-rodzic-bez-wieku",
+        "fx-09-niedopasowany"
+      ],
+      "celowanie": [
+        "element_celu",
+        "element_celu",
+        "obszar",
+        "segment",
+        "segment",
+        "segment",
+        "segment",
+        "segment",
+        "niedopasowany"
+      ],
+      "ukryteZPowoduWieku": 0,
+      "odrzuconePrzezOdbiorce": 0,
+      "dorosly": true,
+      "wlaczoneZWarstwyRodzica": 2,
       "nieaktywne": 1,
       "pominieteObceElementy": 1
     },
@@ -232,6 +271,8 @@
       ],
       "ukryteZPowoduWieku": 3,
       "odrzuconePrzezOdbiorce": 2,
+      "dorosly": false,
+      "wlaczoneZWarstwyRodzica": 0,
       "nieaktywne": 1,
       "pominieteObceElementy": 1
     }

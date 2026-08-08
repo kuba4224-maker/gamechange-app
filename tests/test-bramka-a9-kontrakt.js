@@ -131,8 +131,8 @@ scenario('fixture zakłada limit 12 — ten sam co HINT_LIMIT w lib/recommendati
   assert.strictEqual(fixture.limit, HINT_LIMIT);
 });
 
-scenario('fixture ma 3 przypadki oczekiwane (14 lat / 16 lat / wiek nieznany)', () => {
-  assert.strictEqual(fixture.oczekiwane.length, 3);
+scenario('fixture v3 ma 4 przypadki oczekiwane (14 lat / 16 lat / 18 lat DOROSŁY R11 / wiek nieznany)', () => {
+  assert.strictEqual(fixture.oczekiwane.length, 4);
 });
 
 // ------------------------------------------------------------
@@ -208,9 +208,23 @@ for (const oczekiwany of fixture.oczekiwane) {
     assert.strictEqual(wynik.wiekNieznany, oczekiwany.wiekNieznany);
   });
 
-  scenario(`${oczekiwany.przypadek}: ani jeden wiersz 'rodzic' nie przeszedł do zawodnika`, () => {
+  // DOROSŁY R11: u nieletniego/nieznanego wieku 'rodzic' nadal NIGDY nie
+  // przechodzi; u dorosłego przechodzi CELOWO i jest jawnie policzony.
+  scenario(`${oczekiwany.przypadek}: dorosly = ${oczekiwany.dorosly}, wlaczoneZWarstwyRodzica = ${oczekiwany.wlaczoneZWarstwyRodzica}`, () => {
+    assert.strictEqual(wynik.dorosly, oczekiwany.dorosly);
+    assert.strictEqual(wynik.wlaczoneZWarstwyRodzica, oczekiwany.wlaczoneZWarstwyRodzica);
+  });
+
+  scenario(oczekiwany.dorosly
+    ? `${oczekiwany.przypadek}: wiersze 'rodzic' przeszły WYŁĄCZNIE przez routing dorosłego (R11)`
+    : `${oczekiwany.przypadek}: ani jeden wiersz 'rodzic' nie przeszedł do zawodnika`, () => {
     for (const h of wynik.hints) {
-      assert.ok(PLAYER_AUDIENCES.includes(h.odbiorca), `wiersz ${h.klucz} ma odbiorca=${h.odbiorca}`);
+      if (oczekiwany.dorosly) {
+        assert.ok(PLAYER_AUDIENCES.includes(h.odbiorca) || h.odbiorca === 'rodzic',
+          `wiersz ${h.klucz} ma odbiorca=${h.odbiorca}`);
+      } else {
+        assert.ok(PLAYER_AUDIENCES.includes(h.odbiorca), `wiersz ${h.klucz} ma odbiorca=${h.odbiorca}`);
+      }
     }
   });
 
@@ -268,11 +282,50 @@ scenario('granica jest ostra: rocznik 2010 (dolna 15) zachowuje się jak 14-late
 });
 
 // ------------------------------------------------------------
+console.log('\n4b. DOROSŁY R11 — „18+ = własny rodzic": warstwa rodzica wchodzi dopiero przy PEWNEJ pełnoletności');
+
+scenario('dorosły (rocznik 2007) dostaje DOKŁADNIE dwa wiersze więcej niż 16-latek — i to są te z odbiorca=rodzic', () => {
+  const szesnascie = new Set(przepusc(2009).wynik.hints.map((h) => h.klucz));
+  const dorosly = przepusc(2007).wynik;
+  const roznica = dorosly.hints.filter((h) => !szesnascie.has(h.klucz)).map((h) => h.klucz).sort();
+  assert.deepStrictEqual(roznica, ['fx-04-rodzic-16plus', 'fx-05-rodzic-bez-wieku']);
+  for (const k of roznica) {
+    assert.strictEqual(fixture.wiersze.find((x) => x.klucz === k).odbiorca, 'rodzic');
+  }
+});
+
+scenario('granica dorosłości KONSERWATYWNA: rocznik 2008 (dolna 17) NIE dostaje warstwy rodzica', () => {
+  const siedemnascie = przepusc(2008).wynik;
+  assert.strictEqual(siedemnascie.dorosly, false);
+  assert.strictEqual(siedemnascie.wlaczoneZWarstwyRodzica, 0);
+  assert.deepStrictEqual(
+    siedemnascie.hints.map((h) => h.klucz),
+    fixture.oczekiwane.find((o) => o.birthYear === 2009).kolejnoscKluczy
+  );
+});
+
+scenario('nieznany wiek NIGDY nie włącza warstwy rodzica (fail-closed, ta sama strona błędu co A9)', () => {
+  const nieznany = przepusc(null).wynik;
+  assert.strictEqual(nieznany.dorosly, false);
+  assert.strictEqual(nieznany.wlaczoneZWarstwyRodzica, 0);
+  assert.ok(!nieznany.hints.some((h) => h.odbiorca === 'rodzic'));
+});
+
+scenario('bramka A9 działa na wierszach z warstwy rodzica dalej: min_age=21 przytrzymałoby 18-latka', () => {
+  const podniesione = fixture.wiersze.map((w) =>
+    w.klucz === 'fx-04-rodzic-16plus' ? { ...w, min_age: 21 } : w);
+  const wynik = przepusc(2007, podniesione).wynik;
+  assert.ok(!wynik.hints.some((h) => h.klucz === 'fx-04-rodzic-16plus'));
+  assert.strictEqual(wynik.ukryteZPowoduWieku, 1);
+});
+
+// ------------------------------------------------------------
 console.log('\n5. Nazwy pól — czy fixture jest wierny kolumnom component_hints');
 
-scenario('fixture v2 używa PRAWDZIWYCH nazw kolumn component_hints ("hint"/"strony") — A32 zamknięte', () => {
+scenario('fixture v3 używa PRAWDZIWYCH nazw kolumn component_hints ("hint"/"strony") — A32 zamknięte', () => {
   assert.ok(fixture._uwaga_o_nazwach_pol, 'fixture musi nazywać historię tej zmiany wprost');
-  assert.strictEqual(fixture.wersja, 2, 'to musi być fixture v2');
+  assert.ok(fixture._dorosly_r11, 'fixture v3 musi nazywać routing dorosłego wprost');
+  assert.strictEqual(fixture.wersja, 3, 'to musi być fixture v3 (DOROSŁY R11)');
   assert.ok(fixture.wiersze.every((w) => 'hint' in w && 'strony' in w));
   assert.ok(fixture.wiersze.every((w) => !('tresc' in w) && !('strona' in w)),
     'stare nazwy v1 nie mają prawa wrócić — cichy rozjazd z bazą');
